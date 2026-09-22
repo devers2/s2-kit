@@ -38,7 +38,7 @@ public class S2AutoConfiguration {
 
     public S2AutoConfiguration() {
         // Spring Bean 인스턴스화 시점에 로거 매니저 및 캐시 엔진 활성화
-        S2LogManager.touch();
+        S2LogManager.getLogger(S2AutoConfiguration.class);
     }
 
 }
