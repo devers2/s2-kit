@@ -38,6 +38,19 @@ Java 소스 코드, Gradle 설정, 문서를 수정한 후에는 **사용자에�
 
 ---
 
-## 3. 인코딩 절대 원칙: UTF-8 NoBOM
+## 3. Java 버전 호환성 원칙 (Java 17 Baseline & Concurrency Reuse)
+
+1. **기본 호환성 (Java 17 Baseline)**:
+   - 모든 소스코드는 Java 17 바이트코드 타깃(`--release 17`) 호환을 엄격히 준수해야 합니다.
+   - 소스코드 내에 Java 21+ 전용 API나 문법을 직접 사용해서는 안 됩니다.
+2. **동시성 및 스레드 풀 재사용 원칙**:
+   - `s2-support` 내에서는 독자적인 가상 스레드(Virtual Thread) 생성 로직을 직접 구현하지 않습니다.
+   - 비동기/병렬 작업(예: `S2PdfUtil`의 원격 리소스 병렬 프리페치) 시 반드시 `s2-core`의 `S2ThreadUtil.getCommonExecutor()`를 재사용하십시오.
+   - 이를 통해 애플리케이션 실행 환경이 Java 21 이상이면 자동으로 가상 스레드를 활용하고, Java 17이면 안전하게 플랫폼 풀로 동작합니다.
+
+---
+
+## 4. 인코딩 절대 원칙: UTF-8 NoBOM
 
 - 저장소의 모든 소스 파일, 설정 파일, 마크다운 문서는 순수 UTF-8 NoBOM(Byte Order Mark 없음)이어야 합니다.
+
