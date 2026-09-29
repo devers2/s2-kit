@@ -103,6 +103,21 @@ class S2PdfUtilTest {
         }
     }
 
+    private static boolean startsWithPdfMagic(byte[] data) {
+        return data != null && data.length >= 5 && data[0] == '%' && data[1] == 'P' && data[2] == 'D' && data[3] == 'F' && data[4] == '-';
+    }
+
+    private static String headHex(byte[] data) {
+        if (data == null) {
+            return "null";
+        }
+        var sb = new StringBuilder();
+        for (int i = 0; i < Math.min(16, data.length); i++) {
+            sb.append(String.format("%02X ", data[i]));
+        }
+        return sb.toString().trim();
+    }
+
     private static byte[] createSamplePdf(String html) throws IOException {
         try (InputStream is = S2PdfUtil.convertHtmlToPdfStream(html, null, null, null, S2PdfUtil.class)) {
             return is.readAllBytes();
@@ -430,7 +445,15 @@ class S2PdfUtilTest {
     @Test
     @Order(14)
     @DisplayName("Content-Type 부재 시 바이너리 매직 바이트 기반 PDF 자동 감지 검증")
-    void testUrlMagicByteDetection() throws IOException {
+    void testUrlMagicByteDetection() throws Exception {
+        // Diagnostics for an intermittent CI failure where the payload was treated as HTML: verify the source and the transport separately. | CI 에서 간헐적으로 페이로드가 HTML 로 처리된 실패의 진단: 원본과 전송 경로를 각각 확인
+        assertTrue(startsWithPdfMagic(sampleServerPdf), "원본 샘플 PDF가 %PDF- 로 시작하지 않습니다: " + headHex(sampleServerPdf));
+        byte[] raw = java.net.http.HttpClient.newHttpClient()
+                .send(java.net.http.HttpRequest.newBuilder(java.net.URI.create(baseUrl + "/magic-pdf")).build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofByteArray())
+                .body();
+        assertTrue(startsWithPdfMagic(raw), "모의 서버 응답이 %PDF- 로 시작하지 않습니다: " + headHex(raw) + " (len=" + raw.length + ", 기대 len=" + sampleServerPdf.length + ")");
+
         try (InputStream pdfStream = S2PdfUtil.convertUrlToPdf(baseUrl + "/magic-pdf")) {
             assertNotNull(pdfStream);
             byte[] pdfBytes = pdfStream.readAllBytes();
