@@ -18,20 +18,23 @@ jobs:
         java: ["17", "21"]
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: ${{ matrix.java }}
           distribution: "temurin"
           cache: "gradle"
       - name: Set up JDK 21 for Gradle Toolchain (if matrix is 17)
         if: matrix.java == '17'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: "21"
           distribution: "temurin"
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Build and Test
-        run: ./gradlew build --stacktrace 2>&1 | tail -150
+        run: |
+          # Propagate the Gradle exit code through the pipe so tail's success does not hide build failures. | 파이프를 거쳐도 Gradle 종료코드를 전달하여 tail 의 성공이 빌드 실패를 가리지 않도록 함
+          set -o pipefail
+          ./gradlew build --stacktrace 2>&1 | tail -150
