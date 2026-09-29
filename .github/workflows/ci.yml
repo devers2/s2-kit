@@ -12,6 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Run inside the s2-support checkout so settings.gradle.kts finds ../s2-util as a sibling. | settings.gradle.kts 가 ../s2-util 을 형제 폴더로 찾도록 s2-support 체크아웃 안에서 실행
+    defaults:
+      run:
+        working-directory: s2-support
     strategy:
       fail-fast: false
       matrix:
@@ -19,12 +23,25 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          path: s2-support
+      # s2-core 1.2.0 is not on Maven Central yet, so build against s2-util main via the composite build. | s2-core 1.2.0 이 아직 Maven Central 에 없으므로 composite build 로 s2-util main 소스를 참조
+      - name: Checkout s2-util (sibling for composite build)
+        uses: actions/checkout@v7
+        with:
+          repository: devers2/s2-util
+          ref: main
+          path: s2-util
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v6
         with:
           java-version: ${{ matrix.java }}
           distribution: "temurin"
           cache: "gradle"
+          cache-dependency-path: |
+            s2-support/**/*.gradle*
+            s2-support/**/gradle-wrapper.properties
+            s2-support/gradle/libs.versions.toml
       - name: Set up JDK 21 for Gradle Toolchain (if matrix is 17)
         if: matrix.java == '17'
         uses: actions/setup-java@v6
