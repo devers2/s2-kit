@@ -20,9 +20,9 @@
  */
 package io.github.devers2.s2util.support;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +31,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Base64;
+import java.util.Objects;
 
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
@@ -52,137 +53,134 @@ public class S2HashUtil {
 
     private static final S2Logger logger = S2LogManager.getLogger(S2HashUtil.class);
 
-    private static final int ITERATION_COUNT = 65536; // 반복 횟수
+    /** Prefix of the current password hash format | 현재 비밀번호 해시 형식의 접두사 */
+    public static final String FORMAT_PREFIX = "s2v2:";
+    /** PBKDF2 iterations for new hashes (OWASP: PBKDF2-HMAC-SHA256 ≥ 310,000) | 새 해시의 반복 횟수 */
+    private static final int ITERATION_COUNT = 310_000;
+    /** Iterations of the 1.x format | 1.x 형식의 반복 횟수 */
+    private static final int LEGACY_ITERATION_COUNT = 65536;
+    /** Upper bound for the iteration count read from a stored hash | 저장된 해시에서 읽는 반복 횟수 상한 */
+    private static final int MAX_ITERATION_COUNT = 10_000_000;
     private static final int KEY_LENGTH = 256; // 출력 길이 (비트)
     private static final int SALT_LENGTH = 16; // 솔트 길이 (바이트)
     private static final String ALGORITHM = "PBKDF2WithHmacSHA256";
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private static final String HASH_ALGORITHM_SHA256 = "SHA-256";
     private static final String HASH_ALGORITHM_SHA512_256 = "SHA-512/256";
     private static final String HASH_ALGORITHM_SHA512 = "SHA-512";
 
-    private static XXHashFactory xxHashFactory;
+    /** Initialized once on first use without locking every call | 매 호출 잠금 없이 최초 사용 시 한 번 초기화 */
+    private static final class XXHashHolder {
+        static final XXHashFactory FACTORY = create();
+
+        private static XXHashFactory create() {
+            try {
+                return XXHashFactory.fastestInstance(); // JNI 모드 우선
+            } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
+                logger.debug("XXHashFactory JNI mode failed, falling back to Java mode: {}", e.getMessage());
+                return XXHashFactory.fastestJavaInstance();
+            }
+        }
+    }
+
+    private S2HashUtil() {
+    }
 
     /**
-     * 주어진 텍스트를 단방향으로 해시 생성.
+     * 주어진 텍스트(비밀번호)를 PBKDF2-HMAC-SHA256 으로 단방향 해시한다.
      *
      * @param text 해시할 원본 텍스트 (예: 비밀번호)
-     * @return Base64로 인코딩된 Salt 와 해시값이 결합된 문자열
-     * @throws NoSuchAlgorithmException 요청된 해시 알고리즘 또는 키 파생 알고리즘이 현재 환경에서 지원되지 않는 경우
-     * @throws InvalidKeySpecException  제공된 키 스펙이 해당 키 파생 알고리즘에 유효하지 않은 경우
+     * @return {@code s2v2:} + Base64(반복 횟수 4바이트 + Salt 16바이트 + 해시 32바이트)
+     * @throws NoSuchAlgorithmException 키 파생 알고리즘을 지원하지 않는 경우
+     * @throws InvalidKeySpecException  키 스펙이 유효하지 않은 경우
      * @details
      *          <dl>
-     *          <dd>Salt 를 생성하여 보안성을 높이고, Base64로 인코딩된 해시값을 반환.</dd>
-     *          <dd>비밀번호 암호화, 높은 보안 요구사항이 있을때는 BCrypt 또는 Argon2 사용을 검토 해야함</dd>
+     *          <dd>반복 횟수를 해시에 저장하므로 이후 반복 횟수를 올려도 기존 해시를 검증할 수 있다. {@link #needsRehash(String)} 참고.</dd>
+     *          <dd>높은 보안 요구사항이 있을때는 BCrypt 또는 Argon2 사용을 검토 해야함</dd>
      *          </dl>
      */
     public static String hash(String text) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        // 랜덤 솔트 생성
-        var salt = generateSalt();
-
-        // PBKDF2로 해시 생성
-        var hash = pbkdf2(text, salt);
-
-        // 솔트와 해시 결합
-        var combined = new byte[salt.length + hash.length];
-        System.arraycopy(salt, 0, combined, 0, salt.length);
-        System.arraycopy(hash, 0, combined, salt.length, hash.length);
-
-        // Base64로 인코딩하여 반환
-        return Base64.getEncoder().encodeToString(combined);
+        var salt = new byte[SALT_LENGTH];
+        RANDOM.nextBytes(salt);
+        var hash = pbkdf2(text, salt, ITERATION_COUNT);
+        var combined = ByteBuffer.allocate(4 + salt.length + hash.length).putInt(ITERATION_COUNT).put(salt).put(hash).array();
+        return FORMAT_PREFIX + Base64.getEncoder().encodeToString(combined);
     }
 
     /**
-     * 저장된 해시값과 입력된 텍스트를 비교하여 일치 여부를 확인.
+     * 저장된 해시값과 입력된 텍스트를 비교하여 일치 여부를 확인한다. {@code s2v2:} 형식과 1.x 형식(접두사 없는 Base64)을 모두 검증한다.
      *
      * @param text       확인할 원본 텍스트 (예: 입력된 비밀번호)
-     * @param storedHash 저장된 Base64 인코딩된 해시값 (Salt + Hash)
-     * @return 해시값이 일치하면 true, 아니면 false
-     * @throws NoSuchAlgorithmException 요청된 해시 알고리즘 또는 키 파생 알고리즘이 현재 환경에서 지원되지 않는 경우
-     * @throws InvalidKeySpecException  제공된 키 스펙이 해당 키 파생 알고리즘에 유효하지 않은 경우
-     * @details
-     *          <dl>
-     *          <dd>암호화된 비밀번호와 입력된 비밀번호 비교, 높은 보안 요구사항이 있을때는 BCrypt 또는 Argon2 사용을 검토 해야함</dd>
-     *          </dl>
+     * @param storedHash 저장된 해시값
+     * @return 일치하면 true, 불일치 또는 형식이 잘못된 해시면 false
+     * @throws NoSuchAlgorithmException 키 파생 알고리즘을 지원하지 않는 경우
+     * @throws InvalidKeySpecException  키 스펙이 유효하지 않은 경우
      */
     public static boolean verify(String text, String storedHash)
             throws NoSuchAlgorithmException, InvalidKeySpecException {
-        if (storedHash == null || storedHash.isBlank()) {
+        var parsed = parse(storedHash);
+        if (parsed == null) {
             return false;
         }
+        return MessageDigest.isEqual(parsed.hash, pbkdf2(text, parsed.salt, parsed.iterations));
+    }
 
-        // 저장된 해시값 디코딩 (형식이 잘못된 Base64 는 불일치로 처리)
+    /**
+     * 저장된 해시를 현재 설정으로 다시 만들어야 하는지 확인한다. 1.x 형식이거나 반복 횟수가 현재보다 적으면 true 이다. 로그인 성공 후
+     * {@link #hash(String)}로 다시 저장하는 데 쓴다.
+     *
+     * @param storedHash 저장된 해시값
+     * @return 다시 해시해야 하면 true
+     */
+    public static boolean needsRehash(String storedHash) {
+        var parsed = parse(storedHash);
+        return parsed == null || parsed.iterations < ITERATION_COUNT;
+    }
+
+    private record ParsedHash(int iterations, byte[] salt, byte[] hash) {
+    }
+
+    /** Null for a malformed value | 형식이 잘못되면 null */
+    private static ParsedHash parse(String storedHash) {
+        if (storedHash == null || storedHash.isBlank()) {
+            return null;
+        }
+        var current = storedHash.startsWith(FORMAT_PREFIX);
         byte[] combined;
         try {
-            combined = Base64.getDecoder().decode(storedHash);
+            combined = Base64.getDecoder().decode(current ? storedHash.substring(FORMAT_PREFIX.length()) : storedHash);
         } catch (IllegalArgumentException e) {
-            return false;
+            return null;
         }
-
-        // Salt 를 분리할 수 없을 만큼 짧은 값도 불일치로 처리 (NegativeArraySizeException 방지)
-        if (combined.length <= SALT_LENGTH) {
-            return false;
+        var buffer = ByteBuffer.wrap(combined);
+        int iterations = LEGACY_ITERATION_COUNT;
+        if (current) {
+            if (combined.length <= 4 + SALT_LENGTH) {
+                return null;
+            }
+            iterations = buffer.getInt();
+            if (iterations < 1 || iterations > MAX_ITERATION_COUNT) {
+                return null;
+            }
+        } else if (combined.length <= SALT_LENGTH) {
+            return null;
         }
-
-        // 솔트와 해시 분리
         var salt = new byte[SALT_LENGTH];
-        var storedHashBytes = new byte[combined.length - salt.length];
-        System.arraycopy(combined, 0, salt, 0, salt.length);
-        System.arraycopy(combined, salt.length, storedHashBytes, 0, storedHashBytes.length);
-
-        // 입력된 텍스트로 새 해시 생성
-        var newHash = pbkdf2(text, salt);
-
-        // 저장된 해시와 새 해시 비교
-        return slowEquals(storedHashBytes, newHash);
+        buffer.get(salt);
+        var hash = new byte[buffer.remaining()];
+        buffer.get(hash);
+        return new ParsedHash(iterations, salt, hash);
     }
 
-    /**
-     * PBKDF2 알고리즘을 사용하여 텍스트를 해시로 변환.
-     *
-     * @param text 해시할 텍스트
-     * @param salt 사용할 솔트
-     * @return 생성된 해시 바이트 배열
-     * @throws NoSuchAlgorithmException 요청된 해시 알고리즘(PBKDF2)이 현재 환경에서 지원되지 않는 경우
-     * @throws InvalidKeySpecException  제공된 키 스펙(비밀번호, 솔트, 반복 횟수, 키 길이)이 PBKDF2 알고리즘에 유효하지 않은 경우
-     */
-    private static byte[] pbkdf2(String text, byte[] salt) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        var spec = new PBEKeySpec(
-                text.toCharArray(),
-                salt,
-                ITERATION_COUNT,
-                KEY_LENGTH);
-        var factory = SecretKeyFactory.getInstance(ALGORITHM);
-        return factory.generateSecret(spec).getEncoded();
-    }
-
-    /**
-     * 암호학적으로 안전한 랜덤 솔트를 생성.
-     *
-     * @return 생성된 솔트 바이트 배열 (길이: 16바이트)
-     */
-    private static byte[] generateSalt() {
-        var salt = new byte[SALT_LENGTH];
-        var random = new SecureRandom();
-        random.nextBytes(salt);
-        return salt;
-    }
-
-    /**
-     * 두 바이트 배열을 시간 차 공격(Timing Attack)에 취약하지 않게 비교.
-     *
-     * @param a 비교할 첫 번째 바이트 배열
-     * @param b 비교할 두 번째 바이트 배열
-     * @return 두 배열이 같으면 true, 다르면 false
-     */
-    private static boolean slowEquals(byte[] a, byte[] b) {
-        if (a.length != b.length)
-            return false;
-        int diff = 0;
-        for (int i = 0; i < a.length; i++) {
-            diff |= a[i] ^ b[i];
+    private static byte[] pbkdf2(String text, byte[] salt, int iterations)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
+        var spec = new PBEKeySpec(text.toCharArray(), salt, iterations, KEY_LENGTH);
+        try {
+            return SecretKeyFactory.getInstance(ALGORITHM).generateSecret(spec).getEncoded();
+        } finally {
+            spec.clearPassword();
         }
-        return diff == 0;
     }
 
     /**
@@ -404,17 +402,16 @@ public class S2HashUtil {
     /**
      * 지정된 알고리즘으로 파일을 해시로 변환하는 공통 구현.
      * generateSHA256/generateSHA512/generateSHA512To256(Path) 가 공유한다.
+     *
+     * @throws NullPointerException input 이 null 일 때
+     * @throws S2RuntimeException   파일을 읽을 수 없을 때 (없는 파일, 디렉토리 등)
      */
     private static String generateHash(String algorithm, Path input) {
-        if (input == null || !Files.exists(input) || !Files.isRegularFile(input) || !Files.isReadable(input)) {
-            return "";
-        }
-
+        Objects.requireNonNull(input, "input");
         try (InputStream inputStream = S2StreamUtil.getBufferedInputStream(Files.newInputStream(input))) {
             return generateHashFromStream(algorithm, inputStream, S2StreamUtil.getBufferSize(Files.size(input)));
-        } catch (IOException | NoSuchAlgorithmException e) {
-            logger.error("{} Hash 오류 발생 [Path]: {}", algorithm, input, e);
-            throw new S2RuntimeException(algorithm + " Hash 오류 발생 [Path]");
+        } catch (IOException e) {
+            throw new S2RuntimeException(algorithm + " 해시 실패 [Path]: " + input, e);
         }
     }
 
@@ -423,15 +420,11 @@ public class S2HashUtil {
      * generateSHA256/generateSHA512/generateSHA512To256(InputStream, boolean) 이 공유한다.
      */
     private static String generateHash(String algorithm, InputStream input, boolean shouldCloseStream) {
-        if (input == null) {
-            return "";
-        }
-
+        Objects.requireNonNull(input, "input");
         try {
             return generateHashFromStream(algorithm, input, null);
-        } catch (IOException | NoSuchAlgorithmException e) {
-            logger.error("{} Hash 오류 발생 [InputStream]", algorithm, e);
-            throw new S2RuntimeException(algorithm + " Hash 오류 발생 [InputStream]");
+        } catch (IOException e) {
+            throw new S2RuntimeException(algorithm + " 해시 실패 [InputStream]", e);
         } finally {
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(input);
@@ -440,20 +433,11 @@ public class S2HashUtil {
     }
 
     /**
-     * 지정된 알고리즘으로 문자열을 해시로 변환하는 공통 구현.
+     * 지정된 알고리즘으로 문자열(UTF-8)을 해시로 변환하는 공통 구현. 빈 문자열도 해시한다.
      * generateSHA256/generateSHA512/generateSHA512To256(String) 이 공유한다.
      */
     private static String generateHash(String algorithm, String input) {
-        if (input == null || input.isBlank()) {
-            return "";
-        }
-
-        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8))) {
-            return generateHashFromStream(algorithm, inputStream, null);
-        } catch (IOException | NoSuchAlgorithmException e) {
-            logger.error("{} Hash 오류 발생 [문자열 변환]", algorithm, e);
-            throw new S2RuntimeException(algorithm + " Hash 오류 발생 [문자열 변환]");
-        }
+        return generateHash(algorithm, Objects.requireNonNull(input, "input").getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -461,21 +445,22 @@ public class S2HashUtil {
      * generateSHA256/generateSHA512/generateSHA512To256(byte[]) 이 공유한다.
      */
     private static String generateHash(String algorithm, byte[] input) {
-        if (input == null) {
-            return "";
-        }
+        Objects.requireNonNull(input, "input");
+        return bytesToHex(messageDigest(algorithm).digest(input));
+    }
 
-        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(input)) {
-            return generateHashFromStream(algorithm, inputStream, null);
-        } catch (IOException | NoSuchAlgorithmException e) {
-            logger.error("{} Hash 오류 발생 [바이트 배열]", algorithm, e);
-            throw new S2RuntimeException(algorithm + " Hash 오류 발생 [바이트 배열]");
+    private static MessageDigest messageDigest(String algorithm) {
+        try {
+            return MessageDigest.getInstance(algorithm);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256/512 are mandatory in every JRE | 모든 JRE 필수 알고리즘
+            throw new IllegalStateException(algorithm + " 을 지원하지 않는 JRE 입니다.", e);
         }
     }
 
     private static String generateHashFromStream(String algorithm, InputStream input, Integer bufferSize)
-            throws IOException, NoSuchAlgorithmException {
-        var md = MessageDigest.getInstance(algorithm);
+            throws IOException {
+        var md = messageDigest(algorithm);
         var buffer = new byte[bufferSize != null && bufferSize > S2StreamUtil.getBufferSize() ? bufferSize
                 : S2StreamUtil.getBufferSize()];
         int bytesRead;
@@ -504,16 +489,11 @@ public class S2HashUtil {
      *          </dl>
      */
     public static String generateXXHash64(long seed, Path input) {
-        if (input == null || !Files.exists(input) || !Files.isRegularFile(input) || !Files.isReadable(input)) {
-            logger.debug("Invalid input file");
-            return "";
-        }
-
+        Objects.requireNonNull(input, "input");
         try (InputStream inputStream = S2StreamUtil.getBufferedInputStream(Files.newInputStream(input))) {
             return generateXXHash64FromStream(seed, S2StreamUtil.getBufferSize(Files.size(input)), false, inputStream);
         } catch (IOException e) {
-            logger.error("XXHash64 Hash 오류 발생 [Path]", e);
-            throw new S2RuntimeException("XXHash64 Hash 오류 발생 [Path]");
+            throw new S2RuntimeException("XXHash64 해시 실패 [Path]: " + input, e);
         }
     }
 
@@ -547,14 +527,13 @@ public class S2HashUtil {
      */
     public static String generateXXHash64(long seed, boolean shouldCloseStream, InputStream... inputs) {
         if (S2Util.isEmpty(inputs)) {
-            return "";
+            throw new IllegalArgumentException("해시할 InputStream 이 없습니다.");
         }
 
         try {
             return generateXXHash64FromStream(seed, null, shouldCloseStream, inputs);
         } catch (IOException e) {
-            logger.error("XXHash64 Hash 오류 발생 [InputStream]", e);
-            throw new S2RuntimeException("XXHash64 Hash 오류 발생 [InputStream]");
+            throw new S2RuntimeException("XXHash64 해시 실패 [InputStream]", e);
         }
     }
 
@@ -570,16 +549,7 @@ public class S2HashUtil {
      *          </dl>
      */
     public static String generateXXHash64(long seed, String input) {
-        if (input == null || input.isBlank()) {
-            return "";
-        }
-
-        try (var inputStream = new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8))) {
-            return generateXXHash64FromStream(seed, null, false, inputStream);
-        } catch (IOException e) {
-            logger.error("XXHash64 Hash 오류 발생 [문자열 변환]", e);
-            throw new S2RuntimeException("XXHash64 Hash 오류 발생 [문자열 변환]");
-        }
+        return generateXXHash64(seed, Objects.requireNonNull(input, "input").getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -594,16 +564,8 @@ public class S2HashUtil {
      *          </dl>
      */
     public static String generateXXHash64(long seed, byte[] input) {
-        if (input == null) {
-            return "";
-        }
-
-        try (var inputStream = new ByteArrayInputStream(input)) {
-            return generateXXHash64FromStream(seed, null, false, inputStream);
-        } catch (IOException e) {
-            logger.error("XXHash64 Hash 오류 발생 [바이트 배열]", e);
-            throw new S2RuntimeException("XXHash64 Hash 오류 발생 [바이트 배열]");
-        }
+        Objects.requireNonNull(input, "input");
+        return String.format("%016x", XXHashHolder.FACTORY.hash64().hash(input, 0, input.length, seed));
     }
 
     /**
@@ -622,23 +584,7 @@ public class S2HashUtil {
      */
     private static String generateXXHash64FromStream(long seed, Integer bufferSize, boolean shouldCloseStream,
             InputStream... inputs) throws IOException {
-        if (S2Util.isEmpty(inputs)) {
-            return "";
-        }
-
-        synchronized (XXHashFactoryLOCK) {
-            if (xxHashFactory == null) {
-                try {
-                    // JNI 모드를 우선으로 XXHashFactory 초기화
-                    xxHashFactory = XXHashFactory.fastestInstance();
-                } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
-                    logger.debug("XXHashFactory JNI mode failed, falling back to Java mode: {}", e.getMessage());
-                    xxHashFactory = XXHashFactory.fastestJavaInstance();
-                }
-            }
-        }
-
-        try (var hash64 = xxHashFactory.newStreamingHash64(seed)) {
+        try (var hash64 = XXHashHolder.FACTORY.newStreamingHash64(seed)) {
             var buffer = new byte[bufferSize != null && bufferSize > S2StreamUtil.getBufferSize() ? bufferSize
                     : S2StreamUtil.getBufferSize()];
 
@@ -651,9 +597,6 @@ public class S2HashUtil {
                     while ((bytesRead = input.read(buffer)) != -1) {
                         hash64.update(buffer, 0, bytesRead);
                     }
-                } catch (IOException e) {
-                    logger.error("스트림 읽기 중 오류 발생", e);
-                    throw e;
                 } finally {
                     if (shouldCloseStream) {
                         S2StreamUtil.closeStream(input);
@@ -665,7 +608,5 @@ public class S2HashUtil {
         }
 
     }
-
-    private static final Object XXHashFactoryLOCK = new Object();
 
 }

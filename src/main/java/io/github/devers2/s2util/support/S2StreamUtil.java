@@ -22,16 +22,15 @@ package io.github.devers2.s2util.support;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.Reader;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2util.log.S2LogManager;
@@ -172,100 +171,108 @@ public class S2StreamUtil {
                         : new BufferedOutputStream(outputStream);
     }
 
+    /** Default limit of {@code streamToByteArray} (50MB) | streamToByteArray 기본 한도 (50MB) */
+    public static final long DEFAULT_MAX_BYTES = 50L * 1024 * 1024;
+
+    /**
+     * InputStream 을 바이트 배열로 변환한다. 최대 {@link #DEFAULT_MAX_BYTES}(50MB)까지 읽는다.
+     *
+     * @param sourceStream      처리할 InputStream
+     * @param shouldCloseStream sourceStream 을 닫을지 여부
+     * @return 바이트 배열
+     * @throws NullPointerException sourceStream 이 null 일 때
+     * @throws S2RuntimeException   읽기 실패 또는 한도 초과 시 (원인 예외 포함)
+     */
+    public static byte[] streamToByteArray(InputStream sourceStream, boolean shouldCloseStream) {
+        return streamToByteArray(sourceStream, shouldCloseStream, DEFAULT_MAX_BYTES);
+    }
+
     /**
      * InputStream 을 바이트 배열로 변환한다.
      *
      * @param sourceStream      처리할 InputStream
      * @param shouldCloseStream sourceStream 을 닫을지 여부
+     * @param maxBytes          최대 바이트 수 (넘으면 예외)
      * @return 바이트 배열
+     * @throws NullPointerException sourceStream 이 null 일 때
+     * @throws S2RuntimeException   읽기 실패 또는 한도 초과 시 (원인 예외 포함)
      */
-    public static byte[] streamToByteArray(InputStream sourceStream, boolean shouldCloseStream) {
-        if (sourceStream == null) {
-            logger.warn("소스 스트림이 null입니다.");
-            return null;
-        }
-
-        var bufferedInput = getBufferedInputStream(sourceStream);
-
-        try (var outputStream = new ByteArrayOutputStream()) {
-            var buffer = new byte[getBufferSize()];
-            int bytesRead;
-            long totalBytesRead = 0;
-            final long maxSize = 50 * 1024 * 1024; // 최대 50MB 제한
-
-            while ((bytesRead = bufferedInput.read(buffer)) != -1) {
-                totalBytesRead += bytesRead;
-                if (totalBytesRead > maxSize) {
-                    logger.error("파일 크기가 최대 허용 크기(50MB)를 초과했습니다.");
-                    return null;
-                }
-                outputStream.write(buffer, 0, bytesRead);
-            }
+    public static byte[] streamToByteArray(InputStream sourceStream, boolean shouldCloseStream, long maxBytes) {
+        Objects.requireNonNull(sourceStream, "sourceStream");
+        try (var outputStream = new LimitedByteArrayOutputStream(maxBytes)) {
+            sourceStream.transferTo(outputStream);
             return outputStream.toByteArray();
         } catch (IOException e) {
-            logger.error("바이트 배열 변환 실패: ", e);
-            return null;
-        } catch (OutOfMemoryError e) {
-            logger.error("메모리 부족 오류 발생: ", e);
-            return null;
+            throw new S2RuntimeException("바이트 배열 변환 실패: " + e.getMessage(), e);
         } finally {
             if (shouldCloseStream) {
-                closeStream(bufferedInput);
+                closeStream(sourceStream);
             }
         }
     }
 
     /**
-     * Reader 을 바이트 배열로 변환한다.
+     * Reader 를 UTF-8 바이트 배열로 변환한다. 최대 {@link #DEFAULT_MAX_BYTES}(50MB)까지 읽는다.
      *
      * @param sourceReader      처리할 Reader
-     * @param shouldCloseStream sourceStream 을 닫을지 여부
-     * @return 바이트 배열
+     * @param shouldCloseStream sourceReader 를 닫을지 여부
+     * @return UTF-8 바이트 배열
+     * @throws NullPointerException sourceReader 가 null 일 때
+     * @throws S2RuntimeException   읽기 실패 또는 한도 초과 시 (원인 예외 포함)
      */
     public static byte[] streamToByteArray(Reader sourceReader, boolean shouldCloseStream) {
-        if (sourceReader == null) {
-            logger.warn("소스 리더가 null입니다.");
-            return null;
-        }
+        return streamToByteArray(sourceReader, shouldCloseStream, DEFAULT_MAX_BYTES);
+    }
 
-        var bufferedReader = new BufferedReader(sourceReader);
-
-        try (var outputStream = new ByteArrayOutputStream()) {
-            var bufferSize = getBufferSize();
-            var charBuffer = CharBuffer.allocate(bufferSize);
-            var byteBuffer = ByteBuffer.allocate(bufferSize * 4);
-            var encoder = StandardCharsets.UTF_8.newEncoder();
-
-            long totalBytesRead = 0;
-            final long maxSize = 50 * 1024 * 1024; // 최대 50MB 제한
-
-            while (bufferedReader.read(charBuffer) != -1) {
-                charBuffer.flip();
-                encoder.encode(charBuffer, byteBuffer, true);
-                byteBuffer.flip();
-
-                var bytesRead = byteBuffer.limit();
-                totalBytesRead += bytesRead;
-
-                if (totalBytesRead > maxSize) {
-                    logger.error("데이터 크기가 최대 허용 크기(50MB)를 초과했습니다.");
-                    return null;
-                }
-
-                outputStream.write(byteBuffer.array(), 0, bytesRead);
-                charBuffer.clear();
-                byteBuffer.clear();
-            }
-            return outputStream.toByteArray();
+    /**
+     * Reader 를 UTF-8 바이트 배열로 변환한다. 버퍼 경계에 걸친 서로게이트 쌍(이모지 등)도 올바르게 인코딩한다.
+     *
+     * @param sourceReader      처리할 Reader
+     * @param shouldCloseStream sourceReader 를 닫을지 여부
+     * @param maxBytes          최대 바이트 수 (넘으면 예외)
+     * @return UTF-8 바이트 배열
+     * @throws NullPointerException sourceReader 가 null 일 때
+     * @throws S2RuntimeException   읽기 실패 또는 한도 초과 시 (원인 예외 포함)
+     */
+    public static byte[] streamToByteArray(Reader sourceReader, boolean shouldCloseStream, long maxBytes) {
+        Objects.requireNonNull(sourceReader, "sourceReader");
+        var outputStream = new LimitedByteArrayOutputStream(maxBytes);
+        // OutputStreamWriter keeps a pending high surrogate until its pair arrives | 짝이 올 때까지 상위 서로게이트를 보관
+        try (var writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
+            sourceReader.transferTo(writer);
         } catch (IOException e) {
-            logger.error("바이트 배열 변환 실패: ", e);
-            return null;
-        } catch (OutOfMemoryError e) {
-            logger.error("메모리 부족 오류 발생: ", e);
-            return null;
+            throw new S2RuntimeException("바이트 배열 변환 실패: " + e.getMessage(), e);
         } finally {
             if (shouldCloseStream) {
-                closeStream(bufferedReader);
+                closeStream(sourceReader);
+            }
+        }
+        return outputStream.toByteArray();
+    }
+
+    /** Fails as soon as more than {@code maxBytes} are written | 한도를 넘는 순간 실패 */
+    private static final class LimitedByteArrayOutputStream extends ByteArrayOutputStream {
+        private final long maxBytes;
+
+        LimitedByteArrayOutputStream(long maxBytes) {
+            this.maxBytes = maxBytes;
+        }
+
+        @Override
+        public synchronized void write(int b) {
+            ensure(1);
+            super.write(b);
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            ensure(len);
+            super.write(b, off, len);
+        }
+
+        private void ensure(int len) {
+            if ((long) count + len > maxBytes) {
+                throw new S2RuntimeException("데이터 크기가 최대 허용 크기(" + maxBytes + " bytes)를 초과했습니다.");
             }
         }
     }
@@ -288,22 +295,15 @@ public class S2StreamUtil {
     }
 
     /**
-     * InputStream 을 문자열로 변환한다.
+     * InputStream 을 UTF-8 문자열로 변환한다. 스트림은 닫지 않는다.
      *
      * @param inputStream InputStream
      * @return 문자열
+     * @throws NullPointerException inputStream 이 null 일 때
+     * @throws S2RuntimeException   읽기 실패 시 (원인 예외 포함)
      */
     public static String convertStreamToString(InputStream inputStream) {
-        try (ByteArrayOutputStream result = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[S2StreamUtil.getBufferSize()];
-            int length;
-            while ((length = inputStream.read(buffer)) != -1) {
-                result.write(buffer, 0, length);
-            }
-            return result.toString(StandardCharsets.UTF_8.name()); // UTF-8 인코딩 사용
-        } catch (IOException e) {
-            throw new S2RuntimeException("InputStream 문자열 변환 오류 발생");
-        }
+        return new String(streamToByteArray(inputStream, false, Long.MAX_VALUE), StandardCharsets.UTF_8);
     }
 
 }

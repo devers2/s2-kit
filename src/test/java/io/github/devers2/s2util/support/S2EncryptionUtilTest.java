@@ -22,6 +22,18 @@ package io.github.devers2.s2util.support;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
+import java.util.Base64;
+
+import javax.crypto.AEADBadTagException;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -100,34 +112,79 @@ class S2EncryptionUtilTest {
     class DecryptFailure {
 
         @Test
-        @DisplayName("잘못된 비밀번호로 복호화하면 원문(암호문)을 반환한다")
+        @DisplayName("잘못된 비밀번호로 복호화하면 예외가 발생한다 (암호문을 돌려주지 않음)")
         void wrongPassword() throws Exception {
-            String plainText = "secret data";
-            String encrypted = S2EncryptionUtil.encrypt(plainText, PASSWORD);
-
-            // 잘못된 비밀번호로 복호화 → 원문(암호문) 반환
-            String result = S2EncryptionUtil.decrypt(encrypted, "wrongPassword");
-            assertEquals(encrypted, result, "잘못된 비밀번호 시 원문(암호문)을 반환해야 한다");
+            String encrypted = S2EncryptionUtil.encrypt("secret data", PASSWORD);
+            assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(encrypted, "wrongPassword"));
         }
 
         @Test
-        @DisplayName("잘못된 Base64 문자열로 복호화하면 원문을 반환한다")
+        @DisplayName("잘못된 Base64 문자열로 복호화하면 예외가 발생한다")
         void invalidBase64() {
-            String invalidData = "not-valid-base64!@#$";
-            String result = S2EncryptionUtil.decrypt(invalidData, PASSWORD);
-            assertEquals(invalidData, result);
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("not-valid-base64!@#$", PASSWORD));
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2v2:%%%", PASSWORD));
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2v2:AAAA", PASSWORD));
         }
 
         @Test
-        @DisplayName("손상된 암호문으로 복호화하면 원문을 반환한다")
-        void corruptedCiphertext() throws Exception {
-            String plainText = "test";
-            String encrypted = S2EncryptionUtil.encrypt(plainText, PASSWORD);
+        @DisplayName("한 바이트라도 변조된 암호문은 복호화되지 않는다 (무결성 검증)")
+        void tamperedCiphertext() throws Exception {
+            String encrypted = S2EncryptionUtil.encrypt("test", PASSWORD);
+            byte[] raw = Base64.getDecoder().decode(encrypted.substring(S2EncryptionUtil.FORMAT_PREFIX.length()));
+            raw[raw.length - 1] ^= 1;
+            String tampered = S2EncryptionUtil.FORMAT_PREFIX + Base64.getEncoder().encodeToString(raw);
+            assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(tampered, PASSWORD));
+        }
 
-            // 암호문 끝부분을 변조
-            String corrupted = encrypted.substring(0, encrypted.length() - 4) + "XXXX";
-            String result = S2EncryptionUtil.decrypt(corrupted, PASSWORD);
-            assertEquals(corrupted, result);
+        @Test
+        @DisplayName("암호문의 반복 횟수가 비정상이면 키 생성 전에 거부한다")
+        void forgedIterationCount() throws Exception {
+            String encrypted = S2EncryptionUtil.encrypt("test", PASSWORD);
+            byte[] raw = Base64.getDecoder().decode(encrypted.substring(S2EncryptionUtil.FORMAT_PREFIX.length()));
+            raw[0] = 0x7f; // ~2 billion iterations
+            String forged = S2EncryptionUtil.FORMAT_PREFIX + Base64.getEncoder().encodeToString(raw);
+            var e = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(forged, PASSWORD));
+            assertTrue(e.getMessage().contains("반복 횟수"));
+        }
+    }
+
+    @Nested
+    @DisplayName("1.x 형식 호환")
+    class LegacyFormat {
+
+        /** Builds a ciphertext exactly as 1.x did (salt 16 + IV 16 + AES-CBC) | 1.x 와 같은 방식으로 암호문 생성 */
+        private String legacyEncrypt(String plain, String password) throws Exception {
+            var random = new SecureRandom();
+            var salt = new byte[16];
+            var iv = new byte[16];
+            random.nextBytes(salt);
+            random.nextBytes(iv);
+            var key = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                    .generateSecret(new PBEKeySpec(password.toCharArray(), salt, 65536, 256)).getEncoded();
+            var cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv));
+            var encrypted = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
+            var combined = new byte[32 + encrypted.length];
+            System.arraycopy(salt, 0, combined, 0, 16);
+            System.arraycopy(iv, 0, combined, 16, 16);
+            System.arraycopy(encrypted, 0, combined, 32, encrypted.length);
+            return Base64.getEncoder().encodeToString(combined);
+        }
+
+        @Test
+        @DisplayName("1.x 로 암호화한 값을 복호화할 수 있다")
+        void decryptsLegacy() throws Exception {
+            String legacy = legacyEncrypt("기존 데이터", PASSWORD);
+            assertTrue(S2EncryptionUtil.isLegacyFormat(legacy));
+            assertEquals("기존 데이터", S2EncryptionUtil.decrypt(legacy, PASSWORD));
+            assertFalse(S2EncryptionUtil.isLegacyFormat(S2EncryptionUtil.encrypt("x", PASSWORD)));
+        }
+
+        @Test
+        @DisplayName("잘린 1.x 암호문은 예외가 발생한다")
+        void legacyTruncated() throws Exception {
+            String legacy = legacyEncrypt("기존 데이터", PASSWORD);
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(legacy.substring(0, 20), PASSWORD));
         }
     }
 }

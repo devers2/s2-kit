@@ -528,8 +528,8 @@ public class S2FileUtil {
      * @param filePrefixToDelete 삭제할 파일의 접두사 ("s2_tmp_": 해당 접두사로 시작하는 파일만 삭제, null: 파일명과 상관없이 삭제)
      * @details
      *          <dl>
-     *          <dd>- 접두사가 있다면 접두사로 시작하는 파일만 삭제</dd>
-     *          <dd>- 디렉토리는 내부 파일 삭제 후 비어 있으면 삭제</dd>
+     *          <dd>- 접두사가 있다면 접두사로 시작하는 파일만 삭제하며, 디렉토리는 지우지 않는다</dd>
+     *          <dd>- 접두사가 없으면 하위 디렉토리가 비면 삭제한다. 시작 디렉토리(deletionPath)는 지우지 않는다</dd>
      *          </dl>
      */
     public static void deleteFilesOlderThan(Path deletionPath, Duration deletionThreshold, String filePrefixToDelete) {
@@ -567,6 +567,10 @@ public class S2FileUtil {
 
                 @Override
                 public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                    // Keep the start directory, and directories when only prefixed files are targeted | 시작 디렉토리와, 접두사 대상일 때의 디렉토리는 유지
+                    if (dir.equals(deletionPath) || (filePrefixToDelete != null && !filePrefixToDelete.isBlank())) {
+                        return FileVisitResult.CONTINUE;
+                    }
                     try {
                         Files.delete(dir);
                     } catch (DirectoryNotEmptyException e) {
@@ -592,13 +596,13 @@ public class S2FileUtil {
      * 특정 기간보다 오래된 임시 파일을 삭제한다
      *
      * @param deletionThreshold  삭제 기준 기간 (Duration.ofDays(1): 만 1일을 포함한 그 이전 파일 삭제, Duration.ofHours(0): 시간과 상관없이 즉시 삭제)
-     * @param filePrefixToDelete 삭제할 파일의 접두사 ("s2_tmp_": 해당 접두사로 시작하는 파일만 삭제, null: 파일명과 상관없이 삭제)
-     * @details
-     *          <dl>
-     *          <dd>- 다른 프로세스가 사용하는 파일을 삭제하면 문제가 생길 수 있으므로 주의가 필요(prefix 를 적극 활용할 필요가 있음)</dd>
-     *          </dl>
+     * @param filePrefixToDelete 삭제할 파일의 접두사 (필수, 예: "s2_tmp_")
+     * @throws IllegalArgumentException 접두사가 비었을 때 (시스템 임시 디렉토리는 다른 프로그램도 쓰므로 전체 삭제를 허용하지 않음)
      */
     public static void deleteTemporaryFilesOlderThan(Duration deletionThreshold, String filePrefixToDelete) {
+        if (filePrefixToDelete == null || filePrefixToDelete.isBlank()) {
+            throw new IllegalArgumentException("임시 파일 삭제에는 접두사가 필요합니다 (다른 프로그램의 임시 파일 보호).");
+        }
         var temporaryPath = FileSystems.getDefault().getPath(System.getProperty("java.io.tmpdir"));
         deleteFilesOlderThan(temporaryPath, deletionThreshold, filePrefixToDelete);
     }

@@ -117,6 +117,60 @@ class S2QueryStringUtilTest {
         }
     }
 
+    @Nested
+    @DisplayName("순서·반복 키·인코딩·프래그먼트")
+    class Preservation {
+
+        @Test
+        @DisplayName("기존 파라미터 순서를 유지하고 새 키는 뒤에 붙는다")
+        void keepsOrder() {
+            assertEquals("/list?z=1&a=2&m=3&page=4",
+                    S2QueryStringUtil.queryStringFromEntries("/list?z=1&a=2&m=3", Map.entry("page", "4")));
+        }
+
+        @Test
+        @DisplayName("대체되는 키는 자리를 유지한다")
+        void replacesInPlace() {
+            assertEquals("/list?z=1&a=9&m=3",
+                    S2QueryStringUtil.queryStringFromEntries("/list?z=1&a=2&m=3", Map.entry("a", "9")));
+        }
+
+        @Test
+        @DisplayName("인코딩된 키와 값은 이중 인코딩되지 않는다")
+        void noDoubleEncoding() {
+            assertEquals("/list?a%5B0%5D=%ED%95%9C+%26",
+                    S2QueryStringUtil.queryStringFromEntries("/list?a%5B0%5D=%ED%95%9C+%26"));
+        }
+
+        @Test
+        @DisplayName("반복 키는 모두 유지된다")
+        void keepsRepeatedKeys() {
+            assertEquals("list?t=1&t=2&page=3",
+                    S2QueryStringUtil.queryStringFromEntries("list?t=1&t=2", Map.entry("page", "3")));
+        }
+
+        @Test
+        @DisplayName("#fragment 는 맨 뒤에 유지된다")
+        void keepsFragment() {
+            assertEquals("list?a=1&page=3#top",
+                    S2QueryStringUtil.queryStringFromEntries("list?a=1#top", Map.entry("page", "3")));
+            assertEquals("1", S2QueryStringUtil.getQueryStringParameter("list?a=1#top", "a"));
+        }
+
+        @Test
+        @DisplayName("잘못된 퍼센트 인코딩은 예외가 발생한다")
+        void malformedEncoding() {
+            assertThrows(IllegalArgumentException.class, () -> S2QueryStringUtil.queryStringFromEntries("list?a=%E"));
+            assertThrows(IllegalArgumentException.class, () -> S2QueryStringUtil.getQueryStringParameter("a=%zz", "a"));
+        }
+
+        @Test
+        @DisplayName("인코딩된 키도 디코딩된 이름으로 조회된다")
+        void decodedKeyLookup() {
+            assertEquals("x", S2QueryStringUtil.getQueryStringParameter("a%5B0%5D=x", "a[0]"));
+        }
+    }
+
     // =========================================================================
     // getQueryStringParameter
     // =========================================================================

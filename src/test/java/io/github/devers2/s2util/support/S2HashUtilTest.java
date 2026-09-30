@@ -93,11 +93,35 @@ class S2HashUtilTest {
         }
 
         @Test
+        @DisplayName("1.x 형식 해시도 검증하며 다시 해시가 필요하다고 알린다")
+        void legacyFormat() throws Exception {
+            var salt = new byte[16];
+            new java.security.SecureRandom().nextBytes(salt);
+            var hash = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+                    .generateSecret(new javax.crypto.spec.PBEKeySpec("pw".toCharArray(), salt, 65536, 256)).getEncoded();
+            var combined = new byte[salt.length + hash.length];
+            System.arraycopy(salt, 0, combined, 0, 16);
+            System.arraycopy(hash, 0, combined, 16, hash.length);
+            var legacy = java.util.Base64.getEncoder().encodeToString(combined);
+
+            assertTrue(S2HashUtil.verify("pw", legacy));
+            assertFalse(S2HashUtil.verify("other", legacy));
+            assertTrue(S2HashUtil.needsRehash(legacy));
+            var current = S2HashUtil.hash("pw");
+            assertTrue(current.startsWith(S2HashUtil.FORMAT_PREFIX));
+            assertFalse(S2HashUtil.needsRehash(current));
+        }
+
+        @Test
         @DisplayName("너무 짧은 storedHash로 verify하면 false를 반환한다")
         void verifyTooShortHash() throws Exception {
             // Salt(16바이트) 이하 길이의 Base64
             String shortBase64 = java.util.Base64.getEncoder().encodeToString(new byte[10]);
             assertFalse(S2HashUtil.verify("text", shortBase64));
+            assertFalse(S2HashUtil.verify("text", S2HashUtil.FORMAT_PREFIX + shortBase64));
+            // A forged huge iteration count is rejected, not computed | 조작된 거대한 반복 횟수는 계산하지 않고 거부
+            var forged = java.nio.ByteBuffer.allocate(4 + 16 + 32).putInt(Integer.MAX_VALUE).array();
+            assertFalse(S2HashUtil.verify("text", S2HashUtil.FORMAT_PREFIX + java.util.Base64.getEncoder().encodeToString(forged)));
         }
     }
 
@@ -150,15 +174,16 @@ class S2HashUtilTest {
         }
 
         @Test
-        @DisplayName("null 문자열은 빈 문자열을 반환한다")
+        @DisplayName("null 문자열은 예외가 발생한다")
         void nullString() {
-            assertEquals("", S2HashUtil.generateSHA256((String) null));
+            assertThrows(NullPointerException.class, () -> S2HashUtil.generateSHA256((String) null));
         }
 
         @Test
-        @DisplayName("빈 문자열은 빈 문자열을 반환한다")
+        @DisplayName("빈 문자열과 공백도 실제 해시를 반환한다")
         void emptyString() {
-            assertEquals("", S2HashUtil.generateSHA256(""));
+            assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", S2HashUtil.generateSHA256(""));
+            assertNotEquals(S2HashUtil.generateSHA256(" "), S2HashUtil.generateSHA256("  "));
         }
     }
 
@@ -181,9 +206,9 @@ class S2HashUtilTest {
         }
 
         @Test
-        @DisplayName("null 바이트 배열은 빈 문자열을 반환한다")
+        @DisplayName("null 바이트 배열은 예외가 발생한다")
         void nullBytes() {
-            assertEquals("", S2HashUtil.generateSHA256((byte[]) null));
+            assertThrows(NullPointerException.class, () -> S2HashUtil.generateSHA256((byte[]) null));
         }
     }
 
@@ -208,9 +233,9 @@ class S2HashUtilTest {
         }
 
         @Test
-        @DisplayName("null InputStream은 빈 문자열을 반환한다")
+        @DisplayName("null InputStream은 예외가 발생한다")
         void nullInputStream() {
-            assertEquals("", S2HashUtil.generateSHA256((java.io.InputStream) null));
+            assertThrows(NullPointerException.class, () -> S2HashUtil.generateSHA256((java.io.InputStream) null));
         }
     }
 
@@ -233,9 +258,12 @@ class S2HashUtilTest {
         }
 
         @Test
-        @DisplayName("null Path는 빈 문자열을 반환한다")
-        void nullPath() {
-            assertEquals("", S2HashUtil.generateSHA256((Path) null));
+        @DisplayName("null Path는 예외, 없는 파일은 원인을 담은 예외가 발생한다")
+        void nullPath(@TempDir Path tempDir) {
+            assertThrows(NullPointerException.class, () -> S2HashUtil.generateSHA256((Path) null));
+            var e = assertThrows(io.github.devers2.s2util.exception.S2RuntimeException.class,
+                    () -> S2HashUtil.generateSHA256(tempDir.resolve("missing.txt")));
+            assertInstanceOf(java.nio.file.NoSuchFileException.class, e.getCause());
         }
     }
 
@@ -272,9 +300,12 @@ class S2HashUtilTest {
         }
 
         @Test
-        @DisplayName("null 문자열은 빈 문자열을 반환한다")
+        @DisplayName("null 문자열은 예외, 빈 문자열은 실제 해시를 반환한다")
         void nullString() {
-            assertEquals("", S2HashUtil.generateXXHash64(0L, (String) null));
+            assertThrows(NullPointerException.class, () -> S2HashUtil.generateXXHash64(0L, (String) null));
+            assertEquals("ef46db3751d8e999", S2HashUtil.generateXXHash64(0L, ""));
+            assertEquals(S2HashUtil.generateXXHash64(7L, "abc"),
+                    S2HashUtil.generateXXHash64(7L, new java.io.ByteArrayInputStream("abc".getBytes())));
         }
 
         @Test

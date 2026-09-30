@@ -128,4 +128,27 @@ class S2FileUtilSecurityTest {
         assertEquals("", S2FileUtil.parseContentDispositionFilename("inline"));
         assertEquals("", S2FileUtil.parseContentDispositionFilename(null));
     }
+
+    @Test
+    void deleteOlderThanRespectsThePrefixAndKeepsTheRoot() throws IOException {
+        var start = Files.createDirectories(root.resolve("clean"));
+        Files.createDirectories(start.resolve("emptyDir"));
+        Files.writeString(start.resolve("s2_tmp_a.txt"), "a");
+        Files.writeString(start.resolve("keep.txt"), "k");
+
+        S2FileUtil.deleteFilesOlderThan(start, java.time.Duration.ZERO, "s2_tmp_");
+        assertFalse(Files.exists(start.resolve("s2_tmp_a.txt")));
+        assertTrue(Files.exists(start.resolve("keep.txt")));
+        assertTrue(Files.isDirectory(start.resolve("emptyDir")), "prefix mode leaves directories alone");
+
+        Files.delete(start.resolve("keep.txt"));
+        S2FileUtil.deleteFilesOlderThan(start, java.time.Duration.ZERO, null);
+        assertFalse(Files.exists(start.resolve("emptyDir")));
+        assertTrue(Files.isDirectory(start), "the start directory is kept");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> S2FileUtil.deleteTemporaryFilesOlderThan(java.time.Duration.ofDays(1), null));
+        assertThrows(IllegalArgumentException.class,
+                () -> S2FileUtil.deleteTemporaryFilesOlderThan(java.time.Duration.ofDays(1), " "));
+    }
 }

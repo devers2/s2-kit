@@ -22,6 +22,21 @@ before upgrading.
   - `S2Util.alert`, `confirm`, `showToast`: a string message is shown as text (`\n` becomes a line break). Pass a DOM
     node for HTML. The toast and modal titles are text.
   - `S2Util.pagination` throws when `jsFunction` is not a function name.
+- ⚠️ **Failures are no longer hidden.** These methods used to return `null`, `""`, `-1` or their input on failure and
+  now throw (with the cause attached):
+  - `S2EncryptionUtil.decrypt` threw nothing and returned the ciphertext on a wrong password; it now throws
+    `GeneralSecurityException` (`AEADBadTagException` for a wrong password or tampered data). `encrypt`/`decrypt` declare
+    `GeneralSecurityException`.
+  - `S2StreamUtil.streamToByteArray` (over 50MB or on I/O errors), `convertStreamToString`.
+  - `S2HashUtil.generateSHA256/512/512To256`, `generateXXHash64`: `null` input throws `NullPointerException`; an empty or
+    blank string is hashed (it used to return `""`); a missing file throws.
+  - `S2ImageUtil.convertImage`, `imageResize`, `convertImageExtension`, `encodeImageToBase64`.
+  - `S2QueryStringUtil`: malformed percent-encoding throws `IllegalArgumentException`.
+  - `S2FileUtil.deleteTemporaryFilesOlderThan` requires a prefix (the system temp directory is shared with other programs).
+- **New encryption and password hash formats** (`s2v2:` prefix). `S2EncryptionUtil` uses AES-256-GCM, so a wrong password
+  or modified data always fails; `S2HashUtil.hash` uses 310,000 PBKDF2 iterations and stores the count. Values written by
+  1.x (no prefix) are still decrypted and verified; `S2EncryptionUtil.isLegacyFormat` and `S2HashUtil.needsRehash` tell
+  when to re-save them.
 - **jsch** moved to the maintained fork `com.github.mwiede:jsch` (same `com.jcraft.jsch` package; supports rsa-sha2 and
   current OpenSSH servers).
 
@@ -50,4 +65,13 @@ before upgrading.
 - `S2FileUtil.zipDirectory` closes the directory stream and always uses `/` in entry names; `unzipFiles` creates missing
   parent directories.
 - `S2SearchVO`: page number, unit and size are at least 1, and `getFirstIndex` no longer overflows to a negative value.
+- `S2StreamUtil.streamToByteArray(Reader)` corrupted characters outside the BMP (emoji) that crossed the 32K buffer boundary.
+- `S2QueryStringUtil.queryStringFromEntries` keeps parameter order, repeated keys and `#fragment`, and no longer
+  double-encodes keys of the existing query (`a%5B0%5D` became `a%255B0%255D`).
+- `S2ImageUtil`: without a fixed ratio, only the side over its limit is reduced (a 400×100 image with max width 200 was
+  left unchanged); images of `TYPE_CUSTOM` no longer fail; transparency is kept in PNG and flattened on white for JPG;
+  resizing uses bicubic interpolation; images over 100 megapixels are refused before decoding; the source file is deleted
+  right after the result is written instead of in a JVM shutdown hook added per call.
+- `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
+  directory.
 - `S2PdfUtil` no longer calls `deleteOnExit` for every temporary file (the JVM kept every path until shutdown).
