@@ -94,6 +94,9 @@ before upgrading.
   right after the result is written instead of in a JVM shutdown hook added per call.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
+- `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL
+  2.0, so `LICENSE-MPL-2.0` was removed. The NOTICE also lists Spring Web, Spring Integration SFTP and JSR-305, marks
+  compile-only and optional dependencies, and names the licenses bundled with the JSch fork (JZlib, jBCrypt).
 - README examples used APIs that do not exist (`S2ContextUtil.getBean`, `S2PaginationInfo` setters). They were replaced,
   and a test compiles them.
 - `S2AnnotationResolver` loads scanned classes without running static initializers, through the base class's class

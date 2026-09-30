@@ -14,7 +14,7 @@ For more details, please refer to the 'LICENSE' file in the root directory.
    - URL: [https://github.com/lz4/lz4-java](https://github.com/lz4/lz4-java)
 
 3. UUID Creator
-   - License: MIT License
+   - License: MIT License (See 'LICENSE-MIT' for details)
    - URL: [https://github.com/f4b6a3/uuid-creator](https://github.com/f4b6a3/uuid-creator)
 
 4. JSch (Java Secure Channel), maintained fork com.github.mwiede:jsch
@@ -23,33 +23,40 @@ For more details, please refer to the 'LICENSE' file in the root directory.
    - Includes jBCrypt: ISC License (See 'LICENSE-JBCRYPT-ISC' for details)
    - URL: [https://github.com/mwiede/jsch](https://github.com/mwiede/jsch)
 
-5. Spring Framework (Context)
+5. Spring Framework (spring-context, spring-web) (Provided/Compile-only Dependency)
    - License: Apache License 2.0
    - URL: [https://spring.io/projects/spring-framework](https://spring.io/projects/spring-framework)
 
-6. Jakarta Servlet API
-   - License: EPL 2.0
+6. Spring Integration SFTP (Provided/Compile-only Dependency)
+   - License: Apache License 2.0
+   - URL: [https://spring.io/projects/spring-integration](https://spring.io/projects/spring-integration)
+
+7. Jakarta Servlet API (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (elected from EPL 2.0 or GPL 2.0 with Classpath Exception; see 'LICENSE-EPL-2.0')
    - URL: [https://github.com/jakartaee/servlet](https://github.com/jakartaee/servlet)
 
-7. Jakarta Server Pages API
-   - License: EPL 2.0
+8. Jakarta Server Pages API (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (elected from EPL 2.0 or GPL 2.0 with Classpath Exception; see 'LICENSE-EPL-2.0')
    - URL: [https://github.com/jakartaee/pages](https://github.com/jakartaee/pages)
 
-8. AspectJ Weaver
-   - License: EPL 2.0
-   - URL: [https://www.eclipse.org/aspectj/](https://www.eclipse.org/aspectj/)
+9. AspectJ Weaver (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (See 'LICENSE-EPL-2.0' for details)
+   - URL: [https://eclipse.dev/aspectj/](https://eclipse.dev/aspectj/)
 
-9. OpenHTMLtoPDF (openhtmltopdf-pdfbox, openhtmltopdf-core)
-   - License: GNU Lesser General Public License, Version 2.1 (LGPL 2.1) / Mozilla Public License 2.0 (MPL 2.0)
-   - URL: [https://github.com/danfickle/openhtmltopdf](https://github.com/danfickle/openhtmltopdf)
+10. JSR-305 Annotations (com.google.code.findbugs:jsr305) (Provided/Compile-only Dependency)
+    - License: Apache License 2.0
+    - URL: [https://github.com/findbugsproject/findbugs](https://github.com/findbugsproject/findbugs)
 
-10. Apache PDFBox (pdfbox, fontbox, pdfbox-io, xmpbox)
+11. OpenHTMLtoPDF (openhtmltopdf-pdfbox, openhtmltopdf-core) (Optional; added by the user for S2PdfUtil)
+    - License: GNU Lesser General Public License, Version 2.1 or later (See 'LICENSE-LGPL-2.1' and 'README-LGPL-2.1-PDF.md')
+    - URL: [https://github.com/openhtmltopdf/openhtmltopdf](https://github.com/openhtmltopdf/openhtmltopdf)
+
+12. Apache PDFBox (pdfbox, fontbox, pdfbox-io, xmpbox) (Optional; transitive dependency of OpenHTMLtoPDF)
     - License: Apache License 2.0
     - URL: [https://pdfbox.apache.org/](https://pdfbox.apache.org/)
 
-11. Jsoup Java HTML Parser
-    - License: MIT License
+13. Jsoup Java HTML Parser (Optional; added by the user for S2PdfUtil)
+    - License: MIT License (See 'LICENSE-MIT' for details)
     - URL: [https://jsoup.org/](https://jsoup.org/)
 
 ---
-

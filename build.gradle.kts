@@ -138,7 +138,6 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "licenses/LICENSE-EPL-2.0",
             "licenses/LICENSE-LGPL-2.1",
             "licenses/LICENSE-MIT",
-            "licenses/LICENSE-MPL-2.0",
             "licenses/LICENSE-JSCH-BSD",
             "licenses/LICENSE-JZLIB-BSD",
             "licenses/LICENSE-JBCRYPT-ISC",
