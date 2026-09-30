@@ -187,4 +187,77 @@ class S2EncryptionUtilTest {
             assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(legacy.substring(0, 20), PASSWORD));
         }
     }
+
+    @Nested
+    @DisplayName("키 방식")
+    class KeyBased {
+
+        private final javax.crypto.SecretKey key = S2EncryptionUtil.generateKey();
+
+        @Test
+        @DisplayName("키로 암호화·복호화하며 같은 평문도 매번 다른 암호문이 나온다")
+        void roundTrip() throws Exception {
+            var enc1 = S2EncryptionUtil.encrypt("010-1234-5678", key);
+            var enc2 = S2EncryptionUtil.encrypt("010-1234-5678", key);
+            assertTrue(enc1.startsWith(S2EncryptionUtil.KEY_FORMAT_PREFIX));
+            assertNotEquals(enc1, enc2);
+            assertEquals("010-1234-5678", S2EncryptionUtil.decrypt(enc1, key));
+            assertEquals("", S2EncryptionUtil.decrypt(S2EncryptionUtil.encrypt("", key), key));
+            assertEquals("한글 😀", S2EncryptionUtil.decrypt(S2EncryptionUtil.encrypt("한글 😀", key), key));
+        }
+
+        @Test
+        @DisplayName("키를 Base64 로 저장했다가 읽어 같은 키로 쓴다")
+        void keyRoundTrip() throws Exception {
+            var stored = S2EncryptionUtil.keyToBase64(key);
+            assertEquals(44, stored.length());
+            var restored = S2EncryptionUtil.keyFromBase64(" " + stored + "\n");
+            assertEquals("x", S2EncryptionUtil.decrypt(S2EncryptionUtil.encrypt("x", key), restored));
+
+            assertThrows(IllegalArgumentException.class, () -> S2EncryptionUtil.keyFromBase64(""));
+            assertThrows(IllegalArgumentException.class, () -> S2EncryptionUtil.keyFromBase64("not base64!"));
+            assertThrows(IllegalArgumentException.class,
+                    () -> S2EncryptionUtil.keyFromBase64(Base64.getEncoder().encodeToString(new byte[16])));
+            assertThrows(IllegalArgumentException.class,
+                    () -> S2EncryptionUtil.encrypt("x", new SecretKeySpec(new byte[16], "AES")));
+        }
+
+        @Test
+        @DisplayName("틀린 키와 변조된 암호문은 복호화되지 않는다")
+        void wrongKeyAndTampering() throws Exception {
+            var enc = S2EncryptionUtil.encrypt("secret", key);
+            assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(enc, S2EncryptionUtil.generateKey()));
+
+            byte[] raw = Base64.getDecoder().decode(enc.substring(S2EncryptionUtil.KEY_FORMAT_PREFIX.length()));
+            raw[raw.length - 1] ^= 1;
+            var tampered = S2EncryptionUtil.KEY_FORMAT_PREFIX + Base64.getEncoder().encodeToString(raw);
+            assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(tampered, key));
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2k1:AAAA", key));
+        }
+
+        @Test
+        @DisplayName("키 방식과 비밀번호 방식 암호문은 섞어 쓸 수 없으며 원인을 알려 준다")
+        void formatsDoNotMix() throws Exception {
+            var byPassword = S2EncryptionUtil.encrypt("x", PASSWORD);
+            var e1 = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(byPassword, key));
+            assertTrue(e1.getMessage().contains("비밀번호 방식"), e1.getMessage());
+
+            var byKey = S2EncryptionUtil.encrypt("x", key);
+            var e2 = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(byKey, PASSWORD));
+            assertTrue(e2.getMessage().contains("키 방식"), e2.getMessage());
+            assertFalse(S2EncryptionUtil.isLegacyFormat(byKey));
+        }
+
+        @Test
+        @DisplayName("1,000건도 빠르게 처리한다 (비밀번호 방식은 1건 수십 ms)")
+        void fastForManyValues() throws Exception {
+            var start = System.nanoTime();
+            for (int i = 0; i < 1000; i++) {
+                var value = "010-0000-" + i;
+                assertEquals(value, S2EncryptionUtil.decrypt(S2EncryptionUtil.encrypt(value, key), key));
+            }
+            var millis = (System.nanoTime() - start) / 1_000_000;
+            assertTrue(millis < 5_000, "1,000 round trips took " + millis + "ms");
+        }
+    }
 }

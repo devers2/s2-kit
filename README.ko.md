@@ -141,8 +141,13 @@ List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "T
 #### 암호화·비밀번호 해시 (`S2EncryptionUtil`, `S2HashUtil`)
 
 ```java
-String encrypted = S2EncryptionUtil.encrypt("비밀 문자열", key);    // "s2v2:..." (AES-256-GCM)
+// 여러 건(DB 컬럼, 목록 화면): 비밀 저장소에 둔 무작위 키, 빠름 (1건 1ms 미만)
+SecretKey key = S2EncryptionUtil.keyFromBase64(System.getenv("APP_ENCRYPTION_KEY")); // generateKey()로 한 번 생성
+String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:..." (AES-256-GCM)
 String plain = S2EncryptionUtil.decrypt(encrypted, key);           // 틀린 키 → GeneralSecurityException
+
+// 사람이 입력한 비밀번호로 가끔: 일부러 느림 (PBKDF2, 1건 약 70ms)
+String sealed = S2EncryptionUtil.encrypt("비밀 문자열", password);   // "s2v2:..."
 
 String stored = S2HashUtil.hash(password);                          // PBKDF2, 반복 횟수 함께 저장
 if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {

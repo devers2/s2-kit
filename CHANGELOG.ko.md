@@ -61,6 +61,13 @@
   실패하면 쓰다 만 파일을 지웁니다. 실패 시 `-1` 대신 예외를 던집니다.
 - **jsch** 를 유지보수되는 포크 `com.github.mwiede:jsch`로 바꿨습니다(패키지 `com.jcraft.jsch` 동일, rsa-sha2 와 최신 OpenSSH 지원).
 
+### 추가
+
+- 여러 건을 처리하기 위한 `S2EncryptionUtil` 키 방식: `generateKey()`, `keyToBase64`/`keyFromBase64`, `encrypt(text, SecretKey)`/
+  `decrypt(text, SecretKey)`(AES-256-GCM, 접두사 `s2k1:`, 1건 1ms 미만, 1,000건 왕복 약 0.1초). 비밀번호 방식은 사람이 입력한 비밀번호로 가끔
+  쓰도록 일부러 느리게(PBKDF2, 1건 약 70ms) 유지합니다. 두 형식은 섞어 쓸 수 없으며, 다른 API 로 복호화하면 맞는 API 를 알려 주는 예외가
+  납니다.
+
 ### 보안
 
 - `S2FileUtil.unzipFiles`는 대상 디렉토리 밖을 가리키는 항목(Zip Slip)을 거부하고 항목 수와 해제 크기를 제한합니다(기본 1만 개, 1 GiB,

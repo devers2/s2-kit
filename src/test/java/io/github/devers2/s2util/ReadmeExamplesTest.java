@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import javax.crypto.SecretKey;
+
 import org.junit.jupiter.api.Test;
 
 import io.github.devers2.s2util.file.FileManager;
@@ -51,13 +53,17 @@ class ReadmeExamplesTest {
 
     @Test
     void encryptionAndHashing() throws Exception {
-        var key = "app-secret";
-        String encrypted = S2EncryptionUtil.encrypt("secret text", key);
+        var appEncryptionKey = S2EncryptionUtil.keyToBase64(S2EncryptionUtil.generateKey()); // stands in for APP_ENCRYPTION_KEY
+        SecretKey key = S2EncryptionUtil.keyFromBase64(appEncryptionKey);
+        String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key);
         String plain = S2EncryptionUtil.decrypt(encrypted, key);
-        assertEquals("secret text", plain);
+        assertEquals("010-1234-5678", plain);
 
-        var password = "pw";
-        var input = "pw";
+        var password = "typed by a person";
+        String sealed = S2EncryptionUtil.encrypt("secret text", password);
+        assertEquals("secret text", S2EncryptionUtil.decrypt(sealed, password));
+
+        var input = password;
         String stored = S2HashUtil.hash(password);
         if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
             stored = S2HashUtil.hash(input);
@@ -90,6 +96,7 @@ class ReadmeExamplesTest {
             assertTrue(text.contains("new S2PaginationInfo<>(searchVO, list, total)"), readme);
             assertTrue(text.contains("searchVO.getOrderByList(List.of(\"REG_DT\", \"TITLE\"))"), readme);
             assertTrue(text.contains("S2HashUtil.needsRehash(stored)"), readme);
+            assertTrue(text.contains("S2EncryptionUtil.keyFromBase64(System.getenv(\"APP_ENCRYPTION_KEY\"))"), readme);
             assertTrue(text.contains("\"/etc/ssh/known_hosts_sftp\", false)"), readme);
             assertTrue(text.contains("S2JsonUtil.fromJson(json, MyDto.class)"), readme);
             assertFalse(text.contains("getBean("), readme);

@@ -72,6 +72,14 @@ before upgrading.
 - **jsch** moved to the maintained fork `com.github.mwiede:jsch` (same `com.jcraft.jsch` package; supports rsa-sha2 and
   current OpenSSH servers).
 
+### Added
+
+- Key-based encryption in `S2EncryptionUtil` for many values: `generateKey()`, `keyToBase64`/`keyFromBase64`,
+  `encrypt(text, SecretKey)`/`decrypt(text, SecretKey)` (AES-256-GCM, `s2k1:` prefix, under 1 ms per value; 1,000 round
+  trips take about 0.1 s). The password-based API stays deliberately slow (PBKDF2, about 70 ms per value) for occasional
+  use with a password typed by a person. The two formats cannot be mixed; decrypting with the other API throws a message
+  naming the right one.
+
 ### Security
 
 - `S2FileUtil.unzipFiles` rejects entries that point outside the target directory (Zip Slip) and limits the number of

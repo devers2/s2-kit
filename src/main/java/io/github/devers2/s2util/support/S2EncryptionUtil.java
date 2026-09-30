@@ -37,7 +37,19 @@ import javax.crypto.spec.SecretKeySpec;
 /**
  * s2's Encryption utilities
  * <p>
- * 비밀번호 기반 AES-256 암호화. 형식은 {@code s2v2:} + Base64(반복 횟수 4바이트 + Salt 16바이트 + IV 12바이트 + 암호문·인증 태그)이며,
+ * AES-256-GCM 암호화를 두 가지 방식으로 제공한다. 두 방식의 암호문은 접두사로 구분되며 서로 섞어 쓸 수 없다.
+ * </p>
+ * <ul>
+ * <li><b>키 방식</b> ({@link #encrypt(String, SecretKey)}, 접두사 {@code s2k1:}): {@link #generateKey()}로 만든 무작위 키를 설정·비밀 저장소에
+ * 보관하고 계속 사용한다. 호출마다 AES 만 수행하므로 빠르다(1건 1ms 미만). DB 컬럼 암호화, 목록 화면 복호화처럼 여러 건을 처리할 때 쓴다.</li>
+ * <li><b>비밀번호 방식</b> ({@link #encrypt(String, String)}, 접두사 {@code s2v2:}): 사람이 입력한 비밀번호에서 매번 PBKDF2(65,536회)로 키를
+ * 만든다. 추측 공격을 늦추려고 일부러 느리게(1건 약 70ms) 만든 것이므로 가끔 한 건씩 쓸 때 사용한다.</li>
+ * </ul>
+ * <p>
+ * 로그인 비밀번호처럼 원문을 다시 꺼낼 필요가 없는 값은 암호화가 아니라 {@link S2HashUtil#hash(String)}로 저장한다.
+ * </p>
+ * <p>
+ * 비밀번호 방식 AES-256 암호화. 형식은 {@code s2v2:} + Base64(반복 횟수 4바이트 + Salt 16바이트 + IV 12바이트 + 암호문·인증 태그)이며,
  * AES-GCM 이므로 비밀번호가 틀리거나 데이터가 바뀌면 복호화가 반드시 실패한다.
  * </p>
  * <p>
@@ -51,8 +63,13 @@ import javax.crypto.spec.SecretKeySpec;
  */
 public class S2EncryptionUtil {
 
-    /** Prefix of the current format | 현재 형식의 접두사 */
+    /** Prefix of the password-based format | 비밀번호 방식 형식의 접두사 */
     public static final String FORMAT_PREFIX = "s2v2:";
+
+    /** Prefix of the key-based format: Base64(IV 12 bytes + ciphertext and tag) | 키 방식 형식의 접두사 */
+    public static final String KEY_FORMAT_PREFIX = "s2k1:";
+
+    private static final int KEY_BYTES = 32;
 
     private static final int KEY_LENGTH = 256;
     private static final int ITERATION_COUNT = 65536;
@@ -104,6 +121,9 @@ public class S2EncryptionUtil {
      * @throws NullPointerException     encryptedText 또는 password 가 null 일 때
      */
     public static String decrypt(String encryptedText, String password) throws GeneralSecurityException {
+        if (encryptedText.startsWith(KEY_FORMAT_PREFIX)) {
+            throw new GeneralSecurityException("키 방식(s2k1:) 암호문입니다. decrypt(String, SecretKey)로 복호화하십시오.");
+        }
         byte[] combined;
         var current = encryptedText.startsWith(FORMAT_PREFIX);
         try {
@@ -121,7 +141,123 @@ public class S2EncryptionUtil {
      * @return 1.x 형식 여부
      */
     public static boolean isLegacyFormat(String encryptedText) {
-        return encryptedText != null && !encryptedText.startsWith(FORMAT_PREFIX);
+        return encryptedText != null && !encryptedText.startsWith(FORMAT_PREFIX)
+                && !encryptedText.startsWith(KEY_FORMAT_PREFIX);
+    }
+
+    // ------------------------------------------------------------------------
+    // Key-based API | 키 방식
+
+    /**
+     * 키 방식에 쓸 무작위 AES-256 키를 만든다. 한 번 만들어 {@link #keyToBase64(SecretKey)}로 환경 변수나 비밀 저장소에 보관하고 계속 사용한다.
+     * 키를 잃으면 암호문을 복호화할 수 없고, 키가 유출되면 모든 암호문이 노출된다.
+     *
+     * @return 256비트 AES 키
+     * @apiNote
+     *
+     *          <pre>{@code
+     * // 한 번 실행해 출력값을 비밀 저장소에 보관 (예: 환경 변수 APP_ENCRYPTION_KEY)
+     * System.out.println(S2EncryptionUtil.keyToBase64(S2EncryptionUtil.generateKey()));
+     *
+     * // 애플리케이션 시작 시 한 번 읽어 재사용
+     * SecretKey key = S2EncryptionUtil.keyFromBase64(System.getenv("APP_ENCRYPTION_KEY"));
+     * String enc = S2EncryptionUtil.encrypt("010-1234-5678", key);
+     * String dec = S2EncryptionUtil.decrypt(enc, key);
+     * }</pre>
+     */
+    public static SecretKey generateKey() {
+        return new SecretKeySpec(randomBytes(KEY_BYTES), "AES");
+    }
+
+    /**
+     * 키를 저장용 Base64 문자열로 바꾼다.
+     *
+     * @param key AES-256 키
+     * @return Base64 문자열 (44자)
+     * @throws IllegalArgumentException AES-256 키가 아닐 때
+     */
+    public static String keyToBase64(SecretKey key) {
+        return Base64.getEncoder().encodeToString(checkKey(key).getEncoded());
+    }
+
+    /**
+     * {@link #keyToBase64(SecretKey)}로 저장한 문자열에서 키를 읽는다.
+     *
+     * @param base64 Base64 문자열 (앞뒤 공백 허용)
+     * @return AES-256 키
+     * @throws IllegalArgumentException 비었거나 Base64 가 아니거나 256비트 키가 아닐 때
+     */
+    public static SecretKey keyFromBase64(String base64) {
+        if (base64 == null || base64.isBlank()) {
+            throw new IllegalArgumentException("키가 비었습니다.");
+        }
+        byte[] bytes;
+        try {
+            bytes = Base64.getDecoder().decode(base64.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("키가 Base64 형식이 아닙니다.", e);
+        }
+        if (bytes.length != KEY_BYTES) {
+            throw new IllegalArgumentException("AES-256 키는 32바이트여야 합니다: " + bytes.length + "바이트");
+        }
+        return new SecretKeySpec(bytes, "AES");
+    }
+
+    /**
+     * 키로 평문을 AES-256-GCM 암호화한다. 호출마다 새 IV 를 쓰므로 같은 평문도 매번 다른 암호문이 나온다.
+     *
+     * @param plainText 암호화할 원본 텍스트
+     * @param key       {@link #generateKey()} 또는 {@link #keyFromBase64(String)}로 얻은 키
+     * @return {@code s2k1:}로 시작하는 암호문
+     * @throws GeneralSecurityException 암호화 알고리즘을 사용할 수 없을 때
+     * @throws IllegalArgumentException AES-256 키가 아닐 때
+     */
+    public static String encrypt(String plainText, SecretKey key) throws GeneralSecurityException {
+        var iv = randomBytes(GCM_IV_LENGTH);
+        var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, iv));
+        var encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+        var combined = ByteBuffer.allocate(iv.length + encrypted.length).put(iv).put(encrypted).array();
+        return KEY_FORMAT_PREFIX + Base64.getEncoder().encodeToString(combined);
+    }
+
+    /**
+     * 키로 암호문을 복호화한다.
+     *
+     * @param encryptedText {@link #encrypt(String, SecretKey)}로 만든 암호문
+     * @param key           암호화에 쓴 키
+     * @return 복호화된 원본 텍스트
+     * @throws GeneralSecurityException 키가 틀렸거나 데이터가 손상·변조되었을 때({@code javax.crypto.AEADBadTagException}), 비밀번호 방식 암호문이거나 형식이
+     *                                  잘못되었을 때
+     * @throws IllegalArgumentException AES-256 키가 아닐 때
+     */
+    public static String decrypt(String encryptedText, SecretKey key) throws GeneralSecurityException {
+        if (!encryptedText.startsWith(KEY_FORMAT_PREFIX)) {
+            throw new GeneralSecurityException(encryptedText.startsWith(FORMAT_PREFIX) || isLegacyFormat(encryptedText)
+                    ? "비밀번호 방식 암호문입니다. decrypt(String, String)으로 복호화하십시오."
+                    : "키 방식 암호문이 아닙니다.");
+        }
+        byte[] combined;
+        try {
+            combined = Base64.getDecoder().decode(encryptedText.substring(KEY_FORMAT_PREFIX.length()));
+        } catch (IllegalArgumentException e) {
+            throw new GeneralSecurityException("암호문이 Base64 형식이 아닙니다.", e);
+        }
+        if (combined.length < GCM_IV_LENGTH + GCM_TAG_BITS / 8) {
+            throw new GeneralSecurityException("암호문이 너무 짧습니다.");
+        }
+        var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, combined, 0, GCM_IV_LENGTH));
+        return new String(cipher.doFinal(combined, GCM_IV_LENGTH, combined.length - GCM_IV_LENGTH), StandardCharsets.UTF_8);
+    }
+
+    private static SecretKey checkKey(SecretKey key) {
+        java.util.Objects.requireNonNull(key, "key");
+        var encoded = key.getEncoded();
+        if (!"AES".equalsIgnoreCase(key.getAlgorithm()) || encoded == null || encoded.length != KEY_BYTES) {
+            throw new IllegalArgumentException("AES-256 키가 필요합니다 (generateKey() 또는 keyFromBase64()).");
+        }
+        return key;
     }
 
     private static String decryptCurrent(byte[] combined, String password) throws GeneralSecurityException {

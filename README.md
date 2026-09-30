@@ -141,8 +141,13 @@ List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "T
 #### Encryption and password hashing (`S2EncryptionUtil`, `S2HashUtil`)
 
 ```java
-String encrypted = S2EncryptionUtil.encrypt("secret text", key);   // "s2v2:..." (AES-256-GCM)
+// Many values (DB columns, list pages): a random key kept in a secret store, fast (< 1 ms per value)
+SecretKey key = S2EncryptionUtil.keyFromBase64(System.getenv("APP_ENCRYPTION_KEY")); // made once by generateKey()
+String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:..." (AES-256-GCM)
 String plain = S2EncryptionUtil.decrypt(encrypted, key);           // wrong key → GeneralSecurityException
+
+// A password typed by a person, occasionally: deliberately slow (PBKDF2, ~70 ms per value)
+String sealed = S2EncryptionUtil.encrypt("secret text", password); // "s2v2:..."
 
 String stored = S2HashUtil.hash(password);                          // PBKDF2, iteration count stored
 if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
