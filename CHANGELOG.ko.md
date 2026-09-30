@@ -30,6 +30,11 @@
   - `S2ImageUtil.convertImage`, `imageResize`, `convertImageExtension`, `encodeImageToBase64`.
   - `S2QueryStringUtil`: 잘못된 퍼센트 인코딩은 `IllegalArgumentException`.
   - `S2FileUtil.deleteTemporaryFilesOlderThan`은 접두사가 필수입니다(시스템 임시 디렉토리는 다른 프로그램과 공유).
+  - `S2FileUtil` 파일 작업: `streamToFile`, `streamToTempFile`(`-1`/`null` 반환이었음, 실패 시 쓰다 만 파일도 삭제), `processStreamWithTempFile`
+    (처리기를 `null`로 호출했음), `makeDirectory`(새로 만들면 `true`, 이미 있으면 `false`), `delete`(삭제하면 `true`, 없으면 `false`,
+    지울 수 없는 항목이 있으면 나머지를 지운 뒤 예외), `getSize`, `fileToReader`/`fileToInputStream`(빈 경로). `finally`·Cleaner 의 정리는
+    예외 대신 로그를 남기는 새 `deleteQuietly`를 씁니다.
+  - 파일 관리자 없이 부르는 `FileManager.downloadRemoteFile`도 `writeFile` 규칙을 따라 덮어쓰지 않습니다.
 - **암호화·비밀번호 해시 형식 변경**(`s2v2:` 접두사). `S2EncryptionUtil`은 AES-256-GCM 이라 틀린 비밀번호나 변조된 데이터는 반드시
   실패합니다. `S2HashUtil.hash`는 PBKDF2 310,000 회를 쓰며 반복 횟수를 함께 저장합니다. 1.x 로 만든 값(접두사 없음)도 계속 복호화·검증되며,
   `S2EncryptionUtil.isLegacyFormat`, `S2HashUtil.needsRehash`로 다시 저장할 대상을 알 수 있습니다.

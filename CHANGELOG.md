@@ -33,6 +33,12 @@ before upgrading.
   - `S2ImageUtil.convertImage`, `imageResize`, `convertImageExtension`, `encodeImageToBase64`.
   - `S2QueryStringUtil`: malformed percent-encoding throws `IllegalArgumentException`.
   - `S2FileUtil.deleteTemporaryFilesOlderThan` requires a prefix (the system temp directory is shared with other programs).
+  - `S2FileUtil` file operations: `streamToFile`, `streamToTempFile` (were `-1`/`null`; a failed write now also removes
+    its partial file), `processStreamWithTempFile` (called the processor with `null`), `makeDirectory` (now `true` when
+    created, `false` when it already existed), `delete` (`true` when deleted, `false` when absent; a path that cannot be
+    deleted throws after the rest is removed), `getSize`, `fileToReader`/`fileToInputStream` (blank paths). Cleanup in
+    `finally` blocks and cleaners uses the new `deleteQuietly`, which logs instead of throwing.
+  - `FileManager.downloadRemoteFile` without a file manager follows the `writeFile` rule and does not overwrite.
 - **New encryption and password hash formats** (`s2v2:` prefix). `S2EncryptionUtil` uses AES-256-GCM, so a wrong password
   or modified data always fails; `S2HashUtil.hash` uses 310,000 PBKDF2 iterations and stores the count. Values written by
   1.x (no prefix) are still decrypted and verified; `S2EncryptionUtil.isLegacyFormat` and `S2HashUtil.needsRehash` tell

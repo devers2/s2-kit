@@ -229,49 +229,39 @@ public class S2FileUtil {
     }
 
     /**
-     * 파일 시스템의 디렉토리 생성
+     * 파일 시스템의 디렉토리를 만든다. 상위 디렉토리도 함께 만든다.
      *
      * @param path 생성할 경로(문자열)
-     * @return 생성 여부
+     * @return 새로 만들었으면 true, 이미 있었으면 false
+     * @throws IllegalArgumentException 경로가 비었을 때
+     * @throws S2RuntimeException       만들지 못했을 때 (권한, 같은 이름의 파일 등, 원인 포함)
      */
     public static boolean makeDirectory(String path) {
-        var result = false;
-        if (path != null && !path.isBlank()) {
-            result = makeDirectory(Paths.get(path));
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("디렉토리 경로가 비었습니다.");
         }
-        return result;
+        return makeDirectory(Paths.get(path));
     }
 
     /**
-     * 파일 시스템의 디렉토리 생성
+     * 파일 시스템의 디렉토리를 만든다. 상위 디렉토리도 함께 만든다.
      *
      * @param path 생성할 경로(Path)
-     * @return 생성 여부
+     * @return 새로 만들었으면 true, 이미 있었으면 false
+     * @throws NullPointerException path 가 null 일 때
+     * @throws S2RuntimeException   만들지 못했을 때 (권한, 같은 이름의 파일 등, 원인 포함)
      */
     public static boolean makeDirectory(Path path) {
-        boolean result = false;
-
-        if (path != null) {
-            try {
-                if (!Files.exists(path)) {
-                    Files.createDirectories(path);
-                    if (Files.exists(path)) {
-                        result = true;
-                    } else {
-                        logger.error("디렉토리 생성 확인 실패: {}", path);
-                    }
-                } else {
-                    result = true;
-                }
-            } catch (NoSuchFileException e) {
-                logger.error("디렉토리 생성 실패 (상위 디렉토리 없음): {}", path, e);
-            } catch (AccessDeniedException e) {
-                logger.error("디렉토리 생성 실패 (권한 없음): {}", path, e);
-            } catch (IOException e) {
-                logger.error("디렉토리 생성 실패: {}", path, e);
-            }
+        Objects.requireNonNull(path, "path");
+        if (Files.isDirectory(path)) {
+            return false;
         }
-        return result;
+        try {
+            Files.createDirectories(path);
+            return true;
+        } catch (IOException e) {
+            throw new S2RuntimeException("디렉토리 생성 실패: " + path + " (" + e + ")", e);
+        }
     }
 
     /**
@@ -449,77 +439,58 @@ public class S2FileUtil {
     }
 
     /**
-     * 주어진 경로(파일 또는 디렉토리)와 그 하위 모든 콘텐츠를 삭제
+     * 주어진 경로(파일 또는 디렉토리)와 그 하위 모든 콘텐츠를 삭제한다.
      *
-     * @param delPath 삭제할 경로 (파일 또는 디렉토리 경로)
-     * @return 삭제 성공 여부 (true: 하나 이상 삭제 성공 또는 경로 없음, false: 삭제 실패 또는 null 입력)
-     * @details
-     *          <dl>
-     *          <dd>- 단일 파일이면 파일만 삭제.</dd>
-     *          <dd>- 디렉토리면 디렉토리와 하위 모든 파일/폴더를 재귀적으로 삭제.</dd>
-     *          <dd>- 경로가 존재하지 않으면 성공(true)으로 처리.</dd>
-     *          <dd>- 하나라도 삭제 성공 시 true 반환, 실패 시 로깅 후 false 반환 가능.</dd>
-     *          </dl>
+     * @param delPath 삭제할 경로 (파일 또는 디렉토리 경로, null 이면 아무것도 하지 않음)
+     * @return 삭제했으면 true, 경로가 원래 없었으면(또는 null) false
+     * @throws S2RuntimeException 삭제하지 못한 항목이 있을 때 (나머지는 삭제를 시도한 뒤, 첫 원인 포함)
      */
     public static boolean delete(String delPath) {
-        if (delPath == null) {
-            return false;
-        }
-
-        return delete(Paths.get(delPath));
+        return delPath != null && delete(Paths.get(delPath));
     }
 
     /**
-     * 주어진 경로(파일 또는 디렉토리)와 그 하위 모든 콘텐츠를 삭제
+     * 주어진 경로(파일 또는 디렉토리)와 그 하위 모든 콘텐츠를 삭제한다.
+     * <p>
+     * 디렉토리는 하위 항목부터 모두 삭제를 시도하고, 하나라도 실패하면 끝까지 시도한 뒤 예외를 던진다. 권한 문제 등으로 남은 파일이 있는데
+     * 성공으로 알리지 않는다.
+     * </p>
      *
-     * @param delPath 삭제할 경로 (파일 또는 디렉토리 경로)
-     * @return 삭제 성공 여부 (true: 하나 이상 삭제 성공 또는 경로 없음, false: 삭제 실패 또는 null 입력)
-     * @details
-     *          <dl>
-     *          <dd>- 단일 파일이면 파일만 삭제.</dd>
-     *          <dd>- 디렉토리면 디렉토리와 하위 모든 파일/폴더를 재귀적으로 삭제.</dd>
-     *          <dd>- 경로가 존재하지 않으면 성공(true)으로 처리.</dd>
-     *          <dd>- 하나라도 삭제 성공 시 true 반환, 실패 시 로깅 후 false 반환 가능.</dd>
-     *          </dl>
+     * @param delPath 삭제할 경로 (파일 또는 디렉토리 경로, null 이면 아무것도 하지 않음)
+     * @return 삭제했으면 true, 경로가 원래 없었으면(또는 null) false
+     * @throws S2RuntimeException 삭제하지 못한 항목이 있을 때 (첫 원인 포함, 나머지는 suppressed)
      */
     public static boolean delete(Path delPath) {
-        var success = new AtomicBoolean(false);
-        if (delPath == null) {
+        if (delPath == null || !Files.exists(delPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             return false;
         }
-
-        if (!Files.exists(delPath)) {
-            success.set(true); // 존재하지 않는 경로는 성공으로 처리
-            return success.get();
-        }
-
-        // 단일 파일이면 직접 삭제
-        if (Files.isRegularFile(delPath)) {
+        var failures = new ArrayList<IOException>();
+        if (Files.isDirectory(delPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            try (var paths = Files.walk(delPath)) {
+                // Children before parents | 하위 항목부터
+                for (var path : (Iterable<Path>) paths.sorted(Comparator.reverseOrder())::iterator) {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (IOException e) {
+                        failures.add(e);
+                    }
+                }
+            } catch (IOException | java.io.UncheckedIOException e) {
+                failures.add(e instanceof IOException io ? io : ((java.io.UncheckedIOException) e).getCause());
+            }
+        } else {
             try {
                 Files.deleteIfExists(delPath);
-                success.set(true);
             } catch (IOException e) {
-                logger.error("File 삭제 실패: {} {}", delPath.toString(), e.getMessage(), e);
+                failures.add(e);
             }
-            return success.get();
         }
-
-        // 디렉토리면 재귀 삭제
-        try (var sPath = Files.walk(delPath)) {
-            // 하위 항목부터 상위 항목 순으로 정렬하여 삭제
-            sPath.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p); // 파일 또는 빈 디렉토리 삭제
-                    success.set(true);
-                } catch (IOException e) {
-                    logger.error("Path 삭제 실패: {} {}", p, e.getMessage(), e);
-                }
-            });
-        } catch (IOException e) {
-            logger.error("Path 탐색 또는 삭제 중 오류: {} {}", delPath.toString(), e.getMessage(), e);
+        if (!failures.isEmpty()) {
+            var error = new S2RuntimeException("삭제 실패: " + delPath + " (" + failures.get(0) + ")", failures.get(0));
+            failures.stream().skip(1).forEach(error::addSuppressed);
+            throw error;
         }
-
-        return success.get();
+        return true;
     }
 
     /**
@@ -630,13 +601,13 @@ public class S2FileUtil {
      *
      * @param fileFullPath 파일 전체 경로(문자열)
      * @return InputStream
+     * @throws S2RuntimeException 파일을 열 수 없을 때 (원인 포함)
      */
     public static Reader fileToReader(String fileFullPath) {
-        Reader result = null;
-        if (fileFullPath != null && !fileFullPath.isBlank()) {
-            result = fileToReader(Paths.get(fileFullPath));
+        if (fileFullPath == null || fileFullPath.isBlank()) {
+            throw new IllegalArgumentException("파일 경로가 비었습니다.");
         }
-        return result;
+        return fileToReader(Paths.get(fileFullPath));
     }
 
     /**
@@ -644,20 +615,15 @@ public class S2FileUtil {
      *
      * @param fileFullPath 파일 전체 경로(Path)
      * @return InputStream
+     * @throws S2RuntimeException 파일을 열 수 없을 때 (원인 포함)
      */
     public static Reader fileToReader(Path fileFullPath) {
-        Reader result = null;
-        if (fileFullPath != null) {
-            if (S2Util.isNotEmpty(fileFullPath)) {
-                try {
-                    result = Files.newBufferedReader(fileFullPath, StandardCharsets.UTF_8);
-                } catch (IOException e) {
-                    logger.error("파일을 열지 못했습니다.", e);
-                    throw new S2RuntimeException("파일을 열지 못했습니다.");
-                }
-            }
+        Objects.requireNonNull(fileFullPath, "fileFullPath");
+        try {
+            return Files.newBufferedReader(fileFullPath, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new S2RuntimeException("파일을 열지 못했습니다: " + fileFullPath + " (" + e + ")", e);
         }
-        return result;
     }
 
     /**
@@ -665,13 +631,13 @@ public class S2FileUtil {
      *
      * @param fileFullPath 파일 전체 경로(문자열)
      * @return InputStream
+     * @throws S2RuntimeException 파일을 열 수 없을 때 (원인 포함)
      */
     public static InputStream fileToInputStream(String fileFullPath) {
-        InputStream result = null;
-        if (fileFullPath != null && !fileFullPath.isBlank()) {
-            result = fileToInputStream(Paths.get(fileFullPath));
+        if (fileFullPath == null || fileFullPath.isBlank()) {
+            throw new IllegalArgumentException("파일 경로가 비었습니다.");
         }
-        return result;
+        return fileToInputStream(Paths.get(fileFullPath));
     }
 
     /**
@@ -679,21 +645,18 @@ public class S2FileUtil {
      *
      * @param fileFullPath 파일 전체 경로(Path)
      * @return InputStream
+     * @throws S2RuntimeException 파일을 열 수 없을 때 (원인 포함)
      */
     public static InputStream fileToInputStream(Path fileFullPath) {
-        InputStream result = null;
-        if (fileFullPath != null) {
-            if (!Files.exists(fileFullPath) || !Files.isRegularFile(fileFullPath)) {
-                throw new S2RuntimeException("파일이 존재하지 않습니다.");
-            }
-            try {
-                result = Files.newInputStream(fileFullPath);
-            } catch (IOException e) {
-                logger.error("파일을 열지 못했습니다.", e);
-                throw new S2RuntimeException("파일을 열지 못했습니다.");
-            }
+        Objects.requireNonNull(fileFullPath, "fileFullPath");
+        if (!Files.isRegularFile(fileFullPath)) {
+            throw new S2RuntimeException("파일이 존재하지 않습니다: " + fileFullPath);
         }
-        return result;
+        try {
+            return Files.newInputStream(fileFullPath);
+        } catch (IOException e) {
+            throw new S2RuntimeException("파일을 열지 못했습니다: " + fileFullPath + " (" + e + ")", e);
+        }
     }
 
     /**
@@ -701,6 +664,7 @@ public class S2FileUtil {
      *
      * @param sourceStream 처리할 InputStream
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(InputStream sourceStream) {
         return streamToTempFile(sourceStream, false);
@@ -711,6 +675,7 @@ public class S2FileUtil {
      *
      * @param sourceReader 처리할 Reader
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(Reader sourceReader) {
         return streamToTempFile(sourceReader, false);
@@ -722,6 +687,7 @@ public class S2FileUtil {
      * @param sourceStream  처리할 InputStream
      * @param fileExtension 파일 확장자
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(InputStream sourceStream, String fileExtension) {
         return streamToTempFile(sourceStream, fileExtension, false);
@@ -733,6 +699,7 @@ public class S2FileUtil {
      * @param sourceReader  처리할 Reader
      * @param fileExtension 파일 확장자
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(Reader sourceReader, String fileExtension) {
         return streamToTempFile(sourceReader, fileExtension, false);
@@ -744,6 +711,7 @@ public class S2FileUtil {
      * @param sourceStream      처리할 InputStream
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(InputStream sourceStream, boolean shouldCloseStream) {
         return streamToTempFile(sourceStream, null, shouldCloseStream);
@@ -755,6 +723,7 @@ public class S2FileUtil {
      * @param sourceReader      처리할 Reader
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(Reader sourceReader, boolean shouldCloseStream) {
         return streamToTempFile(sourceReader, null, shouldCloseStream);
@@ -767,6 +736,7 @@ public class S2FileUtil {
      * @param fileExtension     파일 확장자
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(InputStream sourceStream, String fileExtension, boolean shouldCloseStream) {
         return closeableToTempFile(sourceStream, fileExtension, shouldCloseStream);
@@ -779,6 +749,7 @@ public class S2FileUtil {
      * @param fileExtension     파일 확장자
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     public static Path streamToTempFile(Reader sourceReader, String fileExtension, boolean shouldCloseStream) {
         return closeableToTempFile(sourceReader, fileExtension, shouldCloseStream);
@@ -791,20 +762,22 @@ public class S2FileUtil {
      * @param fileExtension     파일 확장자
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      * @return 임시 파일
+     * @throws S2RuntimeException 임시 파일 생성 또는 저장 실패 시 (원인 포함)
      */
     private static Path closeableToTempFile(Closeable sourceStream, String fileExtension, boolean shouldCloseStream) {
-        Path result = null;
-        if (sourceStream != null)
-            try {
-                Path tempFile = Files.createTempFile("s2_tmp_" + S2Uuid.generateUuidV7() + "_",
-                        "." + (fileExtension == null || fileExtension.isBlank() ? "tmp" : fileExtension));
-                if (closeableToFile(sourceStream, tempFile, shouldCloseStream) != -1) {
-                    result = tempFile;
-                }
-            } catch (IOException e) {
-                logger.error("임시 파일 생성 실패: ", e);
+        Objects.requireNonNull(sourceStream, "sourceStream");
+        Path tempFile;
+        try {
+            tempFile = Files.createTempFile("s2_tmp_" + S2Uuid.generateUuidV7() + "_",
+                    "." + (fileExtension == null || fileExtension.isBlank() ? "tmp" : fileExtension));
+        } catch (IOException e) {
+            if (shouldCloseStream) {
+                S2StreamUtil.closeStream(sourceStream);
             }
-        return result;
+            throw new S2RuntimeException("임시 파일 생성 실패 (" + e + ")", e);
+        }
+        closeableToFile(sourceStream, tempFile, shouldCloseStream); // Deletes the file itself on failure | 실패하면 파일을 지움
+        return tempFile;
     }
 
     /**
@@ -812,6 +785,8 @@ public class S2FileUtil {
      *
      * @param sourceStream   처리할 InputStream
      * @param targetFilePath 대상 파일 경로
+     * @return 저장한 파일 경로
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static Path streamToFile(InputStream sourceStream, String targetFilePath) {
         return streamToFile(sourceStream, targetFilePath, false);
@@ -822,6 +797,8 @@ public class S2FileUtil {
      *
      * @param sourceReader   처리할 Reader
      * @param targetFilePath 대상 파일 경로
+     * @return 저장한 파일 경로
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static Path streamToFile(Reader sourceReader, String targetFilePath) {
         return streamToFile(sourceReader, targetFilePath, false);
@@ -833,16 +810,16 @@ public class S2FileUtil {
      * @param sourceStream      처리할 InputStream
      * @param targetFilePath    대상 파일 경로
      * @param shouldCloseStream sourceStream 을 닫을지 여부
+     * @return 저장한 파일 경로
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static Path streamToFile(InputStream sourceStream, String targetFilePath, boolean shouldCloseStream) {
-        Path result = null;
-        if (targetFilePath != null && !targetFilePath.isBlank()) {
-            Path targetFile = Paths.get(targetFilePath);
-            if (streamToFile(sourceStream, targetFile, shouldCloseStream) != -1) {
-                result = targetFile;
-            }
+        if (targetFilePath == null || targetFilePath.isBlank()) {
+            throw new IllegalArgumentException("대상 파일 경로가 비었습니다.");
         }
-        return result;
+        var targetFile = Paths.get(targetFilePath);
+        streamToFile(sourceStream, targetFile, shouldCloseStream);
+        return targetFile;
     }
 
     /**
@@ -852,16 +829,16 @@ public class S2FileUtil {
      * @param targetFilePath    대상 파일 경로
      * @param shouldCloseStream sourceStream 을 닫을지 여부
      *
+     * @return 저장한 파일 경로
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static Path streamToFile(Reader sourceReader, String targetFilePath, boolean shouldCloseStream) {
-        Path result = null;
-        if (targetFilePath != null && !targetFilePath.isBlank()) {
-            Path targetFile = Paths.get(targetFilePath);
-            if (streamToFile(sourceReader, targetFile, shouldCloseStream) != -1) {
-                result = targetFile;
-            }
+        if (targetFilePath == null || targetFilePath.isBlank()) {
+            throw new IllegalArgumentException("대상 파일 경로가 비었습니다.");
         }
-        return result;
+        var targetFile = Paths.get(targetFilePath);
+        streamToFile(sourceReader, targetFile, shouldCloseStream);
+        return targetFile;
     }
 
     /**
@@ -869,7 +846,8 @@ public class S2FileUtil {
      *
      * @param sourceStream 처리할 InputStream
      * @param targetFile   대상 파일
-     * @return 생성된 파일의 크기(바이트 단위), 실패 시 -1
+     * @return 생성된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static long streamToFile(InputStream sourceStream, Path targetFile) {
         return streamToFile(sourceStream, targetFile, false);
@@ -880,7 +858,8 @@ public class S2FileUtil {
      *
      * @param sourceReader 처리할 Reader
      * @param targetFile   대상 파일
-     * @return 생성된 파일의 크기(바이트 단위), 실패 시 -1
+     * @return 생성된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static long streamToFile(Reader sourceReader, Path targetFile) {
         return streamToFile(sourceReader, targetFile, false);
@@ -892,7 +871,8 @@ public class S2FileUtil {
      * @param sourceStream      처리할 InputStream
      * @param targetFile        대상 파일
      * @param shouldCloseStream sourceStream 을 닫을지 여부
-     * @return 생성된 파일의 크기(바이트 단위), 실패 시 -1
+     * @return 생성된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static long streamToFile(InputStream sourceStream, Path targetFile, boolean shouldCloseStream) {
         return closeableToFile(sourceStream, targetFile, shouldCloseStream);
@@ -904,7 +884,8 @@ public class S2FileUtil {
      * @param sourceReader      처리할 Reader
      * @param targetFile        대상 파일
      * @param shouldCloseStream sourceStream 을 닫을지 여부
-     * @return 생성된 파일의 크기(바이트 단위), 실패 시 -1
+     * @return 생성된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     public static long streamToFile(Reader sourceReader, Path targetFile, boolean shouldCloseStream) {
         return closeableToFile(sourceReader, targetFile, shouldCloseStream);
@@ -916,43 +897,40 @@ public class S2FileUtil {
      * @param sourceStream      처리할 스트림 (InputStream 또는 Reader)
      * @param targetFile        대상 파일
      * @param shouldCloseStream sourceStream 을 닫을지 여부
-     * @return 생성된 파일의 크기(바이트 단위), 실패 시 -1
+     * @return 생성된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 저장 실패 시 (원인 포함, 쓰다 만 파일은 삭제)
      */
     private static long closeableToFile(Closeable sourceStream, Path targetFile, boolean shouldCloseStream) {
-        var fileSize = -1L; // 실패 시 반환값
-        if (sourceStream != null && targetFile != null) {
-            BufferedReader reader = null;
-
+        Objects.requireNonNull(sourceStream, "sourceStream");
+        Objects.requireNonNull(targetFile, "targetFile");
+        try {
+            var parent = targetFile.toAbsolutePath().getParent();
+            if (parent != null) {
+                makeDirectory(parent);
+            }
+            if (sourceStream instanceof InputStream inputStream) {
+                return Files.copy(inputStream, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (sourceStream instanceof Reader reader) {
+                try (var writer = Files.newBufferedWriter(targetFile, StandardCharsets.UTF_8)) {
+                    reader.transferTo(writer);
+                }
+                return Files.size(targetFile);
+            }
+            throw new IllegalArgumentException("InputStream 또는 Reader 만 지원합니다: " + sourceStream.getClass());
+        } catch (IOException e) {
+            // Do not leave a truncated file behind | 쓰다 만 파일을 남기지 않음
             try {
-                makeDirectory(targetFile.getParent()); // makeDirectory 호출 위치 수정
-                if (sourceStream instanceof InputStream inputStream) {
-                    fileSize = Files.copy(inputStream, targetFile, StandardCopyOption.REPLACE_EXISTING);
-                } else if (sourceStream instanceof Reader r) {
-                    reader = (r instanceof BufferedReader br) ? br : new BufferedReader(r);
-                    try (var writer = Files.newBufferedWriter(targetFile, StandardCharsets.UTF_8)) {
-                        var buffer = new char[S2StreamUtil.getBufferSize()];
-                        int charsRead;
-                        while ((charsRead = reader.read(buffer)) != -1) {
-                            writer.write(buffer, 0, charsRead);
-                        }
-                    }
-                    fileSize = Files.size(targetFile); // 실제 파일 크기 확인
-                } else {
-                    logger.error("지원하지 않는 스트림 타입(InputStream 또는 Reader 만 가능): {}", sourceStream.getClass());
-                }
-            } catch (IOException e) {
-                logger.error("파일 복사 실패: {}", e.getMessage());
-            } finally {
-                if (shouldCloseStream) {
-                    if (reader != null) {
-                        S2StreamUtil.closeStream(reader);
-                    } else {
-                        S2StreamUtil.closeStream(sourceStream);
-                    }
-                }
+                Files.deleteIfExists(targetFile);
+            } catch (IOException suppressed) {
+                e.addSuppressed(suppressed);
+            }
+            throw new S2RuntimeException("파일 저장 실패: " + targetFile + " (" + e + ")", e);
+        } finally {
+            if (shouldCloseStream) {
+                S2StreamUtil.closeStream(sourceStream);
             }
         }
-        return fileSize;
     }
 
     /**
@@ -1003,8 +981,8 @@ public class S2FileUtil {
             tempFile = streamToTempFile(sourceStream, fileExtension, shouldCloseStream);
             return processor.apply(tempFile);
         } finally {
-            // 임시 파일 삭제
-            delete(tempFile);
+            // Temp file cleanup must not hide the result or the processor's own exception | 임시 파일 정리 실패가 결과나 원래 예외를 가리지 않도록 로그만 남김
+            deleteQuietly(tempFile);
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(sourceStream);
             }
@@ -1029,8 +1007,8 @@ public class S2FileUtil {
             tempFile = streamToTempFile(sourceReader, fileExtension, shouldCloseStream);
             return processor.apply(tempFile);
         } finally {
-            // 임시 파일 삭제
-            delete(tempFile);
+            // Temp file cleanup must not hide the result or the processor's own exception | 임시 파일 정리 실패가 결과나 원래 예외를 가리지 않도록 로그만 남김
+            deleteQuietly(tempFile);
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(sourceReader);
             }
@@ -1124,17 +1102,28 @@ public class S2FileUtil {
      *
      * @param sourceFile 대상 파일
      * @return 파일 크기
+     * @throws S2RuntimeException 크기를 확인할 수 없을 때 (없는 파일 등, 원인 포함)
      */
     public static long getSize(Path sourceFile) {
-        long size = 0;
-        if (sourceFile != null) {
-            try {
-                size = Files.size(sourceFile);
-            } catch (IOException e) {
-                logger.error("파일 크기 확인 실패: ", e);
-            }
+        Objects.requireNonNull(sourceFile, "sourceFile");
+        try {
+            return Files.size(sourceFile);
+        } catch (IOException e) {
+            throw new S2RuntimeException("파일 크기 확인 실패: " + sourceFile + " (" + e + ")", e);
         }
-        return size;
+    }
+
+    /**
+     * Deletes and logs a failure instead of throwing, for cleanup in finally blocks and cleaners | finally·Cleaner 정리용: 실패는 로그만
+     *
+     * @param path 삭제할 경로 (null 허용)
+     */
+    public static void deleteQuietly(Path path) {
+        try {
+            delete(path);
+        } catch (RuntimeException e) {
+            logger.warn("임시 파일 삭제 실패: {} ({})", path, e.getMessage());
+        }
     }
 
     /**

@@ -106,7 +106,7 @@ public class S2ResourceInputStream extends InputStream { // AutoCloseable
             }
             if (tempFileList != null) {
                 for (var tempFile : tempFileList) {
-                    S2FileUtil.delete(tempFile);
+                    S2FileUtil.deleteQuietly(tempFile); // A cleaner must not throw | Cleaner 는 예외를 던지면 안 됨
                 }
             }
         }

@@ -30,6 +30,7 @@ import java.net.URL;
 import java.nio.file.Paths;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
+import io.github.devers2.s2util.file.impl.S2FileManagerImpl;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
 import io.github.devers2.s2util.support.S2FileUtil;
@@ -127,7 +128,7 @@ public interface FileManager {
      *
      * @param fileUrl     파일 URL (http/https)
      * @param savePath    저장 경로
-     * @param saveName    저장 명 (저장 경로를 벗어날 수 없음)
+     * @param saveName    저장 명 (저장 경로를 벗어날 수 없고, 같은 이름의 파일이 있으면 예외)
      * @param fileManager 파일 관리 유틸리티 (null: 로컬 파일 시스템)
      * @return 원격 파일 정보
      * @throws IllegalArgumentException 인자가 비었거나 http/https URL 이 아닐 때
@@ -151,7 +152,9 @@ public interface FileManager {
         }
 
         // Check the save path before sending the request | 요청 전에 저장 경로 검사
-        var localTarget = fileManager == null ? S2FileUtil.resolveWithin(Paths.get(savePath), saveName) : null;
+        if (fileManager == null) {
+            S2FileUtil.resolveWithin(Paths.get(savePath), saveName);
+        }
 
         HttpURLConnection connection = null;
         try {
@@ -164,11 +167,8 @@ public interface FileManager {
             }
             var remoteFile = new S2RemoteFile(connection);
             try (var inputStream = connection.getInputStream()) {
-                var writeFileSize = fileManager != null ? fileManager.writeFile(inputStream, savePath, saveName)
-                        : S2FileUtil.streamToFile(inputStream, localTarget);
-                if (writeFileSize == -1) {
-                    throw new S2RuntimeException("원격 파일을 저장할 수 없습니다: " + fileUrl);
-                }
+                // Same rule as FileManager.writeFile: an existing file is not overwritten | writeFile 과 같은 규칙: 기존 파일은 덮어쓰지 않음
+                (fileManager != null ? fileManager : new S2FileManagerImpl()).writeFile(inputStream, savePath, saveName);
             }
             return remoteFile;
         } catch (IOException e) {

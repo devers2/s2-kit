@@ -72,6 +72,11 @@ class FileManagerDownloadTest {
         assertEquals("한.txt", remote.getName());
         assertEquals(7, remote.getSize());
         assertTrue(remote.getContentType().startsWith("text/plain"));
+
+        // Same rule as FileManager.writeFile: the saved file is not overwritten | writeFile 과 같은 규칙: 덮어쓰지 않음
+        Files.writeString(dir.resolve("saved.txt"), "mine");
+        assertThrows(S2RuntimeException.class, () -> FileManager.downloadRemoteFile(url("/file"), dir.toString(), "saved.txt"));
+        assertEquals("mine", Files.readString(dir.resolve("saved.txt")));
     }
 
     @Test
