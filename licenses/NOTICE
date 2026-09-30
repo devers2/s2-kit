@@ -17,9 +17,11 @@ For more details, please refer to the 'LICENSE' file in the root directory.
    - License: MIT License
    - URL: [https://github.com/f4b6a3/uuid-creator](https://github.com/f4b6a3/uuid-creator)
 
-4. JSch (Java Secure Channel)
-   - License: 3-Clause BSD License (See 'LICENSE-JSCH-BSD' for details)
-   - URL: [http://www.jcraft.com/jsch/LICENSE.txt](http://www.jcraft.com/jsch/LICENSE.txt)
+4. JSch (Java Secure Channel), maintained fork com.github.mwiede:jsch
+   - License: Revised BSD License (See 'LICENSE-JSCH-BSD' for details)
+   - Includes JZlib: Revised BSD License (See 'LICENSE-JZLIB-BSD' for details)
+   - Includes jBCrypt: ISC License (See 'LICENSE-JBCRYPT-ISC' for details)
+   - URL: [https://github.com/mwiede/jsch](https://github.com/mwiede/jsch)
 
 5. Spring Framework (Context)
    - License: Apache License 2.0
