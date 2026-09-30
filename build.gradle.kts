@@ -67,7 +67,7 @@ import io.github.devers2.buildsupport.S2BuildUtils
  * 새 버전 번호와 실행 당일의 릴리즈 날짜(YYYY-MM-DD)로 함께 자동 갱신됩니다.
  */
 group = "io.github.devers2.internal"
-version = "1.1.5"
+version = "2.0.0"
 
 // Shadow Plugin - Relocation 패키지 설정
 // ⚠️ 이 값을 설정해도 위 plugins{} 블록의 shadow alias가 함께 켜져 있지 않으면 아무 효과가 없다 (둘 다 켜야 함).

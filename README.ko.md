@@ -24,7 +24,7 @@
 - **📁 파일 관리** — `FileManager`, `S2File`, `S2RemoteFile`을 통한 로컬 및 원격(SFTP/JSch) 파일 처리
 - **📄 페이징** — 목록/검색 UI를 위한 `S2PaginationInfo`, `S2PaginationTag`, `S2SearchVO` 제공
 - **🍃 Spring 유틸리티** — Spring 기반 앱을 위한 `S2ContextUtil`, `S2AutoConfiguration`, `S2AnnotationResolver`, `S2RestApiUtil`
-- **🔧 범용 헬퍼** — `S2JsonUtil`, `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
+- **🔧 범용 헬퍼** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ 자료구조** — `S2LruMap` (`LinkedHashMap` 기반 LRU 캐시)
 
 ---
@@ -39,7 +39,7 @@
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-support:1.1.5'
+    implementation 'io.github.devers2.internal:s2-support:2.0.0'
 }
 ```
 
@@ -49,7 +49,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-support</artifactId>
-    <version>1.1.5</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -62,10 +62,10 @@ dependencies {
 
 | 모듈 | 유형 및 좌표 | 주요 특징 및 기능 |
 | :--- | :--- | :--- |
-| **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:1.2.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
+| **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.0.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
 | **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '1.1.3'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
-| **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:1.2.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
-| **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:1.2.0` | **올인원 전체 유틸리티 제품군**<br>• `s2-core`, `s2-validator`, `s2-jpa` 라이브러리를 모두 포함하여 모든 기능을 한 번에 사용하고 싶을 때 권장.<br>• *(⚠️ 주의: 전체 번들을 사용하더라도 빌드 시점 필드 검증 플러그인은 위 `plugins {}` 블록에 별도로 추가해야 합니다)* |
+| **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.0.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
+| **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:2.0.0` | **올인원 전체 유틸리티 제품군**<br>• `s2-core`, `s2-validator`, `s2-jpa` 라이브러리를 모두 포함하여 모든 기능을 한 번에 사용하고 싶을 때 권장.<br>• *(⚠️ 주의: 전체 번들을 사용하더라도 빌드 시점 필드 검증 플러그인은 위 `plugins {}` 블록에 별도로 추가해야 합니다)* |
 
 **Gradle 설정 예시:**
 
@@ -79,17 +79,17 @@ plugins {
 
 dependencies {
     // 기본: s2-support (s2-core 자동 포함)
-    implementation 'io.github.devers2.internal:s2-support:1.1.5'
+    implementation 'io.github.devers2.internal:s2-support:2.0.0'
 
     // [선택] 서버/클라이언트 통합 검증 기능이 필요한 경우
-    implementation 'io.github.devers2:s2-validator:1.2.0'
+    implementation 'io.github.devers2:s2-validator:2.0.0'
 
     // [선택] 동적 JPQL 쿼리 작성이 필요한 경우
-    implementation 'io.github.devers2:s2-jpa:1.2.0'
+    implementation 'io.github.devers2:s2-jpa:2.0.0'
 
     // 또는 개별 모듈 대신 전체 번들을 한 번에 추가하는 경우:
     // (⚠️ 전체 번들을 사용하더라도 필드 검증 플러그인은 위 plugins {}에 별도 추가해야 함)
-    // implementation 'io.github.devers2:s2-util:1.2.0'
+    // implementation 'io.github.devers2:s2-util:2.0.0'
 }
 ```
 
@@ -100,21 +100,21 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-support</artifactId>
-    <version>1.1.5</version>
+    <version>2.0.0</version>
 </dependency>
 
 <!-- [선택] s2-validator -->
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-validator</artifactId>
-    <version>1.2.0</version>
+    <version>2.0.0</version>
 </dependency>
 
 <!-- [선택] s2-jpa -->
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-jpa</artifactId>
-    <version>1.2.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -139,12 +139,16 @@ int offset = pagination.getFirstRecordIndex(); // 0
 MyService service = S2ContextUtil.getBean(MyService.class);
 ```
 
-#### JSON 헬퍼 (`S2JsonUtil`)
+#### JSON 헬퍼 (`S2JsonUtil`, s2-core)
+
+2.0.0 부터 `S2JsonUtil`은 `s2-core`(`io.github.devers2.s2util.json.S2JsonUtil`)에 있습니다. `s2-support`가 `s2-core`를 함께
+가져오므로 별도 의존성은 필요 없습니다. 자세한 내용은 s2-util MANUAL 의 "경량 JSON" 절을 참고하십시오.
 
 ```java
-// 간편한 객체 직렬화 및 역직렬화
+import io.github.devers2.s2util.json.S2JsonUtil;
+
 String json = S2JsonUtil.toJson(myObject);
-MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);
+MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);   // 실패 시 S2JsonException (null 을 돌려주지 않음)
 ```
 
 ---
@@ -166,7 +170,7 @@ MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);
 
 ---
 
-s2-support Version: 1.1.5 (2026-09-11)
+s2-support Version: 2.0.0 (2026-09-30)
 
 [//]: # 'S2_DEPS_INFO_START'
 
