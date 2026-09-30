@@ -152,6 +152,21 @@ class S2PdfOfficeTest {
     }
 
     @Test
+    void anInstallIsPickedUpWithoutARestart() throws IOException {
+        // S2_SOFFICE cannot be set from a test, so detection is exercised through a configured path that appears later
+        // | 테스트에서 환경 변수를 바꿀 수 없어, 나중에 생기는 경로로 "없음 → 있음" 전환을 확인
+        var later = dir.resolve("installed-later");
+        S2PdfUtil.setOfficeCommand(later.toString());
+        assertFalse(S2PdfUtil.isOfficeConversionAvailable());
+        Files.copy(fakeSoffice("ok"), later);
+        Files.setPosixFilePermissions(later, PosixFilePermissions.fromString("rwx------"));
+        assertTrue(S2PdfUtil.isOfficeConversionAvailable(), "checked again, not remembered as missing");
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "a.docx")))) {
+            assertEquals(2, doc.getNumberOfPages());
+        }
+    }
+
+    @Test
     void unsupportedFormatsAreRejectedUpFront() {
         assertThrows(IllegalArgumentException.class, () -> PdfSource.ofDocument(new byte[] { 1 }, "a.exe"));
         assertThrows(IllegalArgumentException.class, () -> PdfSource.ofDocument(new byte[] { 1 }, "noextension"));

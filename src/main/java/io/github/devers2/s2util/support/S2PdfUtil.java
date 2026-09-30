@@ -565,8 +565,10 @@ public class S2PdfUtil {
 
     private static final String CONVERTER_REQUIRED = "오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.";
 
-    private static volatile List<String> officeCommand;
-    private static volatile boolean officeCommandResolved;
+    /** Set by setOfficeCommand; never re-detected | setOfficeCommand 로 지정한 명령 (다시 찾지 않음) */
+    private static volatile List<String> configuredOfficeCommand;
+    /** Last detected command; "not found" is not remembered, so an install is picked up without a restart | 마지막으로 찾은 명령. "없음"은 기억하지 않아 설치 후 재시작 없이 반영 */
+    private static volatile List<String> detectedOfficeCommand;
     private static volatile Duration officeTimeout = Duration.ofMinutes(3);
 
     /**
@@ -586,14 +588,13 @@ public class S2PdfUtil {
         if (command == null || command.length == 0 || command[0] == null || command[0].isBlank()) {
             throw new IllegalArgumentException("명령이 비었습니다.");
         }
-        officeCommand = List.of(command);
-        officeCommandResolved = true;
+        configuredOfficeCommand = List.of(command);
     }
 
-    /** 지정한 명령을 지우고 다음 사용 때 다시 찾게 한다 (설치 후 재시작 없이 반영할 때). */
+    /** 지정한 명령을 지우고 자동 탐색으로 되돌린다. */
     public static void resetOfficeCommand() {
-        officeCommand = null;
-        officeCommandResolved = false;
+        configuredOfficeCommand = null;
+        detectedOfficeCommand = null;
     }
 
     /**
@@ -635,20 +636,26 @@ public class S2PdfUtil {
         return java.util.Optional.ofNullable(resolveOfficeCommand());
     }
 
+    /**
+     * The configured command, or the detected one. Detection is repeated while nothing is found and when the
+     * detected command disappears, so installing or removing the converter needs no restart (it only checks a few
+     * paths).
+     */
     private static List<String> resolveOfficeCommand() {
-        if (officeCommandResolved) {
-            return officeCommand;
+        var configured = configuredOfficeCommand;
+        if (configured != null) {
+            return configured;
         }
-        synchronized (S2PdfUtil.class) {
-            if (!officeCommandResolved) {
-                officeCommand = detectOfficeCommand();
-                officeCommandResolved = true;
-                if (officeCommand != null) {
-                    logger.info("문서 변환 명령: {}", officeCommand);
-                }
-            }
-            return officeCommand;
+        var detected = detectedOfficeCommand;
+        if (detected != null && commandExists(detected.get(0))) {
+            return detected;
         }
+        detected = detectOfficeCommand();
+        if (detected != null && !detected.equals(detectedOfficeCommand)) {
+            logger.info("문서 변환 명령: {}", detected);
+        }
+        detectedOfficeCommand = detected;
+        return detected;
     }
 
     private static List<String> detectOfficeCommand() {
