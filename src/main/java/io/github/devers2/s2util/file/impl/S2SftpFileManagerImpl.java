@@ -124,6 +124,29 @@ public class S2SftpFileManagerImpl implements FileManager {
      */
     public S2SftpFileManagerImpl(String host, int port, String username, String privateKeyPath, String passphrase,
             String password, Integer sessionMaxTotal, Integer sessionMinIdle, Integer sessionMaxWaitMillis) {
+        this(host, port, username, privateKeyPath, passphrase, password, sessionMaxTotal, sessionMinIdle,
+                sessionMaxWaitMillis, null, false);
+    }
+
+    /**
+     * 호스트 키 검증 방식을 지정해 생성한다. 다른 생성자는 {@code ~/.ssh/known_hosts}로 검증한다.
+     *
+     * @param host                 sftp host
+     * @param port                 sftp port
+     * @param username             sftp username
+     * @param privateKeyPath       sftp private key path
+     * @param passphrase           sftp private key passphrase
+     * @param password             sftp password
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (null: 128)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 16)
+     * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간 (null: 30초)
+     * @param knownHostsPath       호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts})
+     * @param allowUnknownHosts    true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다 (중간자 공격에 노출됨)
+     * @see JschSessionFactory
+     */
+    public S2SftpFileManagerImpl(String host, int port, String username, String privateKeyPath, String passphrase,
+            String password, Integer sessionMaxTotal, Integer sessionMinIdle, Integer sessionMaxWaitMillis,
+            String knownHostsPath, boolean allowUnknownHosts) {
         // 디렉토리 캐시 TTL 우선순위: 시스템 프로퍼티 > 기본값
         long ttl = DEFAULT_DIR_CACHE_TTL_MS;
         try {
@@ -157,7 +180,7 @@ public class S2SftpFileManagerImpl implements FileManager {
         }
 
         jschSessionFactory = new JschSessionFactory(host, port, username, privateKeyPath, passphrase, password,
-                sessionMaxTotal, sessionMinIdle, sessionMaxWaitMillis);
+                sessionMaxTotal, sessionMinIdle, sessionMaxWaitMillis, knownHostsPath, allowUnknownHosts);
     }
 
     /**
@@ -179,7 +202,7 @@ public class S2SftpFileManagerImpl implements FileManager {
      */
     public long writeFile(InputStream fileData, String savePath, String saveName) {
         var fileSize = -1L;
-        var remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        var remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         Session session = null;
         ChannelSftp channel = null;
 
@@ -263,7 +286,7 @@ public class S2SftpFileManagerImpl implements FileManager {
      *          {@code TRANSFER_IDLE_MILLIS} 동안 추가 읽기가 없으면 자동으로 정리된다.
      */
     public InputStream readFile(String savePath, String saveName) {
-        var remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        var remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         Session session = null;
         ChannelSftp channel = null;
 
@@ -307,7 +330,7 @@ public class S2SftpFileManagerImpl implements FileManager {
      * @param saveName 원격 서버의 대상 파일 저장 명
      */
     public void deleteFile(String savePath, String saveName) {
-        var remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        var remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         Session session = null;
         ChannelSftp channel = null;
 

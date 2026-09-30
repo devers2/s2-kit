@@ -2,56 +2,49 @@
 <taglib version="2.0" xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-jsptaglibrary_2_0.xsd">
   <description>s2 Functions Library</description>
   <display-name>s2 Functions</display-name>
-  <tlib-version>1.1</tlib-version>
+  <tlib-version>2.0</tlib-version>
   <short-name>s2fn</short-name>
   <uri>http://ext.s2.kr/taglib/functions</uri>
   <function>
     <description>Newline 제거</description>
     <name>clearNewline</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
+    <function-class>io.github.devers2.s2util.core.S2StringUtil</function-class>
     <function-signature>java.lang.String clearNewline(java.lang.String)</function-signature>
-    <example>${s2:clearNewline(String)</example>
+    <example>${s2fn:clearNewline(String)}</example>
   </function>
   <function>
-    <description>문자열 치환</description>
+    <description>문자열 치환 (정규식)</description>
     <name>replaceAll</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
-    <function-signature>java.lang.String replaceAll(java.lang.Object, java.lang.String, java.lang.String)</function-signature>
-    <example>${s2:replaceAll(Object, String, String)</example>
-  </function>
-  <function>
-    <description>문자열 포맷</description>
-    <name>formatter</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
-    <function-signature>java.lang.String formatter(java.lang.Object, java.lang.String)</function-signature>
-    <example>${s2:formatter(Object, String)</example>
+    <function-class>io.github.devers2.s2util.core.S2StringUtil</function-class>
+    <function-signature>java.lang.String replaceAll(java.lang.String, java.lang.String, java.lang.String)</function-signature>
+    <example>${s2fn:replaceAll(String, String, String)}</example>
   </function>
   <function>
     <description>날짜 포맷</description>
     <name>dateFormat</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
+    <function-class>io.github.devers2.s2util.core.S2DateUtil</function-class>
     <function-signature>java.lang.String dateFormat(java.lang.Object, java.lang.String)</function-signature>
-    <example>${s2:dateFormat(Object, String)</example>
+    <example>${s2fn:dateFormat(Object, String)}</example>
   </function>
   <function>
     <description>백분율</description>
     <name>percentage</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
+    <function-class>io.github.devers2.s2util.core.S2Util</function-class>
     <function-signature>java.lang.String getPercentage(java.lang.Object, java.lang.Object, java.lang.Integer)</function-signature>
-    <example>${s2:percentage(Object, Object, String)</example>
+    <example>${s2fn:percentage(Object, Object, Integer)}</example>
   </function>
   <function>
     <description>Snake Case</description>
     <name>toSnakeCase</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
+    <function-class>io.github.devers2.s2util.core.S2StringUtil</function-class>
     <function-signature>java.lang.String toSnakeCase(java.lang.String)</function-signature>
-    <example>${s2:toSnakeCase(String)</example>
+    <example>${s2fn:toSnakeCase(String)}</example>
   </function>
   <function>
-    <description>Pagination의 Record번호를 계산</description>
+    <description>Pagination 의 Record 번호를 계산 (order: ASC|DESC)</description>
     <name>paginationRecordNo</name>
-    <function-class>util.kr.shade.wind.s2.ext.S2Util</function-class>
-    <function-signature>int paginationRecordNo(pagination.kr.shade.wind.s2.ext.S2PaginationInfo, int, java.lang.String)</function-signature>
-    <example>${s2:paginationRecordNo(S2PaginationInfo, int, String)</example>
+    <function-class>io.github.devers2.s2util.pagination.S2PaginationInfo</function-class>
+    <function-signature>long getRecordNo(io.github.devers2.s2util.pagination.S2PaginationInfo, int, java.lang.String)</function-signature>
+    <example>${s2fn:paginationRecordNo(S2PaginationInfo, int, String)}</example>
   </function>
 </taglib>

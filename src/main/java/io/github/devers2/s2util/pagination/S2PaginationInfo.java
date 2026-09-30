@@ -123,6 +123,7 @@ public class S2PaginationInfo<T> {
      * @details
      *          <dl>
      *          <dd>라벨 변경이 필요하다면 S2PaginationInfo를 상속받아 해당 메서드만 재정의 한다.</dd>
+     *          <dd>{0}: 페이지 이동 스크립트 (현재 페이지 라벨에서는 페이지 번호), {1}: 페이지 번호. 단순 치환이므로 따옴표를 이스케이프하지 않는다.</dd>
      *          </dl>
      */
     protected void initPageLabels() {

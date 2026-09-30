@@ -21,14 +21,12 @@
 package io.github.devers2.s2util.pagination;
 
 import java.io.IOException;
-import java.text.MessageFormat;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.jsp.JspException;
 import jakarta.servlet.jsp.JspWriter;
 import jakarta.servlet.jsp.tagext.TagSupport;
 
-import io.github.devers2.s2util.core.S2StringUtil;
-import io.github.devers2.s2util.core.S2Util;
 
 /**
  * s2's utilities
@@ -45,11 +43,17 @@ public class S2PaginationTag extends TagSupport {
     private String jsFunction;
     private String jsParam;
 
+    /** A JavaScript function name, optionally namespaced (fn, app.list.go) | JavaScript 함수 이름 (네임스페이스 허용) */
+    private static final Pattern JS_FUNCTION = Pattern.compile("[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)*");
+    /** Numbers are passed as JavaScript numbers, everything else as strings | 숫자는 숫자로, 그 외는 문자열로 전달 */
+    private static final Pattern JS_NUMBER = Pattern.compile("-?\\d{1,15}(\\.\\d{1,15})?");
+
+    @Override
     public int doEndTag() throws JspException {
         try {
             JspWriter out = pageContext.getOut();
             out.println(this.renderPagination(jsParam));
-            return 6;
+            return EVAL_PAGE;
         } catch (IOException e) {
             throw new JspException(e);
         }
@@ -57,19 +61,21 @@ public class S2PaginationTag extends TagSupport {
 
     /**
      * Pagination 을 랜더링한다.
+     * <p>
+     * 라벨의 {@code {0}}은 페이지 이동 스크립트({@code jsFunction(jsParams..., pageNo);}), {@code {1}}은 페이지 번호로 바뀐다(현재 페이지
+     * 라벨은 둘 다 페이지 번호). 숫자가 아닌
+     * {@code jsParams}는 JavaScript 문자열로 이스케이프되어 {@code onclick} 속성에 안전하게 들어간다.
+     * </p>
      *
      * @param jsParams js 매개변수
      * @return Pagination 문자열
+     * @throws IllegalArgumentException jsFunction 이 JavaScript 함수 이름이 아닐 때
      */
     public final String renderPagination(String... jsParams) {
+        if (jsFunction == null || !JS_FUNCTION.matcher(jsFunction).matches()) {
+            throw new IllegalArgumentException("jsFunction 은 JavaScript 함수 이름이어야 합니다: " + jsFunction);
+        }
         var strBuff = new StringBuilder();
-
-        var firstPageLabel = this.paginationInfo.getFirstPageLabel();
-        var previousPageLabel = this.paginationInfo.getPreviousPageLabel();
-        var currentPageLabel = this.paginationInfo.getCurrentPageLabel();
-        var otherPageLabel = this.paginationInfo.getOtherPageLabel();
-        var nextPageLabel = this.paginationInfo.getNextPageLabel();
-        var lastPageLabel = this.paginationInfo.getLastPageLabel();
 
         var firstPageNo = this.paginationInfo.getFirstPageNo();
         var firstPageNoOnPageList = this.paginationInfo.getFirstPageNoOnPageList();
@@ -82,63 +88,60 @@ public class S2PaginationTag extends TagSupport {
         var pageNo = this.paginationInfo.getPageNo();
         var lastPageNo = this.paginationInfo.getLastPageNo();
 
-        {
-            /*
-             * function(JavaScript)을 만들어 pageLabel들에 설정한다.
-             * '<a href="#" onclick="{0} return false;">' → '<a href="#" onclick="fn_action('list', {0}); return false;">'
-             */
-            var jsParamString = "";
-            if (S2Util.isNotEmpty(jsParams)) {
-                for (var param : jsParams) {
-                    if (jsParamString != null && !jsParamString.isBlank()) {
-                        jsParamString += ", ";
-                    }
-                    jsParamString += S2StringUtil.isNaN(param) ? "''" + param + "''" : param;
+        // '<a href="#" onclick="{0} return false;">' → '<a href="#" onclick="fn_action('list', 3); return false;">'
+        var jsArgs = new StringBuilder();
+        if (jsParams != null) {
+            for (var param : jsParams) {
+                if (param == null) {
+                    continue;
                 }
+                jsArgs.append(JS_NUMBER.matcher(param).matches() ? param : jsString(param)).append(", ");
             }
-
-            // pageNo 매개변수 추가
-            if (jsParamString != null && !jsParamString.isBlank()) {
-                jsParamString += ", ";
-            }
-            jsParamString += "{0}";
-
-            var jsFunctionString = this.jsFunction + "(" + jsParamString + ");";
-
-            firstPageLabel = MessageFormat.format(firstPageLabel, jsFunctionString);
-            previousPageLabel = MessageFormat.format(previousPageLabel, jsFunctionString);
-            otherPageLabel = MessageFormat.format(otherPageLabel, jsFunctionString);
-            nextPageLabel = MessageFormat.format(nextPageLabel, jsFunctionString);
-            lastPageLabel = MessageFormat.format(lastPageLabel, jsFunctionString);
         }
+        var jsCallPrefix = this.jsFunction + "(" + jsArgs;
 
         if (totalPageCount > pageSize) {
-            if (firstPageNoOnPageList > pageSize) {
-                strBuff.append(MessageFormat.format(firstPageLabel, Integer.toString(firstPageNo)));
-                strBuff.append(MessageFormat.format(previousPageLabel, Integer.toString(firstPageNoOnPageList - 1)));
-            } else {
-                strBuff.append(MessageFormat.format(firstPageLabel, Integer.toString(firstPageNo)));
-                strBuff.append(MessageFormat.format(previousPageLabel, Integer.toString(firstPageNo)));
-            }
+            var previous = firstPageNoOnPageList > pageSize ? firstPageNoOnPageList - 1 : firstPageNo;
+            strBuff.append(link(paginationInfo.getFirstPageLabel(), jsCallPrefix, firstPageNo));
+            strBuff.append(link(paginationInfo.getPreviousPageLabel(), jsCallPrefix, previous));
         }
         for (int i = firstPageNoOnPageList; i <= lastPageNoOnPageList; i++) {
             if (i == pageNo) {
-                strBuff.append(MessageFormat.format(currentPageLabel, Integer.toString(i)));
+                // The current page is not a link: {0} is the page number | 현재 페이지는 링크가 아니므로 {0}이 페이지 번호
+                var page = Integer.toString(i);
+                strBuff.append(paginationInfo.getCurrentPageLabel().replace("{0}", page).replace("{1}", page));
             } else {
-                strBuff.append(MessageFormat.format(otherPageLabel, Integer.toString(i), Integer.toString(i)));
+                strBuff.append(link(paginationInfo.getOtherPageLabel(), jsCallPrefix, i));
             }
         }
-
         if (totalPageCount > pageSize) {
-            if (lastPageNoOnPageList < totalPageCount) {
-                strBuff.append(MessageFormat.format(nextPageLabel, Integer.toString(firstPageNoOnPageList + pageSize)));
-                strBuff.append(MessageFormat.format(lastPageLabel, Integer.toString(lastPageNo)));
-            } else {
-                strBuff.append(MessageFormat.format(nextPageLabel, Integer.toString(lastPageNo)));
-                strBuff.append(MessageFormat.format(lastPageLabel, Integer.toString(lastPageNo)));
-            }
+            var next = lastPageNoOnPageList < totalPageCount ? firstPageNoOnPageList + pageSize : lastPageNo;
+            strBuff.append(link(paginationInfo.getNextPageLabel(), jsCallPrefix, next));
+            strBuff.append(link(paginationInfo.getLastPageLabel(), jsCallPrefix, lastPageNo));
         }
         return strBuff.toString();
+    }
+
+    /** Plain substitution, so quotes and braces in labels need no MessageFormat escaping | 단순 치환이라 라벨의 따옴표·중괄호에 MessageFormat 이스케이프가 필요 없음 */
+    private static String link(String label, String jsCallPrefix, int pageNo) {
+        var page = Integer.toString(pageNo);
+        return label.replace("{0}", jsCallPrefix + page + ");").replace("{1}", page);
+    }
+
+    /**
+     * A single-quoted JavaScript string safe inside a double-quoted HTML attribute: everything but letters, digits
+     * and spaces becomes a unicode escape | 큰따옴표 HTML 속성 안에서도 안전한 작은따옴표 JS 문자열 (영문·숫자·공백 외에는 유니코드 이스케이프)
+     */
+    static String jsString(String value) {
+        var sb = new StringBuilder(value.length() + 2).append('\'');
+        for (var ch : value.toCharArray()) {
+            if (Character.isLetterOrDigit(ch) || ch == ' ' || ch == '_' || ch == '-' || ch == '.') {
+                sb.append(ch);
+            } else {
+                sb.append(String.format("\\u%04x", (int) ch));
+            }
+        }
+        return sb.append('\'').toString();
     }
 
     public void setPaginationInfo(S2PaginationInfo<Object> paginationInfo) {

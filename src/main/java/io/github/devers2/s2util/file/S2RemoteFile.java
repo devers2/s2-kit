@@ -20,10 +20,7 @@
  */
 package io.github.devers2.s2util.file;
 
-import java.io.IOException;
 import java.io.Serializable;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.net.URLConnection;
 
 import io.github.devers2.s2util.support.S2FileUtil;
@@ -50,51 +47,25 @@ public class S2RemoteFile implements Serializable {
     /** 파일 최종 수정 시간 */
     private long lastModified = 0;
 
-    public S2RemoteFile(URL url) {
-        if (url != null) {
-            URLConnection connection = null;
-            try {
-                connection = url.openConnection();
-                var contentDisposition = connection.getHeaderField("Content-Disposition");
-                var fileName = "";
-
-                // contentDisposition = "attachment; filename=baseName.extension;"
-                if (contentDisposition != null && contentDisposition.contains("filename=")) {
-                    var filenameStart = contentDisposition.indexOf("filename=") + 9;
-                    var filenameEnd = contentDisposition.indexOf(";", filenameStart);
-
-                    if (filenameEnd == -1) {
-                        // filename= 뒤에 세미콜론이 없으면 끝까지
-                        fileName = contentDisposition.substring(filenameStart).trim();
-                    } else {
-                        // filename= 뒤에 세미콜론이 있으면 세미콜론까지
-                        fileName = contentDisposition.substring(filenameStart, filenameEnd).trim();
-                    }
-                }
-
-                if (fileName != null && !fileName.isBlank()) {
-                    baseName = S2FileUtil.getBaseName(fileName);
-                    extension = S2FileUtil.getExtension(fileName);
-                }
-
-                contentType = connection.getContentType();
-                size = connection.getContentLength();
-                lastModified = connection.getLastModified();
-            } catch (IOException e) {
-                baseName = "";
-                extension = "";
-                contentType = "";
-                size = 0;
-                lastModified = 0;
-            } finally {
-                // getHeaderField/getContentType 등을 호출하는 시점에 실제 HTTP 요청이 발생하므로,
-                // 응답 바디를 읽지 않고 메타데이터만 쓰고 버리는 이 코드에서는 명시적으로 끊어주지
-                // 않으면 커넥션이 keep-alive 풀에 반환되지 않고 계속 점유될 수 있다.
-                if (connection instanceof HttpURLConnection httpConnection) {
-                    httpConnection.disconnect();
-                }
-            }
+    /**
+     * 이미 연결된 커넥션의 응답 헤더에서 파일 정보를 읽는다. 추가 요청을 보내지 않는다.
+     *
+     * @param connection 응답을 받은 커넥션
+     */
+    public S2RemoteFile(URLConnection connection) {
+        var fileName = S2FileUtil.parseContentDispositionFilename(connection.getHeaderField("Content-Disposition"));
+        if (fileName.isBlank()) {
+            // Fall back to the last path segment of the URL | URL 경로의 마지막 부분으로 대체
+            var path = connection.getURL().getPath();
+            fileName = path == null ? "" : path.substring(path.lastIndexOf('/') + 1);
         }
+        if (!fileName.isBlank()) {
+            baseName = S2FileUtil.getBaseName(fileName);
+            extension = S2FileUtil.getExtension(fileName);
+        }
+        contentType = connection.getContentType() != null ? connection.getContentType() : "";
+        size = connection.getContentLengthLong();
+        lastModified = connection.getLastModified();
     }
 
     /**

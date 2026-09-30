@@ -99,7 +99,8 @@ import io.github.devers2.s2util.log.S2Logger;
  *   <li><b>메모리 및 자원 누수 제로 (Zero Leak Architecture):</b>
  *     <ul>
  *       <li>대용량 병합 시 PDFBox 디스크 캐시(createTempFileOnlyStreamCache) 사용으로 JVM Heap OOM 원천 방지</li>
- *       <li>변환 시 사용된 중간 임시 파일은 성공/실패 여부와 무관하게 즉시 삭제 + deleteOnExit 2중 안전장치 적용</li>
+ *       <li>변환 시 사용된 중간 임시 파일은 성공/실패 여부와 무관하게 즉시 삭제 (반환 스트림의 임시 파일은 close 또는 GC 시 삭제)</li>
+ *       <li>HTML 렌더링 시 이미지·CSS 는 클래스패스에서 읽어 인라인하며, 렌더러는 HTML 에 적힌 원격/로컬 URL 을 가져오지 않는다 (SSRF 방지)</li>
  *       <li>최종 결과는 {@link S2ResourceInputStream}으로 반환되어 호출자가 {@code close()} 시 결과 임시 파일 자동 삭제</li>
  *       <li>이미지 렌더링 후 {@link java.awt.image.BufferedImage#flush()}를 호출하여 네이티브 메모리 버퍼 즉시 해제</li>
  *     </ul>
@@ -110,9 +111,9 @@ import io.github.devers2.s2util.log.S2Logger;
  *
  * <h2>🚀 빠른 사용 예시 (Quick Start)</h2>
  * <pre>{@code
- * // [예제 1] Goono-ELN / 사이냅 대체용: 원격 표지 JSP/HTML URL + 본문 PDF 스트림 병합
+ * // [예제 1] 원격 표지 JSP/HTML URL + 본문 PDF 스트림 병합
  * try (InputStream merged = S2PdfUtil.mergeHtmlUrlsAndPdfs(
- *         List.of("https://example.com/eln/cover.jsp?noteId=123"),
+ *         List.of("https://example.com/report/cover.jsp?noteId=123"),
  *         List.of(notePdfStream1, notePdfStream2)
  * )) {
  *     // merged 스트림을 클라이언트에 다운로드 응답 (close 시 임시 파일 자동 정리)
@@ -150,7 +151,6 @@ public class S2PdfUtil {
 
     private static final String DEFAULT_FONT_FAMILY = "ConvertPDF";
     private static final String DEFAULT_FONT_SIZE = "10pt";
-    private static final String DEFAULT_MIME_TYPE = "image/png";
 
     private static final String HTML_TEMPLATE = "<!DOCTYPE html>\n" +
             "<html lang=\"ko\">\n" +
@@ -230,7 +230,7 @@ public class S2PdfUtil {
      * @apiNote
      * <pre>{@code
      * String base64Pdf = S2PdfUtil.convertHtmlToPdf(
-     *         "<h1>전자연구노트 보고서</h1><p>내용...</p>",
+     *         "<h1>보고서</h1><p>내용...</p>",
      *         "/static/public",
      *         "/static/css/style.css",
      *         "/static/font/NanumGothic.ttf",
@@ -299,35 +299,34 @@ public class S2PdfUtil {
             return src; // 이미 Base64 인코딩된 이미지 또는 src가 null
         }
 
-        try {
-            byte[] imageBytes;
-            if (src.startsWith("http") || src.startsWith("https")) {
-                // URL 이미지 처리 (허용된 도메인만 처리하도록 제한하는 것이 좋음)
-                return null; // 일단 URL 이미지는 제외
-            } else {
-                // 상대 경로를 절대 경로로 변환
-                String absolutePath = src;
-                if (src.startsWith("../")) {
-                    absolutePath = src.replace("../", "/");
-                }
-                if (!absolutePath.startsWith("/")) {
-                    absolutePath = "/" + absolutePath;
-                }
+        if (src.contains(":") || src.startsWith("//")) {
+            // Remote (http:, https:, //host) and other schemes are not embedded, and the renderer blocks them
+            // | 원격(http:, https:, //host) 및 기타 스킴은 인라인하지 않으며 렌더러도 차단함
+            logger.warn("원격/스킴 이미지는 PDF 에 포함하지 않습니다: {}", src);
+            return null;
+        }
+        // Drop "?v=1" / "#x" so the extension check sees the file name | 확장자 확인을 위해 쿼리·프래그먼트 제거
+        var resourcePath = src.replaceFirst("[?#].*$", "");
+        var mimeType = getMimeType(resourcePath.toLowerCase());
+        if (mimeType == null) {
+            logger.warn("이미지 확장자가 아니어서 PDF 에 포함하지 않습니다: {}", src);
+            return null;
+        }
 
-                // 로컬 이미지 처리 (클래스패스 기준)
-                try (InputStream imageStream = S2PdfUtil.class
-                        .getResourceAsStream(S2FileUtil.joinPaths(staticResourceBasePath, absolutePath))) {
-                    if (imageStream == null) {
-                        logger.error("이미지 파일을 찾을 수 없습니다: {}", absolutePath);
-                        return null;
-                    }
-                    imageBytes = IOUtils.toByteArray(imageStream);
-                }
+        // 상대 경로를 클래스패스 절대 경로로 변환
+        var absolutePath = resourcePath.startsWith("../") ? resourcePath.replace("../", "/") : resourcePath;
+        if (!absolutePath.startsWith("/")) {
+            absolutePath = "/" + absolutePath;
+        }
+
+        // 로컬 이미지 처리 (클래스패스 기준)
+        try (InputStream imageStream = S2PdfUtil.class
+                .getResourceAsStream(S2FileUtil.joinPaths(staticResourceBasePath, absolutePath))) {
+            if (imageStream == null) {
+                logger.error("이미지 파일을 찾을 수 없습니다: {}", absolutePath);
+                return null;
             }
-
-            var base64Image = Base64.getEncoder().encodeToString(imageBytes);
-            var mimeType = getMimeType(src.toLowerCase());
-            return "data:" + mimeType + ";base64," + base64Image;
+            return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(IOUtils.toByteArray(imageStream));
         } catch (IOException e) {
             logger.error("이미지 처리 오류: {}", src, e);
             return null;
@@ -520,6 +519,10 @@ public class S2PdfUtil {
         try (var outputStream = new ByteArrayOutputStream()) {
             var builder = new PdfRendererBuilder();
             builder.withHtmlContent(htmlContent, null);
+            // Only inline data: URIs are loaded; images and CSS were already embedded, so the renderer never fetches
+            // http:, file: or other URLs written in the HTML (SSRF, local file read) | data: URI 만 로드. 이미지·CSS 는 이미 인라인되어
+            // 있으므로 렌더러가 HTML 의 http:, file: 등 URL 을 직접 가져오지 않음 (SSRF, 로컬 파일 읽기 방지)
+            builder.useUriResolver((baseUri, uri) -> uri != null && uri.startsWith("data:") ? uri : null);
 
             if (S2Util.isNotEmpty(fontPath) && clazz != null) {
                 try (var fontStream = clazz.getResourceAsStream(fontPath)) {
@@ -545,7 +548,11 @@ public class S2PdfUtil {
             return "image/gif";
         if (fileName.endsWith(".svg"))
             return "image/svg+xml";
-        return DEFAULT_MIME_TYPE;
+        if (fileName.endsWith(".webp"))
+            return "image/webp";
+        if (fileName.endsWith(".bmp"))
+            return "image/bmp";
+        return null;
     }
 
     /**
@@ -1220,10 +1227,25 @@ public class S2PdfUtil {
                     StandardCharsets.UTF_8));
         }
 
-        /** URL 소스 생성 (원격 리소스 다운로드 및 Content-Type/Magic-Byte 기반 자동 감지) */
+        /**
+         * URL 소스 생성 (원격 리소스 다운로드 및 Content-Type/Magic-Byte 기반 자동 감지)
+         * <p>
+         * 서버가 이 URL 로 직접 요청하므로, 사용자 입력을 그대로 넘기면 내부망 주소를 조회하는 SSRF 가 된다. 사용자 입력이 섞이면 호출자가
+         * 허용 호스트를 검사해야 한다.
+         * </p>
+         *
+         * @param url http 또는 https URL
+         * @return URL 소스
+         * @throws IllegalArgumentException http/https 가 아닌 URL
+         */
         public static PdfSource ofUrl(String url) {
+            Objects.requireNonNull(url, "[PdfSource] url must not be null");
+            var scheme = URI.create(url.trim()).getScheme();
+            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                throw new IllegalArgumentException("[PdfSource] http/https URL 만 허용됩니다: " + url);
+            }
             var src = new PdfSource(SourceType.URL);
-            src.urlString = Objects.requireNonNull(url, "[PdfSource] url must not be null");
+            src.urlString = url.trim();
             return src;
         }
 
@@ -1242,7 +1264,7 @@ public class S2PdfUtil {
             return src;
         }
 
-        /** HTML URL 소스 생성 (Goono-ELN 표지 JSP/HTML 등 원격 렌더링용) */
+        /** HTML URL 소스 생성 (표지 JSP/HTML 등 원격 렌더링용) */
         public static PdfSource ofHtmlUrl(String url) {
             var src = ofUrl(url);
             src.urlExpectedType = SourceType.HTML;
@@ -1313,12 +1335,12 @@ public class S2PdfUtil {
      * @throws IOException 입출력 또는 변환 오류 시
      */
     /**
-     * 임시 파일을 생성하고 JVM 종료 시 자동 삭제 플래그(deleteOnExit)를 설정한 후 추적 목록에 등록한다.
+     * 임시 파일을 생성하고 추적 목록에 등록한다. deleteOnExit 는 JVM 이 끝날 때까지 경로를 메모리에 쌓으므로 쓰지 않는다
+     * (정리는 작업 종료 시 및 {@link S2ResourceInputStream}이 담당).
      */
     private static Path createTrackedTempFile(String prefix, String suffix, List<Path> trackingList)
             throws IOException {
         var tempFile = Files.createTempFile(S2Uuid.generateUuidV7() + "_" + prefix + "_", suffix);
-        tempFile.toFile().deleteOnExit(); // JVM 비정상 종료 시 디스크 누수 방지 백업
         if (trackingList != null) {
             trackingList.add(tempFile);
         }
@@ -1505,7 +1527,6 @@ public class S2PdfUtil {
 
             // 최종 병합 대상 임시 파일 생성
             finalMergedTempFile = Files.createTempFile(S2Uuid.generateUuidV7() + "_merged_", ".pdf");
-            finalMergedTempFile.toFile().deleteOnExit();
             S2FileUtil.makeDirectory(finalMergedTempFile.getParent());
 
             try (var out = new BufferedOutputStream(Files.newOutputStream(finalMergedTempFile))) {
@@ -1665,7 +1686,7 @@ public class S2PdfUtil {
     }
 
     /**
-     * 표지 HTML 과 본문 PDF 파일들을 한 번에 단일 PDF 로 병합한다. (Goono-ELN 연구노트 다운로드 특화 편의 메서드)
+     * 표지 HTML 과 본문 PDF 파일들을 한 번에 단일 PDF 로 병합한다. (편의 메서드)
      *
      * @param coverHtml          표지 HTML 문자열
      * @param notePdfStreams     본문 PDF InputStream 목록
@@ -2034,7 +2055,6 @@ public class S2PdfUtil {
         var pdfBytes = renderHtmlToPdfBytes(htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
                 convertCssBackgroundImageTargetSelectors);
         var tempFile = Files.createTempFile(S2Uuid.generateUuidV7() + "_html_", ".pdf");
-        tempFile.toFile().deleteOnExit();
         boolean success = false;
         try {
             Files.write(tempFile, pdfBytes);
@@ -2268,8 +2288,6 @@ public class S2PdfUtil {
     /**
      * 여러 원격 HTML/JSP URL(표지, 프로젝트 정보 등)과 본문 PDF 스트림들을 단일 PDF 로 병합한다.
      * <p>
-     * <b>사이냅 뷰어(Synap Viewer) 변환 서버 대체용 편의 메서드:</b><br>
-     * 사이냅 뷰어의 PDF 병합 API({@code callSynapMergePdf})를 외부 상용 서버 없이 완벽하게 자체 대체할 수 있습니다.<br>
      * 원격 URL들은 비동기 병렬로 미리 프리페치되어 순서대로 결합됩니다.
      * </p>
      *
@@ -2280,10 +2298,10 @@ public class S2PdfUtil {
      * @throws IOException 네트워크 오류 또는 PDF 변환/병합 오류 시
      * @apiNote
      * <pre>{@code
-     * // 사이냅 뷰어 방식의 URL + 로컬 PDF 병합을 자체 엔진으로 완전 대체:
+     * // 원격 표지 HTML URL + 로컬 PDF 병합:
      * List<String> coverUrls = List.of(
-     *         "http://localhost:8080/eln/cover.jsp?noteId=10",
-     *         "http://localhost:8080/eln/projectInfo.jsp?noteId=10"
+     *         "http://localhost:8080/report/cover.jsp?noteId=10",
+     *         "http://localhost:8080/report/projectInfo.jsp?noteId=10"
      * );
      * List<InputStream> notePdfStreams = List.of(
      *         new FileInputStream("/data/notes/note_page1.pdf"),

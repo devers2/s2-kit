@@ -20,6 +20,8 @@
  */
 package io.github.devers2.s2util.file;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.NoSuchElementException;
 
@@ -79,6 +81,10 @@ public class JschSessionFactory {
     private final String passphrase;
     /* 비밀번호 (privateKeyPath 가 없는 경우 사용) */
     private final String password;
+    /* known_hosts 파일 경로 (null: ~/.ssh/known_hosts) */
+    private final String knownHostsPath;
+    /* 호스트 키 검증 생략 여부 (true: 중간자 공격에 노출됨) */
+    private final boolean allowUnknownHosts;
 
     // getSession()/returnSession() 등 동기화 없이 읽는 스레드에 forceResetPool()의 재할당이
     // 즉시 보이도록 volatile 로 선언한다 (JMM 가시성 보장 없이는 스레드가 이미 close() 된
@@ -102,6 +108,8 @@ public class JschSessionFactory {
     private static final int MAX_RETRY_COUNT = 3;
 
     /**
+     * 기본 풀 크기로 생성한다. 호스트 키는 {@code ~/.ssh/known_hosts}로 검증한다.
+     *
      * @param host           sftp host
      * @param port           sftp port
      * @param username       sftp username
@@ -111,18 +119,27 @@ public class JschSessionFactory {
      */
     public JschSessionFactory(String host, int port, String username, String privateKeyPath, String passphrase,
             String password) {
-        this.host = host;
-        this.port = port;
-        this.username = username;
-        this.privateKeyPath = privateKeyPath;
-        this.passphrase = passphrase;
-        this.password = password;
+        this(host, port, username, privateKeyPath, passphrase, password, null, null, null, null, false);
+    }
 
-        this.sessionMaxTotal = DEFAULT_SESSION_MAX_TOTAL;
-        this.sessionMinIdle = DEFAULT_SESSION_MIN_IDLE;
-        sessionPool = createSessionPool(this.sessionMaxTotal, this.sessionMinIdle);
-
-        this.sessionMaxWaitMillis = DEFAULT_SESSION_MAX_WAIT_MILLIS;
+    /**
+     * 호스트 키는 {@code ~/.ssh/known_hosts}로 검증한다.
+     *
+     * @param host                 sftp host
+     * @param port                 sftp port
+     * @param username             sftp username
+     * @param privateKeyPath       sftp private key path
+     * @param passphrase           sftp private key passphrase
+     * @param password             sftp password
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
+     * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
+     */
+    public JschSessionFactory(String host, int port, String username, String privateKeyPath,
+            String passphrase, String password, Integer sessionMaxTotal, Integer sessionMinIdle,
+            Integer sessionMaxWaitMillis) {
+        this(host, port, username, privateKeyPath, passphrase, password, sessionMaxTotal, sessionMinIdle,
+                sessionMaxWaitMillis, null, false);
     }
 
     /**
@@ -135,20 +152,31 @@ public class JschSessionFactory {
      * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
      * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
-     * @apiNote 기본값(128/16)을 그대로 쓰려면 대상 SFTP 서버(단일 서버 기준)의 sshd_config 에
+     * @param knownHostsPath       호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts}).
+     *                             예: {@code ssh-keyscan -p 22 sftp.example.com >> /etc/ssh/known_hosts_sftp}
+     * @param allowUnknownHosts    true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다. 중간자 공격(MITM)에
+     *                             노출되므로 신뢰할 수 있는 사설망에서만 명시적으로 켠다. {@code knownHostsPath}가 있으면 무시된다.
+     * @apiNote 호스트 키 검증은 기본적으로 켜져 있다(fail-closed). known_hosts 에 서버 키가 없으면 연결이 거부된다.
+     *          <p>
+     *          기본값(128/16)을 그대로 쓰려면 대상 SFTP 서버(단일 서버 기준)의 sshd_config 에
      *          {@code MaxStartups 20:30:128} 설정을 권장한다. 자세한 근거는
      *          {@link io.github.devers2.s2util.file.impl.S2SftpFileManagerImpl#S2SftpFileManagerImpl(String, int, String, String, String, String, Integer, Integer, Integer)}
      *          참고.
      */
     public JschSessionFactory(String host, int port, String username, String privateKeyPath,
             String passphrase, String password, Integer sessionMaxTotal, Integer sessionMinIdle,
-            Integer sessionMaxWaitMillis) {
+            Integer sessionMaxWaitMillis, String knownHostsPath, boolean allowUnknownHosts) {
         this.host = host;
         this.port = port;
         this.username = username;
         this.privateKeyPath = privateKeyPath;
         this.passphrase = passphrase;
         this.password = password;
+        this.knownHostsPath = knownHostsPath;
+        this.allowUnknownHosts = allowUnknownHosts;
+        if (allowUnknownHosts && (knownHostsPath == null || knownHostsPath.isBlank())) {
+            logger.warn("SFTP 호스트 키 검증이 꺼져 있습니다(allowUnknownHosts=true). 중간자 공격에 노출될 수 있습니다: {}:{}", host, port);
+        }
 
         this.sessionMaxTotal = sessionMaxTotal != null ? sessionMaxTotal : DEFAULT_SESSION_MAX_TOTAL;
         this.sessionMinIdle = sessionMinIdle != null ? sessionMinIdle : DEFAULT_SESSION_MIN_IDLE;
@@ -239,9 +267,31 @@ public class JschSessionFactory {
                 session.setPassword(password);
             }
 
-            session.setConfig("StrictHostKeyChecking", "no"); // 운영 환경에서는 적절한 설정 필요
+            configureHostKeyChecking(jsch, session);
             session.connect();
             return new DefaultPooledObject<>(session);
+        }
+
+        /**
+         * Verifies the server's host key against known_hosts unless explicitly disabled (fail-closed) | 명시적으로 끄지 않는 한 known_hosts 로 서버 호스트 키 검증
+         */
+        private void configureHostKeyChecking(JSch jsch, Session session) throws Exception {
+            if (knownHostsPath != null && !knownHostsPath.isBlank()) {
+                jsch.setKnownHosts(knownHostsPath);
+                session.setConfig("StrictHostKeyChecking", "yes");
+            } else if (allowUnknownHosts) {
+                session.setConfig("StrictHostKeyChecking", "no");
+            } else {
+                var defaultKnownHosts = Paths.get(System.getProperty("user.home"), ".ssh", "known_hosts");
+                if (Files.isReadable(defaultKnownHosts)) {
+                    jsch.setKnownHosts(defaultKnownHosts.toString());
+                } else {
+                    logger.warn("known_hosts 파일이 없어 SFTP 호스트 키를 검증할 수 없으므로 연결이 거부됩니다: {}. "
+                            + "knownHostsPath 를 지정하거나, 신뢰할 수 있는 내부망이라면 allowUnknownHosts=true 로 설정하세요.",
+                            defaultKnownHosts);
+                }
+                session.setConfig("StrictHostKeyChecking", "yes");
+            }
         }
 
         @Override

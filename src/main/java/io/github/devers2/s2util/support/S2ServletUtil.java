@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
-import java.util.regex.Pattern;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -279,28 +278,7 @@ public class S2ServletUtil {
     }
 
     private static String getFilenameFromHeader(String contentDisposition) {
-        var fileName = "";
-        if (contentDisposition != null && contentDisposition.contains("filename")) {
-            // filename*=UTF-8''file.pdf(확장 인코딩), filename="file.pdf"(따옴표),
-            // filename=file.pdf(따옴표 없음, 흔한 형식이나 기존엔 미지원) 세 가지 형식을 모두 처리
-            var pattern = Pattern.compile("filename\\*=UTF-8''([^;]*)|filename=\"([^\"]*)\"|filename=([^;]*)",
-                    Pattern.CASE_INSENSITIVE);
-            var matcher = pattern.matcher(contentDisposition);
-            if (matcher.find()) {
-                if (matcher.group(1) != null) {
-                    try {
-                        fileName = java.net.URLDecoder.decode(matcher.group(1).trim(), "UTF-8");
-                    } catch (UnsupportedEncodingException e) {
-                        fileName = "";
-                    }
-                } else if (matcher.group(2) != null) {
-                    fileName = matcher.group(2);
-                } else if (matcher.group(3) != null) {
-                    fileName = matcher.group(3).trim();
-                }
-            }
-        }
-        return fileName;
+        return S2FileUtil.parseContentDispositionFilename(contentDisposition);
     }
 
     /**

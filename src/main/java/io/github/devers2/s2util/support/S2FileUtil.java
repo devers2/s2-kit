@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -55,6 +56,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -1285,60 +1287,222 @@ public class S2FileUtil {
      * @throws IOException IOException
      */
     public static void zipDirectory(Path sourceDir, OutputStream outputStream) throws IOException {
-        try (var zos = new ZipOutputStream(outputStream)) {
-            Files.walk(sourceDir).forEach(path -> {
-                try {
-                    var relativePath = sourceDir.relativize(path);
-                    if (Files.isDirectory(path)) {
-                        var entry = new ZipEntry(relativePath.toString() + "/");
-                        zos.putNextEntry(entry);
-                        zos.closeEntry();
-                    } else {
-                        var entry = new ZipEntry(relativePath.toString());
-                        zos.putNextEntry(entry);
-                        try (var fis = Files.newInputStream(path)) {
-                            var buffer = new byte[S2StreamUtil.getBufferSize()];
-                            int len;
-                            while ((len = fis.read(buffer)) > 0) {
-                                zos.write(buffer, 0, len);
-                            }
-                        }
-                        zos.closeEntry();
-                    }
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+        // Close the walk stream; entry names always use '/' as the ZIP spec requires | walk 스트림을 닫고, 항목 이름은 ZIP 규격대로 항상 '/' 사용
+        try (var zos = new ZipOutputStream(outputStream); var paths = Files.walk(sourceDir)) {
+            for (var path : (Iterable<Path>) paths::iterator) {
+                if (path.equals(sourceDir)) {
+                    continue;
                 }
-            });
+                var entryName = sourceDir.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/");
+                if (Files.isDirectory(path)) {
+                    zos.putNextEntry(new ZipEntry(entryName + "/"));
+                    zos.closeEntry();
+                } else {
+                    zos.putNextEntry(new ZipEntry(entryName));
+                    try (var fis = Files.newInputStream(path)) {
+                        fis.transferTo(zos);
+                    }
+                    zos.closeEntry();
+                }
+            }
         }
     }
 
     /**
-     * 압축 파일을 풀어준다.
+     * Content-Disposition 헤더에서 파일명을 꺼낸다. RFC 6266 에 따라 {@code filename*}(RFC 5987 인코딩)를 {@code filename}보다
+     * 우선하며, 따옴표와 이스케이프를 풀고 경로 부분({@code ../}, 디렉토리)은 버린다.
+     *
+     * @param contentDisposition Content-Disposition 헤더 값
+     * @return 파일명 (없으면 빈 문자열)
+     * @apiNote
+     *
+     *          <pre>{@code
+     * parseContentDispositionFilename("attachment; filename=\"a.txt\"; filename*=UTF-8''%ED%95%9C.txt"); // "한.txt"
+     * }</pre>
+     */
+    public static String parseContentDispositionFilename(String contentDisposition) {
+        if (contentDisposition == null || contentDisposition.isBlank()) {
+            return "";
+        }
+        var extended = Pattern.compile("(?i)(?:^|;)\\s*filename\\*\\s*=\\s*([^']*)'[^']*'([^;\\s]*)").matcher(contentDisposition);
+        if (extended.find()) {
+            try {
+                var charset = extended.group(1).isBlank() ? StandardCharsets.UTF_8 : Charset.forName(extended.group(1).trim());
+                return lastPathSegment(percentDecode(extended.group(2), charset));
+            } catch (IllegalArgumentException e) {
+                // Unknown charset or bad encoding: fall back to filename= | 알 수 없는 문자셋·잘못된 인코딩이면 filename= 사용
+            }
+        }
+        var plain = Pattern.compile("(?i)(?:^|;)\\s*filename\\s*=\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([^;]*))").matcher(contentDisposition);
+        if (plain.find()) {
+            var name = plain.group(1) != null ? plain.group(1).replaceAll("\\\\(.)", "$1") : plain.group(2).trim();
+            return lastPathSegment(name);
+        }
+        return "";
+    }
+
+    /** Percent-decoding without URLDecoder's '+' to space | URLDecoder 와 달리 '+'를 공백으로 바꾸지 않는 퍼센트 디코딩 */
+    private static String percentDecode(String value, Charset charset) {
+        var out = new java.io.ByteArrayOutputStream();
+        for (int i = 0; i < value.length(); i++) {
+            var ch = value.charAt(i);
+            if (ch == '%') {
+                if (i + 2 >= value.length()) {
+                    throw new IllegalArgumentException("잘못된 퍼센트 인코딩: " + value);
+                }
+                out.write(Integer.parseInt(value.substring(i + 1, i + 3), 16)); // NumberFormatException is an IllegalArgumentException
+                i += 2;
+            } else {
+                var bytes = String.valueOf(ch).getBytes(charset);
+                out.write(bytes, 0, bytes.length);
+            }
+        }
+        return out.toString(charset);
+    }
+
+    /** Keeps only the file name so a header cannot choose the directory | 헤더가 저장 디렉토리를 정하지 못하도록 파일명만 남김 */
+    private static String lastPathSegment(String name) {
+        var slashed = name.replace('\\', '/');
+        var segment = slashed.substring(slashed.lastIndexOf('/') + 1).trim();
+        return segment.equals(".") || segment.equals("..") ? "" : segment;
+    }
+
+    /** Default maximum number of entries for {@link #unzipFiles(InputStream, Path)} | 기본 최대 항목 수 */
+    public static final int DEFAULT_UNZIP_MAX_ENTRIES = 10_000;
+    /** Default maximum total uncompressed size (1 GiB) for {@link #unzipFiles(InputStream, Path)} | 기본 최대 해제 크기 (1 GiB) */
+    public static final long DEFAULT_UNZIP_MAX_BYTES = 1L << 30;
+
+    /**
+     * 압축 파일을 풀어준다. 기본 제한({@value #DEFAULT_UNZIP_MAX_ENTRIES}개 항목, 1 GiB)을 적용한다.
      *
      * @param zipData 압축 파일 데이터
      * @param destDir 압축 해제할 디렉토리
-     * @throws IOException IOException
+     * @throws IOException 입출력 오류, 대상 디렉토리를 벗어나는 항목(Zip Slip), 제한 초과(압축 폭탄)
+     * @see #unzipFiles(InputStream, Path, int, long)
      */
     public static void unzipFiles(InputStream zipData, Path destDir) throws IOException {
+        unzipFiles(zipData, destDir, DEFAULT_UNZIP_MAX_ENTRIES, DEFAULT_UNZIP_MAX_BYTES);
+    }
+
+    /**
+     * 압축 파일을 풀어준다.
+     * <ul>
+     * <li>항목 경로가 {@code destDir} 밖을 가리키면(예: {@code ../evil.sh}, 절대 경로) 아무것도 쓰지 않고 예외를 던진다. (Zip Slip 방지)</li>
+     * <li>항목 수나 해제된 전체 크기가 제한을 넘으면 예외를 던진다. (압축 폭탄 방지) 이미 풀린 파일은 남는다.</li>
+     * <li>상위 디렉토리가 없으면 만든다.</li>
+     * </ul>
+     *
+     * @param zipData    압축 파일 데이터
+     * @param destDir    압축 해제할 디렉토리
+     * @param maxEntries 최대 항목 수
+     * @param maxBytes   해제된 전체 최대 크기(바이트)
+     * @throws IOException 입출력 오류, 대상 디렉토리를 벗어나는 항목, 제한 초과
+     */
+    public static void unzipFiles(InputStream zipData, Path destDir, int maxEntries, long maxBytes) throws IOException {
+        var baseDir = destDir.toAbsolutePath().normalize();
+        Files.createDirectories(baseDir);
+        long totalBytes = 0;
+        int entries = 0;
         try (var in = S2StreamUtil.getBufferedInputStream(zipData);
                 var zis = new ZipInputStream(in)) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                var newFile = destDir.resolve(entry.getName());
+                if (++entries > maxEntries) {
+                    throw new IOException("압축 파일의 항목 수가 제한(" + maxEntries + ")을 넘습니다.");
+                }
+                var newFile = resolveWithin(baseDir, entry.getName());
                 if (entry.isDirectory()) {
                     Files.createDirectories(newFile);
-                } else {
-                    try (var fos = Files.newOutputStream(newFile);
-                            var bos = new BufferedOutputStream(fos)) {
-                        var buffer = new byte[S2StreamUtil.getBufferSize()];
-                        int len;
-                        while ((len = zis.read(buffer)) > 0) {
-                            bos.write(buffer, 0, len);
+                    continue;
+                }
+                Files.createDirectories(newFile.getParent());
+                try (var bos = new BufferedOutputStream(Files.newOutputStream(newFile))) {
+                    var buffer = new byte[S2StreamUtil.getBufferSize()];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        totalBytes += len;
+                        if (totalBytes > maxBytes) {
+                            throw new IOException("압축 해제 크기가 제한(" + maxBytes + " bytes)을 넘습니다.");
                         }
+                        bos.write(buffer, 0, len);
                     }
                 }
             }
         }
+    }
+
+    /**
+     * {@code baseDir} 아래의 {@code name} 경로를 반환한다. {@code ..}나 절대 경로로 {@code baseDir} 밖을 가리키면 예외를 던진다. (Path Traversal 방지)
+     *
+     * @param baseDir 기준 디렉토리
+     * @param name    기준 디렉토리 아래의 상대 경로 (파일명 또는 하위 경로)
+     * @return 정규화된 절대 경로
+     * @throws S2RuntimeException 경로가 기준 디렉토리를 벗어날 때
+     */
+    public static Path resolveWithin(Path baseDir, String name) {
+        Objects.requireNonNull(baseDir, "baseDir");
+        if (name == null || name.isBlank()) {
+            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+        }
+        var base = baseDir.toAbsolutePath().normalize();
+        // Treat backslashes as separators on every OS so "..\x" is also caught | 모든 OS 에서 역슬래시도 구분자로 보아 "..\x"도 차단
+        var target = base.resolve(name.replace('\\', '/')).normalize();
+        if (!target.startsWith(base) || target.equals(base)) {
+            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+        }
+        return target;
+    }
+
+    /**
+     * 원격(SFTP 등, '/' 구분자) 경로에서 {@code baseDir} 아래의 {@code name} 경로를 반환한다. {@code ..}나 절대 경로로 {@code baseDir} 밖을 가리키면
+     * 예외를 던진다. 로컬 파일 시스템과 무관하게 문자열로만 계산한다.
+     *
+     * @param baseDir 원격 기준 디렉토리 (예: {@code /upload/2026})
+     * @param name    기준 디렉토리 아래의 상대 경로
+     * @return 정규화된 원격 경로 (예: {@code /upload/2026/a.txt})
+     * @throws S2RuntimeException 경로가 기준 디렉토리를 벗어날 때
+     */
+    public static String resolveRemoteWithin(String baseDir, String name) {
+        if (baseDir == null || name == null || name.isBlank()) {
+            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+        }
+        var nameSlashed = name.replace('\\', '/');
+        if (nameSlashed.startsWith("/")) {
+            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+        }
+        var base = normalizeRemotePath(baseDir);
+        var target = normalizeRemotePath(base.isEmpty() ? nameSlashed : base + "/" + nameSlashed);
+        var prefix = base.isEmpty() || base.endsWith("/") ? base : base + "/";
+        if (target == null || target.isEmpty() || target.equals("..") || target.startsWith("../")
+                || !target.startsWith(prefix) || target.length() == prefix.length()) {
+            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+        }
+        return target;
+    }
+
+    /** Collapses ".", ".." and repeated slashes; null when ".." climbs above the root | ".", "..", 중복 슬래시 정리. 루트 위로 올라가면 null */
+    private static String normalizeRemotePath(String path) {
+        var absolute = path.startsWith("/");
+        var segments = new ArrayList<String>();
+        for (var segment : path.replace('\\', '/').split("/")) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                continue;
+            }
+            if (segment.equals("..")) {
+                if (segments.isEmpty() || segments.get(segments.size() - 1).equals("..")) {
+                    if (absolute) {
+                        return null;
+                    }
+                    segments.add(segment);
+                } else {
+                    segments.remove(segments.size() - 1);
+                }
+                continue;
+            }
+            segments.add(segment);
+        }
+        var joined = String.join("/", segments);
+        return absolute ? "/" + joined : joined;
     }
 
     /**

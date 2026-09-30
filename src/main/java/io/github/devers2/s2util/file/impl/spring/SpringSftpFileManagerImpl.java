@@ -134,7 +134,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
     @Override
     public long writeFile(InputStream fileData, String savePath, String saveName) {
         long fileSize = -1;
-        String remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        String remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         SftpSession session = null;
 
         try {
@@ -174,7 +174,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
      */
     @Override
     public InputStream readFile(String savePath, String saveName) {
-        String remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        String remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         SftpSession session = null;
         boolean success = false;
         try {
@@ -229,7 +229,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
      * @param saveName 원격 서버의 대상 파일 저장 명
      */
     public void deleteFile(String savePath, String saveName) {
-        String remoteFileFullPath = S2FileUtil.joinPaths(savePath, saveName);
+        String remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         SftpSession session = null;
         try {
             // writeFile/readFile 과 동일하게 재시도/eviction 이 포함된 안전한 대여를 사용한다

@@ -18,7 +18,7 @@ caffeine = "3.2.3"
 commons-pool2 = "2.13.1"
 jackson = "3.0.3"
 javaparser = "3.27.1"
-jsch = "0.1.55"
+jsch = "2.28.7"
 junit = "6.0.2"
 lz4 = "1.10.2"
 uuid-creator = "6.1.1"
@@ -43,7 +43,7 @@ caffeine = { group = "com.github.ben-manes.caffeine", name = "caffeine", version
 commons-pool2 = { group = "org.apache.commons", name = "commons-pool2", version.ref = "commons-pool2" }
 jackson-databind = { group = "tools.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 javaparser-core = { group = "com.github.javaparser", name = "javaparser-core", version.ref = "javaparser" }
-jsch = { group = "com.jcraft", name = "jsch", version.ref = "jsch" }
+jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
 jsr305 = { group = "com.google.code.findbugs", name = "jsr305", version.ref = "jsr305" }
 lz4 = { group = "at.yawk.lz4", name = "lz4-java", version.ref = "lz4" }
 uuid-creator = { group = "com.github.f4b6a3", name = "uuid-creator", version.ref = "uuid-creator" }

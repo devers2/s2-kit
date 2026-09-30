@@ -117,6 +117,9 @@ const CONFIG_VALUE_VALIDATORS = {
 // S2Util.fetch()의 responseType으로 인식되는 값 목록. 이 목록에 없는 값이 들어오면 JSON으로 처리하되 콘솔에 경고를 남긴다.
 const KNOWN_RESPONSE_TYPES = ['JSON', 'BLOB', 'HTML', 'TEXT', 'ARRAY_BUFFER', 'FORM_DATA'];
 
+/** Entities for S2Util.escapeHtml | escapeHtml 용 엔티티 */
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 export const S2Util = {
   /**
    * S2Util 내부 디버그 로그(예: fetch 요청 시작/종료 시각) 출력 여부.
@@ -126,6 +129,42 @@ export const S2Util = {
    * S2Util.debug = true; // 이후 S2Util.fetch() 호출 시 시작/종료 로그가 콘솔에 출력된다.
    */
   debug: false,
+  /**
+   * HTML 특수문자(&, <, >, ", ')를 엔티티로 바꾼다. 신뢰할 수 없는 값을 HTML 문자열에 넣을 때 사용한다.
+   *
+   * @param {*} value - 이스케이프할 값 (null/undefined 는 빈 문자열)
+   * @returns {string} 이스케이프된 문자열
+   *
+   * @example
+   * S2Util.escapeHtml('<img src=x onerror=alert(1)>'); // → '&lt;img src=x onerror=alert(1)&gt;'
+   */
+  escapeHtml(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+  },
+  /**
+   * 요소에 메시지를 채운다. 문자열은 텍스트로 넣고 줄바꿈(\n)은 <br>로 바꾼다. HTML 이 필요하면 Node(요소, DocumentFragment)를 넘긴다.
+   *
+   * @private
+   * @param {Element} element - 메시지를 넣을 요소
+   * @param {string|Node} message - 텍스트 또는 Node
+   */
+  setMessage(element, message) {
+    if (message instanceof Node) {
+      element.appendChild(message);
+      return;
+    }
+    String(message ?? '')
+      .split(/\r?\n/)
+      .forEach((line, index) => {
+        if (index > 0) {
+          element.appendChild(document.createElement('br'));
+        }
+        element.appendChild(document.createTextNode(line));
+      });
+  },
   /**
    * 대상 DOM 요소의 모든 자식 노드를 안전하게 삭제하거나, 주어진 새로운 노드들로 한 번에 대체한다.
    *
@@ -730,6 +769,7 @@ export const S2Util = {
    *
    * @param {string} targetTemplate 템플릿으로 사용할 HTML 문자열 또는 해당 HTML이 담긴 템플릿(<script> 태그/요소) ID
    * @param {Object|Object[]} data 템플릿에 치환할 데이터. 단일 객체이거나, 반복 처리할 객체 배열
+   * {{=key}}는 값을 HTML 이스케이프하여 넣는다(XSS 방지). 값이 신뢰할 수 있는 HTML 이면 {{-key}}로 그대로 넣는다.
    * @returns {string} - 데이터가 치환되고 조건부 속성(if/else)이 처리된 최종 HTML 문자열.
    *
    * @example
@@ -773,10 +813,11 @@ export const S2Util = {
               const value = props[key];
               // key에 정규식 특수문자(., (, ) 등)가 포함되어 있어도 리터럴 그대로 매칭되도록 이스케이프한다.
               const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              replacedHtml = replacedHtml.replace(
-                new RegExp(`{{=${escapedKey}}}`, 'g'),
-                value || value === 0 ? value : ''
-              );
+              const text = value || value === 0 ? value : '';
+              // A function replacement keeps "$&" etc. in values literal | 함수로 치환해야 값의 "$&" 등이 패턴으로 해석되지 않음
+              replacedHtml = replacedHtml
+                .replace(new RegExp(`{{=${escapedKey}}}`, 'g'), () => S2Util.escapeHtml(text))
+                .replace(new RegExp(`{{-${escapedKey}}}`, 'g'), () => String(text));
             }
 
             const trimmedHtml = replacedHtml.trim();
@@ -831,17 +872,17 @@ export const S2Util = {
     }
     // props에 매칭되지 않아 남아있는 {{=key}}는 빈 문자열로 치환한다. 다만 오타를 조용히 숨기지 않도록,
     // 매칭되지 않은 플레이스홀더가 있었다면 어떤 key인지 콘솔에 경고로 남긴다.
-    const unmatchedKeys = resultHtml.match(/{{=([^}}]+)}}/g);
+    const unmatchedKeys = resultHtml.match(/{{[=-]([^}}]+)}}/g);
     if (unmatchedKeys) {
       const uniqueUnmatchedKeys = [
-        ...new Set(unmatchedKeys.map((placeholder) => placeholder.replace(/^{{=|}}$/g, '')))
+        ...new Set(unmatchedKeys.map((placeholder) => placeholder.replace(/^{{[=-]|}}$/g, '')))
       ];
       console.warn(
         `S2Util.template: 다음 플레이스홀더가 데이터와 매칭되지 않아 빈 문자열로 치환되었습니다(오타 여부를 확인하세요): ${uniqueUnmatchedKeys.join(', ')}`
       );
     }
 
-    return resultHtml.replace(/({{=([^}}]+)}})/g, '');
+    return resultHtml.replace(/({{[=-]([^}}]+)}})/g, '');
   },
   /**
    * 데이터를 기반으로 <select> 요소의 <option> 목록을 동적으로 생성한다.
@@ -965,6 +1006,9 @@ export const S2Util = {
    * @returns {string} - `<ul class="pagination">...</ul>` 형태의 HTML 페이지네이션 마크업 문자열.
    */
   pagination(paginationInfo, jsFunction, jsParams) {
+    if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(String(jsFunction))) {
+      throw new Error(`S2Util.pagination: jsFunction 은 JavaScript 함수 이름이어야 합니다: ${jsFunction}`);
+    }
     let pagination = '';
     let functionParamString = '';
 
@@ -972,24 +1016,21 @@ export const S2Util = {
       if (!Array.isArray(jsParams)) {
         jsParams = [jsParams];
       }
-      for (const idx in jsParams) {
-        const param = jsParams[idx];
-        if (typeof param === 'string') {
-          functionParamString += `'${param}', `;
-        } else {
-          functionParamString += `${param}, `;
-        }
+      for (const param of jsParams) {
+        // Numbers stay numbers; anything else becomes an escaped string literal | 숫자는 그대로, 그 외는 이스케이프된 문자열 리터럴
+        const literal = typeof param === 'number' && Number.isFinite(param) ? String(param) : JSON.stringify(String(param));
+        functionParamString += `${S2Util.escapeHtml(literal)}, `;
       }
     }
 
-    const firstPageNoOnPageList = paginationInfo['firstPageNoOnPageList'];
-    const lastPageNoOnPageList = paginationInfo['lastPageNoOnPageList'];
+    const firstPageNoOnPageList = Number(paginationInfo['firstPageNoOnPageList']);
+    const lastPageNoOnPageList = Number(paginationInfo['lastPageNoOnPageList']);
 
     if (firstPageNoOnPageList > 1) {
       pagination += `<li class="paginate_button prev"><a href="#" onclick="${jsFunction}(${functionParamString + (firstPageNoOnPageList - 1)}); return false;"><i class="fa fa-chevron-left"></i></a></li>`;
     }
     for (let pageNo = firstPageNoOnPageList; pageNo <= lastPageNoOnPageList; pageNo++) {
-      if (pageNo === paginationInfo.pageNo) {
+      if (pageNo === Number(paginationInfo.pageNo)) {
         pagination += `<li class="paginate_button active"><a href="#">${pageNo}</a></li>`;
       } else {
         pagination += `<li class="paginate_button"><a href="#" onclick="${jsFunction}(${functionParamString + pageNo}); return false;">${pageNo}</a></li>`;
@@ -2243,7 +2284,7 @@ export const S2Util = {
    * 이 함수는 Promise를 반환하여 async/await 문법으로 비동기 결과를 받을 수 있으며,
    * 동시에 기존의 콜백(callback) 방식도 지원하여 하위 호환성을 유지합니다.
    *
-   * @param {string} message - 알림창에 표시할 HTML 메시지 문자열.
+   * @param {string|Node} message - 알림창에 표시할 메시지. 문자열은 텍스트로 표시되며(줄바꿈은 \n), HTML 이 필요하면 Node 를 넘긴다.
    * @param {function} [callback] - '확인' 버튼 클릭 시 실행할 콜백 함수.
    * @returns {Promise<void>}
    *
@@ -2274,7 +2315,7 @@ export const S2Util = {
       alertTitle.id = 'alert-title';
 
       const span = document.createElement('span');
-      span.innerHTML = message;
+      S2Util.setMessage(span, message);
 
       const alertButton = document.createElement('button');
       alertButton.id = 'alert-button';
@@ -2325,7 +2366,7 @@ export const S2Util = {
    * 이 함수는 Promise를 반환하여 async/await 문법으로 비동기 결과를 받을 수 있으며,
    * 동시에 기존의 콜백(callback) 방식도 지원하여 하위 호환성을 유지합니다.
    *
-   * @param {string} message - 확인창에 표시할 HTML 메시지 문자열.
+   * @param {string|Node} message - 확인창에 표시할 메시지. 문자열은 텍스트로 표시되며(줄바꿈은 \n), HTML 이 필요하면 Node 를 넘긴다.
    * @param {function} [callback] - '확인' 버튼 클릭 시 실행할 콜백 함수.
    * @returns {Promise<boolean>} - 확인 클릭 시 true, 취소 클릭 시 false.
    *
@@ -2367,17 +2408,10 @@ export const S2Util = {
       confirmTitle.id = 'confirm-title';
 
       const titleSpan = document.createElement('span');
-      titleSpan.innerHTML = message;
+      S2Util.setMessage(titleSpan, message);
 
       const confirmTitleDesc = document.createElement('div');
       confirmTitleDesc.id = 'confirm-title-desc';
-
-      const desc = '';
-      let descSpan;
-      if (desc) {
-        descSpan = document.createElement('span');
-        descSpan.innerHTML = message;
-      }
 
       const confirmButtonWrapper = document.createElement('div');
       confirmButtonWrapper.id = 'confirm-button-wrapper';
@@ -2425,9 +2459,6 @@ export const S2Util = {
       });
 
       confirmTitle.appendChild(titleSpan);
-      if (descSpan) {
-        confirmTitleDesc.appendChild(descSpan);
-      }
       confirmButtonWrapper.appendChild(confirmButton1);
       confirmButtonWrapper.appendChild(confirmButton2);
 
@@ -2451,7 +2482,7 @@ export const S2Util = {
    * @param {object} [option] - 모달 설정 옵션 객체.
    * @param {string} [option.width = '80%'] - 모달 창의 너비 (CSS 값).
    * @param {string} [option.height = 'auto'] - 모달 창의 높이 (CSS 값).
-   * @param {string} [option.title = ''] - 모달 헤더에 표시될 제목.
+   * @param {string} [option.title = ''] - 모달 헤더에 표시될 제목 (텍스트, HTML 이스케이프됨).
    * @param {string} [option.titleAlign = 'center'] - 제목의 텍스트 정렬 (CSS 값).
    * @param {string} [option.titleSize = '1.125rem'] - 제목의 폰트 크기 (CSS 값).
    * @param {string} [option.headerHtml = ''] - 제목 외에 헤더에 추가될 HTML 콘텐츠.
@@ -2476,7 +2507,7 @@ export const S2Util = {
     if (!option.hideHeader) {
       modalHeader = `
         <div class="modal-header">
-          <h2 class="modal-title" id="s2-modal-title-${modelNo}">${option.title || ''}&nbsp;</h2>
+          <h2 class="modal-title" id="s2-modal-title-${modelNo}">${S2Util.escapeHtml(option.title)}&nbsp;</h2>
           ${option.headerHtml ? option.headerHtml : ''}
           <button class="close-button" aria-label="닫기">&times;</button>
         </div>
@@ -2487,7 +2518,7 @@ export const S2Util = {
       document.body,
       `
         <div id="s2-modal-${modelNo}" class="s2-modal" role="dialog" aria-modal="true" aria-labelledby="s2-modal-title-${modelNo}" aria-describedby="s2-modal-description-${modelNo}">
-          <div class="modal-content" style="width: ${option.width ? option.width : '80%'}; height: ${option.height ? option.height : 'auto'}">
+          <div class="modal-content" style="width: ${S2Util.escapeHtml(option.width || '80%')}; height: ${S2Util.escapeHtml(option.height || 'auto')}">
             ${modalHeader}
             ${option.hideHeader ? '<button class="close-button no-header" aria-label="닫기">&times;</button>' : ''}
             <div class="modal-body" id="s2-modal-description-${modelNo}">
@@ -2533,9 +2564,9 @@ export const S2Util = {
    * 사용자에게 간결한 알림 메시지(Toast)를 화면에 표시한다.
    * 토스트는 고유 ID가 부여되며, 일정 시간 후 자동으로 사라진다.
    *
-   * @param {string} message - 토스트 본문에 표시할 메시지.
+   * @param {string|Node} message - 토스트 본문에 표시할 메시지. 문자열은 텍스트로 표시되며(줄바꿈은 \n), HTML 이 필요하면 Node 를 넘긴다.
    * @param {object} [option] - 토스트 설정 옵션 객체.
-   * @param {string} [option.title = '알림'] - 토스트 상단에 표시될 제목.
+   * @param {string} [option.title = '알림'] - 토스트 상단에 표시될 제목 (텍스트).
    * @param {number} [option.delay = 5000] - 토스트가 화면에 표시될 시간(밀리초).
    * @returns {void}
    *
@@ -2552,16 +2583,17 @@ export const S2Util = {
     tempContainer.innerHTML = `
             <div class="s2-toast toast-sty01 no-select" id="${toastId}">
                 <div class="flex-sty04">
-                    <strong class="ma-r10">${option && option.title ? option.title : '알림'}</strong>
+                    <strong class="ma-r10">${S2Util.escapeHtml(option && option.title ? option.title : '알림')}</strong>
                     <a href="#" class="fa-close close-sty02 btn-close-s2-toast" data-toast-id="${toastId}"><span class="close-btn" aria-label="닫기"></span></a>
                 </div>
                 <div class="ma-t15">
-                    <span id="toastMessage">${message}</span>
+                    <span class="toast-message"></span>
                 </div>
             </div>
         `;
 
     const toastElement = tempContainer.querySelector('.s2-toast');
+    S2Util.setMessage(toastElement.querySelector('.toast-message'), message);
     toastElement.querySelector('.btn-close-s2-toast').addEventListener('click', (event) => {
       event.preventDefault();
       S2Util.hideToast(event.currentTarget.dataset.toastId);

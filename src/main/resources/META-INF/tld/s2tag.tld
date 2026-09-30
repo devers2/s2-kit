@@ -2,13 +2,13 @@
 <taglib version="2.0" xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-jsptaglibrary_2_0.xsd">
   <description>s2 Custom Tag Library</description>
   <display-name>s2 Custom Tag</display-name>
-  <tlib-version>1.1</tlib-version>
+  <tlib-version>2.0</tlib-version>
   <short-name>s2</short-name>
   <uri>http://ext.s2.kr/taglib/tags</uri>
   <tag>
     <description>Pagination Tag</description>
     <name>pagination</name>
-    <tag-class>pagination.kr.shade.wind.s2.ext.S2PaginationTag</tag-class>
+    <tag-class>io.github.devers2.s2util.pagination.S2PaginationTag</tag-class>
     <body-content>empty</body-content>
     <attribute>
       <name>paginationInfo</name>

@@ -25,12 +25,19 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 import io.github.devers2.s2util.core.S2DateUtil;
+import io.github.devers2.s2util.log.S2LogManager;
+import io.github.devers2.s2util.log.S2Logger;
 import io.github.devers2.s2util.support.vo.S2DefaultVO;
 
 /**
@@ -41,6 +48,11 @@ import io.github.devers2.s2util.support.vo.S2DefaultVO;
  * @since 2020. 07. 08.
  */
 public class S2SearchVO extends S2DefaultVO {
+
+    private static final S2Logger logger = S2LogManager.getLogger(S2SearchVO.class);
+
+    /** Identifier or alias.identifier only, so it can go into SQL as is | SQL 에 그대로 넣을 수 있도록 식별자 또는 별칭.식별자만 허용 */
+    private static final Pattern SORT_COLUMN = Pattern.compile("[A-Z_][A-Z0-9_]*(\\.[A-Z_][A-Z0-9_]*)?");
 
     /** 페이지당 레코드 개수(recordCountPerPage) */
     private int pageUnit = 10;
@@ -205,7 +217,7 @@ public class S2SearchVO extends S2DefaultVO {
     }
 
     public void setPageSize(int pageSize) {
-        this.pageSize = pageSize;
+        this.pageSize = Math.max(1, pageSize);
     }
 
     public int getPageUnit() {
@@ -213,7 +225,7 @@ public class S2SearchVO extends S2DefaultVO {
     }
 
     public void setPageUnit(int pageUnit) {
-        this.pageUnit = pageUnit;
+        this.pageUnit = Math.max(1, pageUnit);
     }
 
     public int getPageNo() {
@@ -221,12 +233,13 @@ public class S2SearchVO extends S2DefaultVO {
     }
 
     public void setPageNo(int pageNo) {
-        this.pageNo = pageNo;
+        this.pageNo = Math.max(1, pageNo);
     }
 
     /** 현재 레코드 목록의 첫번째 인덱스 */
     public int getFirstIndex() {
-        return (this.getPageNo() - 1) * this.getPageUnit();
+        // Saturate instead of overflowing to a negative offset | 음수 오프셋으로 넘치지 않도록 최댓값에서 멈춤
+        return (int) Math.min(Integer.MAX_VALUE - (long) this.getPageUnit(), (long) (this.getPageNo() - 1) * this.getPageUnit());
     }
 
     /** 현재 레코드 목록의 마지막 인덱스 */
@@ -254,31 +267,52 @@ public class S2SearchVO extends S2DefaultVO {
 
     /**
      * orderBy ("A_COLUMN DESC, B_COLUMN ASC ...") → [{column: "A_COLUMN", sort: "DESC"}, {column: "B_COLUMN", sort: "ASC"} ...]
+     * <p>
+     * 컬럼명은 식별자({@code COLUMN} 또는 {@code ALIAS.COLUMN}, 영문·숫자·밑줄)만 허용하고 그 외 항목은 버린다. MyBatis {@code ${column}}처럼
+     * SQL 에 그대로 들어가므로, 가능하면 허용 컬럼을 지정하는 {@link #getOrderByList(Collection)}를 사용한다.
+     * </p>
      *
-     * @return 정렬된 목록
+     * @return 정렬 목록 (orderBy 가 비어 있으면 null)
      */
     public List<Map<String, String>> getOrderByList() {
-        List<Map<String, String>> orderByList = null;
+        return getOrderByList(null);
+    }
 
-        if (orderBy != null && !orderBy.isBlank()) {
-            orderByList = new ArrayList<>();
-            var orderByArr = orderBy.trim().split(",");
-
-            for (var orderByInfo : orderByArr) {
-                var orderByInfoArr = orderByInfo.trim().split("\\s");
-                var column = orderByInfoArr[0].trim();
-
-                if (column != null && !column.isBlank()) {
-                    var sort = orderByInfoArr.length > 1 && "DESC".equalsIgnoreCase(orderByInfoArr[1].trim()) ? "DESC"
-                            : "ASC";
-                    Map<String, String> orderByMap = new HashMap<>(); // 명시적 타입 선언 유지 (제네릭 추론 활용)
-                    orderByMap.put("column", column.toUpperCase());
-                    orderByMap.put("sort", sort);
-                    orderByList.add(orderByMap);
-                }
+    /**
+     * orderBy 를 정렬 목록으로 변환하되 {@code allowedColumns}에 있는 컬럼만 남긴다. (대소문자 무시)
+     *
+     * @param allowedColumns 허용 컬럼 (null: 식별자 형식만 검사)
+     * @return 정렬 목록 (orderBy 가 비어 있으면 null)
+     */
+    public List<Map<String, String>> getOrderByList(Collection<String> allowedColumns) {
+        if (orderBy == null || orderBy.isBlank()) {
+            return null;
+        }
+        Set<String> allowed = null;
+        if (allowedColumns != null) {
+            allowed = new HashSet<>();
+            for (var column : allowedColumns) {
+                allowed.add(column.toUpperCase(Locale.ROOT));
             }
         }
 
+        List<Map<String, String>> orderByList = new ArrayList<>();
+        for (var orderByInfo : orderBy.trim().split(",")) {
+            var orderByInfoArr = orderByInfo.trim().split("\\s+");
+            var column = orderByInfoArr[0].trim().toUpperCase(Locale.ROOT);
+            if (column.isEmpty()) {
+                continue;
+            }
+            if (!SORT_COLUMN.matcher(column).matches() || (allowed != null && !allowed.contains(column))) {
+                logger.warn("허용되지 않은 정렬 컬럼을 무시합니다: {}", orderByInfo.trim());
+                continue;
+            }
+            var sort = orderByInfoArr.length > 1 && "DESC".equalsIgnoreCase(orderByInfoArr[1].trim()) ? "DESC" : "ASC";
+            Map<String, String> orderByMap = new HashMap<>();
+            orderByMap.put("column", column);
+            orderByMap.put("sort", sort);
+            orderByList.add(orderByMap);
+        }
         return orderByList;
     }
 

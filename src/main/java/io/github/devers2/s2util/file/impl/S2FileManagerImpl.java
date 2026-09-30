@@ -95,12 +95,7 @@ public class S2FileManagerImpl implements FileManager {
      * @return 검증된 대상 파일 경로
      */
     private static Path resolveSafePath(String savePath, String saveName) {
-        var baseDir = Paths.get(savePath).toAbsolutePath().normalize();
-        var target = baseDir.resolve(saveName).normalize();
-        if (!target.startsWith(baseDir)) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + saveName);
-        }
-        return target;
+        return S2FileUtil.resolveWithin(Paths.get(savePath), saveName);
     }
 
 }

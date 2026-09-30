@@ -350,4 +350,6 @@ dependencies {
     testImplementation(libs.s2.core)
     testImplementation("org.jsoup:jsoup:1.23.2")
     testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85")
+    testImplementation(libs.jakarta.servlet.api) // S2PaginationTag 시험 (TagSupport)
+    testImplementation(libs.jakarta.servlet.jsp)
 }
