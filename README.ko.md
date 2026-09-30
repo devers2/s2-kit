@@ -173,6 +173,11 @@ S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.tt
 
 var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("보고서");
 // 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
+// 워터마크 (단위 pt, A4 = 595 x 842): 가로 200 에 세로는 비율대로, 가운데, 20% 불투명
+//   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
+// 오른쪽 아래에서 안쪽으로 40, 30 떨어진 60 x 60 직인
+//   .watermark(S2PdfUtil.Watermark.of(Path.of("seal.png")).size(60, 60)
+//           .position(S2PdfUtil.Watermark.Position.BOTTOM_RIGHT).offset(40, 30))
 try (InputStream pdf = S2PdfUtil.merge(List.of(
         S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
         S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),

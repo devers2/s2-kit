@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.CRC32;
 
 import javax.imageio.ImageIO;
@@ -272,6 +273,123 @@ class S2PdfMergeTest {
         assertThrows(IllegalArgumentException.class, () -> MergeOptions.create().pageNumbers(-1, 0));
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.merge(
                 List.of(PdfSource.ofText("only")), MergeOptions.create().pageNumbers(1, 0)));
+    }
+
+    // ------------------------------------------------------------- watermark
+
+    private static byte[] colored(String format, int width, int height, java.awt.Color color) throws IOException {
+        var img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        var g = img.createGraphics();
+        g.setColor(color);
+        g.fillRect(0, 0, width, height);
+        g.dispose();
+        var out = new ByteArrayOutputStream();
+        ImageIO.write(img, format, out);
+        return out.toByteArray();
+    }
+
+    /** Bounds {x, y, width, height} of reddish pixels at 72 dpi (1pt = 1px, y from the top) | 붉은 픽셀 영역 */
+    private static int[] redBounds(PDDocument doc, int pageIndex) throws IOException {
+        var image = new org.apache.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(pageIndex, 72);
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = -1, maxY = -1;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                var c = new java.awt.Color(image.getRGB(x, y));
+                if (c.getRed() > 200 && c.getGreen() < 180 && c.getBlue() < 180 && c.getRed() - c.getGreen() > 60) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return maxX < 0 ? null : new int[] { minX, minY, maxX - minX + 1, maxY - minY + 1 };
+    }
+
+    private static void assertBounds(int[] expected, int[] actual) {
+        assertNotNull(actual, "watermark drawn");
+        for (int i = 0; i < 4; i++) {
+            assertEquals(expected[i], actual[i], 2, "x, y, width, height = " + java.util.Arrays.toString(actual));
+        }
+    }
+
+    private PDDocument watermarked(S2PdfUtil.Watermark watermark) throws IOException {
+        return load(S2PdfUtil.merge(List.of(PdfSource.ofText(" ")), MergeOptions.create().watermark(watermark)));
+    }
+
+    @Test
+    void watermarkSizeKeepsTheRatioWhenOneSideIsGiven() throws IOException {
+        var red = colored("png", 100, 50, java.awt.Color.RED);
+        var position = S2PdfUtil.Watermark.Position.TOP_LEFT;
+        try (var doc = watermarked(S2PdfUtil.Watermark.of(red).width(200).position(position).offset(20, 30))) {
+            assertBounds(new int[] { 20, 30, 200, 100 }, redBounds(doc, 0));
+        }
+        try (var doc = watermarked(S2PdfUtil.Watermark.of(red).height(40).position(position).offset(20, 30))) {
+            assertBounds(new int[] { 20, 30, 80, 40 }, redBounds(doc, 0));
+        }
+        try (var doc = watermarked(S2PdfUtil.Watermark.of(red).size(60, 90).position(position).offset(20, 30))) {
+            assertBounds(new int[] { 20, 30, 60, 90 }, redBounds(doc, 0));
+        }
+        try (var doc = watermarked(S2PdfUtil.Watermark.of(red).position(position))) {
+            assertBounds(new int[] { 0, 0, 100, 50 }, redBounds(doc, 0));
+        }
+    }
+
+    @Test
+    void watermarkPositionsAndOffsets() throws IOException {
+        var red = colored("jpg", 60, 60, java.awt.Color.RED);
+        // A4 595 x 842 | A4 595 x 842
+        var cases = Map.of(
+                S2PdfUtil.Watermark.Position.CENTER, new int[] { (595 - 60) / 2 + 10, (842 - 60) / 2 + 20 },
+                S2PdfUtil.Watermark.Position.TOP, new int[] { (595 - 60) / 2 + 10, 20 },
+                S2PdfUtil.Watermark.Position.TOP_RIGHT, new int[] { 595 - 60 - 10, 20 },
+                S2PdfUtil.Watermark.Position.RIGHT, new int[] { 595 - 60 - 10, (842 - 60) / 2 + 20 },
+                S2PdfUtil.Watermark.Position.BOTTOM_RIGHT, new int[] { 595 - 60 - 10, 842 - 60 - 20 },
+                S2PdfUtil.Watermark.Position.BOTTOM, new int[] { (595 - 60) / 2 + 10, 842 - 60 - 20 },
+                S2PdfUtil.Watermark.Position.BOTTOM_LEFT, new int[] { 10, 842 - 60 - 20 },
+                S2PdfUtil.Watermark.Position.LEFT, new int[] { 10, (842 - 60) / 2 + 20 });
+        for (var entry : cases.entrySet()) {
+            try (var doc = watermarked(S2PdfUtil.Watermark.of(red).size(60, 60).position(entry.getKey()).offset(10, 20))) {
+                var xy = entry.getValue();
+                assertBounds(new int[] { xy[0], xy[1], 60, 60 }, redBounds(doc, 0));
+            }
+        }
+    }
+
+    @Test
+    void watermarkIsOnEveryPageUnderThePageNumbersAndCanBeTranslucent() throws IOException {
+        var red = colored("png", 40, 40, java.awt.Color.RED);
+        var options = MergeOptions.create().pageNumbers(true)
+                .watermark(S2PdfUtil.Watermark.of(red).size(40, 40).opacity(0.5f));
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("a"), PdfSource.ofPdf(chapterPdf())), options))) {
+            assertEquals(3, doc.getNumberOfPages());
+            for (int i = 0; i < 3; i++) {
+                assertNotNull(redBounds(doc, i), "page " + (i + 1));
+            }
+            var image = new org.apache.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(0, 72);
+            var middle = new java.awt.Color(image.getRGB(595 / 2, 842 / 2));
+            assertEquals(255, middle.getRed(), 3);
+            assertEquals(128, middle.getGreen(), 10, "half transparent red on white");
+            assertTrue(new PDFTextStripper().getText(doc).contains("3 / 3"));
+        }
+    }
+
+    @Test
+    void watermarkInputIsChecked() throws IOException {
+        var red = colored("png", 10, 10, java.awt.Color.RED);
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.Watermark.of(red).width(0));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.Watermark.of(red).size(10, -1));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.Watermark.of(red).opacity(1.5f));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.Watermark.of(new byte[0]));
+        var e = assertThrows(IOException.class, () -> watermarked(S2PdfUtil.Watermark.of("not an image".getBytes())));
+        assertTrue(e.getMessage().contains("워터마크"), e.getMessage());
+        var file = dir.resolve("mark.png");
+        Files.write(file, red);
+        try (var doc = watermarked(S2PdfUtil.Watermark.of(file));
+                var doc2 = watermarked(S2PdfUtil.Watermark.of(Files.newInputStream(file)))) {
+            assertNotNull(redBounds(doc, 0));
+            assertNotNull(redBounds(doc2, 0));
+        }
     }
 
     @Test

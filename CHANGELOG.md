@@ -87,6 +87,11 @@ before upgrading.
 - `S2PdfUtil.merge(sources, MergeOptions)`: a bookmark per source (a PDF's own bookmarks move under it;
   `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata. `pageNumbers(skipFirst, skipLast)` leaves out leading and trailing
   pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`).
+- Watermarks: `MergeOptions.watermark(Watermark.of(image)...)` stamps an image on every page. Size both sides (`size`),
+  the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
+  one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered
+  axis; `opacity`. Lengths in points. The image is embedded once and shared by all pages, PNG transparency is kept,
+  and page numbers are drawn above it.
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`; without a configured font an
   installed Korean TrueType font is used (`SYSTEM_FONT_CANDIDATES`: Malgun Gothic, NanumGothic, Noto Sans KR, ...).
 - `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).

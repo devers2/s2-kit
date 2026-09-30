@@ -1702,6 +1702,7 @@ public class S2PdfUtil {
         private String pageNumberFormat = "%d / %d";
         private String title;
         private String author;
+        private Watermark watermark;
 
         private MergeOptions() {
         }
@@ -1788,6 +1789,205 @@ public class S2PdfUtil {
         public MergeOptions author(String author) {
             this.author = author;
             return this;
+        }
+
+        /**
+         * 모든 쪽에 워터마크 이미지를 넣는다. 쪽 번호는 워터마크 위에 그려진다.
+         *
+         * @param watermark 워터마크 ({@link Watermark#of(Path)} 등). null 이면 넣지 않음
+         * @return 이 옵션
+         */
+        public MergeOptions watermark(Watermark watermark) {
+            this.watermark = watermark;
+            return this;
+        }
+    }
+
+    /**
+     * An image stamped on every page: size (both sides, or one side with the other kept in ratio), one of nine
+     * positions, an offset and an opacity. Lengths are in points (1/72 inch; A4 is 595 x 842).
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 모든 쪽에 찍는 이미지. 크기(가로·세로 둘 다, 또는 한쪽만 정하고 나머지는 비율대로), 9 곳 중 위치, 간격, 불투명도를 정한다. 길이 단위는 pt(1/72 인치,
+     * A4 는 595 x 842, 1mm 는 약 2.83pt).
+     *
+     * <pre>{@code
+     * var mark = Watermark.of(Path.of("logo.png")).width(200).position(Watermark.Position.CENTER).opacity(0.2f);
+     * var stamp = Watermark.of(Path.of("seal.png")).size(60, 60).position(Watermark.Position.BOTTOM_RIGHT).offset(40, 40);
+     * S2PdfUtil.merge(sources, MergeOptions.create().watermark(mark));
+     * }</pre>
+     */
+    public static final class Watermark {
+
+        /**
+         * 워터마크 기준 위치. 가장자리 기준이면 {@link #offset}만큼 안쪽으로 들어오고, 가운데 기준인 축은 가운데에서 x 는 오른쪽, y 는 아래쪽으로 옮긴다.
+         */
+        public enum Position {
+            TOP_LEFT, TOP, TOP_RIGHT, LEFT, CENTER, RIGHT, BOTTOM_LEFT, BOTTOM, BOTTOM_RIGHT
+        }
+
+        private final byte[] image;
+        private Float width;
+        private Float height;
+        private Position position = Position.CENTER;
+        private float offsetX;
+        private float offsetY;
+        private float opacity = 1f;
+
+        private Watermark(byte[] image) {
+            if (image == null || image.length == 0) {
+                throw new IllegalArgumentException("워터마크 이미지가 비었습니다.");
+            }
+            this.image = image;
+        }
+
+        /**
+         * @param image 이미지 파일 (PNG, JPG, GIF, BMP, WebP 는 imageio-webp 추가 시). PNG 의 투명 부분은 그대로 유지된다
+         * @return 워터마크 (가운데, 원래 크기, 불투명)
+         * @throws IOException 파일을 읽을 수 없을 때
+         */
+        public static Watermark of(Path image) throws IOException {
+            return new Watermark(Files.readAllBytes(image));
+        }
+
+        /**
+         * @param image 이미지 바이트
+         * @return 워터마크
+         */
+        public static Watermark of(byte[] image) {
+            return new Watermark(image == null ? null : image.clone());
+        }
+
+        /**
+         * @param image 이미지 스트림 (읽은 뒤 닫음, 최대 {@value #MAX_IMAGE_BYTES} 바이트)
+         * @return 워터마크
+         * @throws IOException 읽을 수 없을 때
+         */
+        public static Watermark of(InputStream image) throws IOException {
+            try (image) {
+                return new Watermark(S2StreamUtil.streamToByteArray(image, false, MAX_IMAGE_BYTES));
+            } catch (S2RuntimeException e) {
+                throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
+            }
+        }
+
+        /** Largest watermark image read from a stream (20MB) | 스트림으로 받는 워터마크 이미지 최대 크기 */
+        public static final long MAX_IMAGE_BYTES = 20L * 1024 * 1024;
+
+        /**
+         * 가로·세로를 모두 정한다 (비율이 달라질 수 있음).
+         *
+         * @param width  가로 (pt)
+         * @param height 세로 (pt)
+         * @return 이 워터마크
+         */
+        public Watermark size(float width, float height) {
+            this.width = positive(width, "가로");
+            this.height = positive(height, "세로");
+            return this;
+        }
+
+        /**
+         * 가로만 정한다. 세로는 이미지 비율대로.
+         *
+         * @param width 가로 (pt)
+         * @return 이 워터마크
+         */
+        public Watermark width(float width) {
+            this.width = positive(width, "가로");
+            this.height = null;
+            return this;
+        }
+
+        /**
+         * 세로만 정한다. 가로는 이미지 비율대로.
+         *
+         * @param height 세로 (pt)
+         * @return 이 워터마크
+         */
+        public Watermark height(float height) {
+            this.height = positive(height, "세로");
+            this.width = null;
+            return this;
+        }
+
+        /**
+         * @param position 기준 위치 (기본 {@link Position#CENTER})
+         * @return 이 워터마크
+         */
+        public Watermark position(Position position) {
+            this.position = Objects.requireNonNull(position, "position");
+            return this;
+        }
+
+        /**
+         * 기준 위치에서 옮길 거리. 왼쪽·오른쪽 기준이면 x 만큼, 위·아래 기준이면 y 만큼 그 가장자리에서 안쪽으로 들어온다. 가운데 기준인 축은 x 는 오른쪽,
+         * y 는 아래쪽으로 옮긴다 (음수는 반대 방향).
+         *
+         * @param x 가로 거리 (pt)
+         * @param y 세로 거리 (pt)
+         * @return 이 워터마크
+         */
+        public Watermark offset(float x, float y) {
+            this.offsetX = x;
+            this.offsetY = y;
+            return this;
+        }
+
+        /**
+         * @param opacity 불투명도 0 (투명) ~ 1 (불투명, 기본)
+         * @return 이 워터마크
+         */
+        public Watermark opacity(float opacity) {
+            if (!(opacity >= 0f && opacity <= 1f)) {
+                throw new IllegalArgumentException("불투명도는 0 ~ 1 이어야 합니다: " + opacity);
+            }
+            this.opacity = opacity;
+            return this;
+        }
+
+        private static float positive(float value, String name) {
+            if (!(value > 0f) || Float.isInfinite(value)) {
+                throw new IllegalArgumentException("워터마크 " + name + " 크기는 0 보다 커야 합니다: " + value);
+            }
+            return value;
+        }
+
+        /** The drawn size: both given, or one side with the other in ratio, or the image's own size | 그릴 크기 */
+        float[] drawSize(float imageWidth, float imageHeight) {
+            if (width != null && height != null) {
+                return new float[] { width, height };
+            }
+            if (width != null) {
+                return new float[] { width, width * imageHeight / imageWidth };
+            }
+            if (height != null) {
+                return new float[] { height * imageWidth / imageHeight, height };
+            }
+            return new float[] { imageWidth, imageHeight };
+        }
+
+        /** Lower-left corner on a page box | 쪽 영역에서의 왼쪽 아래 좌표 */
+        float[] origin(PDRectangle box, float w, float h) {
+            var name = position.name();
+            float x;
+            if (name.endsWith("LEFT")) {
+                x = box.getLowerLeftX() + offsetX;
+            } else if (name.endsWith("RIGHT")) {
+                x = box.getUpperRightX() - w - offsetX;
+            } else {
+                x = box.getLowerLeftX() + (box.getWidth() - w) / 2 + offsetX;
+            }
+            float y;
+            if (name.startsWith("TOP")) {
+                y = box.getUpperRightY() - h - offsetY;
+            } else if (name.startsWith("BOTTOM")) {
+                y = box.getLowerLeftY() + offsetY;
+            } else {
+                y = box.getLowerLeftY() + (box.getHeight() - h) / 2 - offsetY;
+            }
+            return new float[] { x, y };
         }
     }
 
@@ -2472,17 +2672,23 @@ public class S2PdfUtil {
                 // 힙 메모리 OOM 방지: 임시 파일 기반 디스크 스트림 캐시 사용
                 merger.mergeDocuments(IOUtils.createTempFileOnlyStreamCache());
             }
-            if (options.pageNumbers) {
+            if (options.pageNumbers || options.watermark != null) {
                 var numbered = createTrackedTempFile("numbered", ".pdf", intermediateTempFiles);
                 try (var doc = Loader.loadPDF(finalMergedTempFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
-                    var total = doc.getNumberOfPages();
-                    var numberedPages = total - options.pageNumberSkipFirst - options.pageNumberSkipLast;
-                    if (numberedPages < 1) {
-                        throw new IllegalArgumentException("쪽 번호를 넣을 쪽이 없습니다: 전체 " + total + "쪽에서 앞 "
-                                + options.pageNumberSkipFirst + "쪽, 뒤 " + options.pageNumberSkipLast + "쪽 제외");
+                    // Watermark first, so page numbers stay on top | 워터마크를 먼저 그려 쪽 번호가 위에 오게 함
+                    if (options.watermark != null) {
+                        stampWatermark(doc, options.watermark);
                     }
-                    stampPageNumbers(doc, options.pageNumberSkipFirst, numberedPages, options.pageNumberFontSize,
-                            new PDType1Font(Standard14Fonts.FontName.HELVETICA), options.pageNumberFormat);
+                    if (options.pageNumbers) {
+                        var total = doc.getNumberOfPages();
+                        var numberedPages = total - options.pageNumberSkipFirst - options.pageNumberSkipLast;
+                        if (numberedPages < 1) {
+                            throw new IllegalArgumentException("쪽 번호를 넣을 쪽이 없습니다: 전체 " + total + "쪽에서 앞 "
+                                    + options.pageNumberSkipFirst + "쪽, 뒤 " + options.pageNumberSkipLast + "쪽 제외");
+                        }
+                        stampPageNumbers(doc, options.pageNumberSkipFirst, numberedPages, options.pageNumberFontSize,
+                                new PDType1Font(Standard14Fonts.FontName.HELVETICA), options.pageNumberFormat);
+                    }
                     doc.save(numbered.toFile());
                 }
                 Files.move(numbered, finalMergedTempFile, StandardCopyOption.REPLACE_EXISTING);
@@ -3418,6 +3624,37 @@ public class S2PdfUtil {
             doc.save(copy.toFile());
         }
         return copy.toFile();
+    }
+
+    /**
+     * Draws the watermark image on every page; the image is embedded once and shared. JPEG is embedded as is, other
+     * formats losslessly with their transparency | 모든 쪽에 워터마크를 그린다. 이미지는 한 번만 넣어 공유한다. JPEG 는 그대로, 그 외는 투명도를
+     * 유지해 무손실로 넣는다
+     */
+    private static void stampWatermark(PDDocument document, Watermark watermark) throws IOException {
+        PDImageXObject image;
+        try {
+            if (isJpeg(watermark.image)) {
+                checkImageSize(watermark.image);
+                image = JPEGFactory.createFromByteArray(document, watermark.image);
+            } else {
+                image = LosslessFactory.createFromImage(document, decodeImage(watermark.image));
+            }
+        } catch (IOException e) {
+            throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
+        }
+        var size = watermark.drawSize(image.getWidth(), image.getHeight());
+        var state = new org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState();
+        state.setNonStrokingAlphaConstant(watermark.opacity);
+        state.setStrokingAlphaConstant(watermark.opacity);
+        for (var page : document.getPages()) {
+            var origin = watermark.origin(page.getCropBox(), size[0], size[1]);
+            try (var contentStream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND,
+                    true, true)) {
+                contentStream.setGraphicsStateParameters(state);
+                contentStream.drawImage(image, origin[0], origin[1], size[0], size[1]);
+            }
+        }
     }
 
     /**
