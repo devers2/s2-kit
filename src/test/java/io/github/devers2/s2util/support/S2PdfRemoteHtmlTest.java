@@ -59,6 +59,8 @@ class S2PdfRemoteHtmlTest {
 
     @BeforeEach
     void start() throws IOException {
+        // These tests check the built-in renderer, even where s2-chrome is installed | s2-chrome 이 있어도 내장 렌더러를 시험
+        S2PdfUtil.setBrowserRenderingEnabled(false);
         origin = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         origin.createContext("/", this::serveOrigin);
         origin.start();
@@ -74,6 +76,7 @@ class S2PdfRemoteHtmlTest {
 
     @AfterEach
     void stop() {
+        S2PdfUtil.setBrowserRenderingEnabled(true);
         origin.stop(0);
         other.stop(0);
     }

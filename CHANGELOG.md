@@ -106,6 +106,14 @@ before upgrading.
   decided for a screen as wide as the A4 page (794px): `@media screen` applies, `@media print` (link addresses after
   links, hidden navigation) does not, and `min-width`/`max-width`, `not`, orientation and dark mode are decided so a
   responsive page gets the one layout that fits the page.
+- Web pages through a browser: with `s2-chrome` (Chromium in a container without network, installed by _devtools2
+  `s2-office-converter`), HTML pages fetched by URL are printed by Chromium, so flex, grid and JavaScript come out as on
+  screen. The browser gets a file with the images and CSS already embedded under the rules above, so it never touches
+  the network. When it is missing or fails (an error, over `setBrowserTimeout`, default 60 seconds, or a result that is
+  not a PDF), the page is rendered by the built-in renderer with a warning. `setBrowserCommand`,
+  `resetBrowserCommand`, `setBrowserRenderingEnabled`, `isBrowserRenderingAvailable`, environment variable
+  `S2_CHROME`. A plain chrome/chromium with network access is never picked up automatically. No Java dependency is
+  added.
 - SVG drawing: with `io.github.openhtmltopdf:openhtmltopdf-svg-support` (Batik) on the classpath, `ofSvg`, `<svg>` in
   HTML and SVG images are drawn (`isSvgSupported()`). Scripts are off and only `data:` resources are allowed; external
   references inside an SVG (`<image>`, `<use>`) are removed (one refused reference blanks the whole SVG). Images inside

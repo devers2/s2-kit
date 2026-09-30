@@ -600,7 +600,7 @@ public class S2PdfUtil {
     private static final Pattern FULL_DOCUMENT = Pattern.compile("(?i)<(html|head|body)[\\s>]");
 
     /** Base rules placed first in a whole page's head, so the page's own CSS wins | 전체 문서의 head 맨 앞 기본 규칙 */
-    private static final String PAGE_BASE_CSS = "body { font-family: " + DEFAULT_FONT_FAMILY + "; }\n"
+    private static final String PAGE_BASE_CSS = "body { font-family: " + DEFAULT_FONT_FAMILY + ", sans-serif; }\n"
             + "pre, code, kbd, samp, tt { font-family: monospace, " + DEFAULT_FONT_FAMILY + "; }\n";
 
     /**
@@ -720,6 +720,172 @@ public class S2PdfUtil {
 
         builder.toStream(outputStream);
         builder.run();
+    }
+
+    // ------------------------------------------------------------------------
+    // Web pages through a browser (optional s2-chrome) | 브라우저로 웹 페이지 변환 (선택 s2-chrome)
+
+    /** Set by setBrowserCommand; never re-detected | setBrowserCommand 로 지정한 명령 */
+    private static volatile List<String> configuredBrowserCommand;
+    private static volatile List<String> detectedBrowserCommand;
+    private static volatile boolean browserEnabled = true;
+    private static volatile Duration browserTimeout = Duration.ofSeconds(60);
+
+    /**
+     * 웹 페이지(URL 로 받은 HTML)를 PDF 로 인쇄할 브라우저 명령을 정한다. 지정하지 않으면 환경 변수 {@code S2_CHROME}, PATH 의 {@code s2-chrome},
+     * {@code /usr/local/bin/s2-chrome} 순으로 찾는다 ({@code s2-chrome} 은 _devtools2
+     * {@code scripts/linux/setup-projects/s2/s2-office-converter/setup-s2-office-converter.sh} 가 설치하는, 네트워크가 끊긴 컨테이너의 Chromium).
+     * <p>
+     * 명령은 {@code <명령> --print-to-pdf <출력 PDF> <입력 HTML>} 형식을 받아야 한다. 입력 HTML 은 이미지·CSS 를 모두 넣은 파일이며, 명령이 네트워크에
+     * 접근하지 않아야 한다 (페이지의 JavaScript 가 내부망을 조회하지 못하도록). 그래서 PATH 의 일반 chrome/chromium 은 자동으로 쓰지 않는다.
+     * </p>
+     *
+     * @param command 명령과 앞부분 인자
+     */
+    public static void setBrowserCommand(String... command) {
+        if (command == null || command.length == 0 || command[0] == null || command[0].isBlank()) {
+            throw new IllegalArgumentException("명령이 비었습니다.");
+        }
+        configuredBrowserCommand = List.of(command);
+    }
+
+    /** 지정한 브라우저 명령을 지우고 자동 탐색으로 되돌린다. */
+    public static void resetBrowserCommand() {
+        configuredBrowserCommand = null;
+        detectedBrowserCommand = null;
+    }
+
+    /**
+     * 브라우저 변환을 쓸지 정한다 (기본 true). false 이면 브라우저가 있어도 내장 렌더러(openhtmltopdf)로 변환한다.
+     *
+     * @param enabled 사용 여부
+     */
+    public static void setBrowserRenderingEnabled(boolean enabled) {
+        browserEnabled = enabled;
+    }
+
+    /**
+     * 페이지 한 건의 브라우저 변환 제한 시간 (기본 60초). 넘으면 브라우저를 끝내고 내장 렌더러로 변환한다.
+     *
+     * @param timeout 제한 시간
+     */
+    public static void setBrowserTimeout(Duration timeout) {
+        if (timeout == null || timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("제한 시간은 0 보다 커야 합니다: " + timeout);
+        }
+        browserTimeout = timeout;
+    }
+
+    /**
+     * 웹 페이지를 브라우저로 변환할 수 있는지 (명령이 있는지만 보며 실행하지는 않음). 없으면 내장 렌더러로 변환한다.
+     *
+     * @return 브라우저 명령이 있고 사용하도록 되어 있으면 true
+     */
+    public static boolean isBrowserRenderingAvailable() {
+        var command = resolveBrowserCommand();
+        return browserEnabled && command != null && commandExists(command.get(0));
+    }
+
+    private static List<String> resolveBrowserCommand() {
+        var configured = configuredBrowserCommand;
+        if (configured != null) {
+            return configured;
+        }
+        var detected = detectedBrowserCommand;
+        if (detected != null && commandExists(detected.get(0))) {
+            return detected;
+        }
+        detected = detectBrowserCommand();
+        if (detected != null && !detected.equals(detectedBrowserCommand)) {
+            logger.info("웹 페이지 변환 명령: {}", detected);
+        }
+        detectedBrowserCommand = detected;
+        return detected;
+    }
+
+    private static List<String> detectBrowserCommand() {
+        var fromEnv = System.getenv("S2_CHROME");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return List.of(fromEnv.trim());
+        }
+        var found = findOnPath("s2-chrome");
+        if (found != null) {
+            return List.of(found.toString());
+        }
+        var fixed = Path.of("/usr/local/bin/s2-chrome");
+        return Files.isExecutable(fixed) ? List.of(fixed.toString()) : null;
+    }
+
+    /** Browser print setup: A4, and backgrounds kept as on screen | 브라우저 인쇄 설정: A4, 배경은 화면처럼 유지 */
+    private static final String BROWSER_PAGE_CSS = "@page { size: A4; }\n"
+            + "html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n";
+
+    /**
+     * Renders a web page: through the browser when one is available, otherwise, or when the browser fails, with the
+     * built-in renderer | 웹 페이지 변환. 브라우저가 있으면 브라우저로, 없거나 실패하면 내장 렌더러로
+     */
+    private static void renderWebPageToPdfFile(Path target, String htmlContent, String staticResourceBasePath,
+            String cssPath, String fontPath, Class<?> clazz, String... convertCssBackgroundImageTargetSelectors)
+            throws IOException {
+        var command = browserEnabled ? resolveBrowserCommand() : null;
+        if (command != null && commandExists(command.get(0))) {
+            var htmlWithImages = embedImages(htmlContent, staticResourceBasePath, convertCssBackgroundImageTargetSelectors);
+            var cssContent = S2Util.isNotEmpty(cssPath)
+                    ? loadCssContent(clazz, cssPath, staticResourceBasePath, convertCssBackgroundImageTargetSelectors)
+                    : "";
+            var doc = Jsoup.parse(composeHtml(htmlContent, htmlWithImages, cssContent));
+            doc.head().prependElement("style").appendChild(new DataNode(BROWSER_PAGE_CSS));
+            if (doc.selectFirst("meta[charset]") == null) {
+                doc.head().prependElement("meta").attr("charset", "UTF-8");
+            }
+            try {
+                printWithBrowser(command, doc.outerHtml(), target);
+                return;
+            } catch (IOException e) {
+                // A broken or outdated browser must not stop the merge | 브라우저 문제로 병합이 멈추지 않도록
+                logger.warn("브라우저 변환에 실패해 내장 렌더러로 변환합니다: {}", e.getMessage());
+            }
+        }
+        renderHtmlToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+                convertCssBackgroundImageTargetSelectors);
+    }
+
+    private static void printWithBrowser(List<String> command, String html, Path target) throws IOException {
+        var work = Files.createTempDirectory("s2_browser_");
+        try {
+            var input = work.resolve("page.html");
+            Files.writeString(input, html, StandardCharsets.UTF_8);
+            var output = work.resolve("page.pdf");
+            var args = new ArrayList<>(command);
+            args.addAll(List.of("--print-to-pdf", output.toString(), input.toString()));
+            var log = work.resolve("browser.log");
+            var process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            var timeout = browserTimeout;
+            boolean finished;
+            try {
+                finished = process.waitFor(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                destroyTree(process);
+                Thread.currentThread().interrupt();
+                throw new IOException("브라우저 변환이 중단되었습니다.", e);
+            }
+            if (!finished) {
+                destroyTree(process);
+                throw new IOException("브라우저 변환 제한 시간(" + timeout.toSeconds() + "초)을 넘었습니다");
+            }
+            if (process.exitValue() != 0 || !Files.isRegularFile(output) || Files.size(output) == 0) {
+                throw new IOException("종료 코드 " + process.exitValue() + ", 명령 " + args.get(0) + ", 출력: " + readTail(log, 2000));
+            }
+            try (var in = Files.newInputStream(output)) {
+                var head = in.readNBytes(1024);
+                if (indexOf(head, PDF_HEADER, 1024) < 0) {
+                    throw new IOException("PDF 가 아닌 결과, 명령 " + args.get(0));
+                }
+            }
+            Files.move(output, target, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            S2FileUtil.deleteQuietly(work);
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -1886,7 +2052,9 @@ public class S2PdfUtil {
          * <li>다른 호스트(CDN 등)는 공개 주소일 때만 받는다. 내부망·루프백 주소는 리다이렉트를 거쳐도 막는다.</li>
          * <li>리소스는 최대 {@value S2HtmlResources#MAX_RESOURCES}개, 하나당 20MB, 전체 {@link #maxBytes(long)} 까지 받는다.</li>
          * <li>받지 못한 리소스는 경고 로그를 남기고 빼며, PDF 는 그대로 만든다.</li>
-         * <li>JavaScript 는 실행하지 않으므로 스크립트로 그리는 화면은 나오지 않는다. 웹 폰트 대신 기본 폰트를 쓴다.</li>
+         * <li>브라우저({@code s2-chrome}, {@link S2PdfUtil#setBrowserCommand})가 있으면 브라우저로 인쇄해 flex·grid·JavaScript 까지 화면 그대로 나온다
+         * (네트워크 없는 컨테이너에서 실행). 없거나 실패하면 경고 로그를 남기고 내장 렌더러(openhtmltopdf)로 변환하며, 이때는 JavaScript 를 실행하지 않고
+         * CSS 는 CSS 2.1 수준으로 적용되며 웹 폰트 대신 기본 폰트를 쓴다.</li>
          * </ul>
          *
          * @param url http 또는 https URL
@@ -2223,7 +2391,7 @@ public class S2PdfUtil {
                                             fetched.uri, source.httpHeaders, source.timeout, source.maxBytes,
                                             ref -> classpathImageExists(ref, source.staticResourceBasePath));
                                     var tempFile = createTrackedTempFile("url_html", ".pdf", intermediateTempFiles);
-                                    renderHtmlToPdfFile(tempFile,
+                                    renderWebPageToPdfFile(tempFile,
                                             htmlContent,
                                             source.staticResourceBasePath,
                                             source.cssPath,

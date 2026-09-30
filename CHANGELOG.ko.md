@@ -89,6 +89,12 @@
   기본 폰트를 씁니다. 문자열 HTML(`ofHtml`)은 지금처럼 원격 주소를 가져오지 않습니다. 렌더러는 항상 인쇄(print) 미디어로 맞추므로, URL
   페이지의 미디어 쿼리는 A4 쪽 너비(794px) 화면 기준으로 판정합니다: `@media screen`은 적용하고 `@media print`(링크 뒤 주소 표시, 메뉴 숨김
   등)는 적용하지 않으며, `min-width`/`max-width`, `not`, 방향, 다크 모드 조건을 판정해 반응형 페이지에서 쪽에 맞는 레이아웃 하나만 적용합니다.
+- 웹 페이지를 브라우저로: `s2-chrome`(_devtools2 `s2-office-converter` 가 설치하는, 네트워크 없는 컨테이너의 Chromium)이 있으면 URL 로
+  받은 HTML 페이지를 Chromium 으로 인쇄해 flex·grid·JavaScript 까지 화면 그대로 나옵니다. 페이지의 이미지·CSS 는 앱이 위 규칙으로 받아 넣은
+  파일로 넘기므로 브라우저는 네트워크에 접근하지 않습니다. 없거나 실패하면(오류, `setBrowserTimeout` 기본 60초 초과, PDF 가 아닌 결과)
+  경고 로그를 남기고 내장 렌더러로 변환합니다. `setBrowserCommand`, `resetBrowserCommand`, `setBrowserRenderingEnabled`,
+  `isBrowserRenderingAvailable`, 환경 변수 `S2_CHROME`. 네트워크가 열린 일반 chrome/chromium 은 자동으로 쓰지 않습니다. Java 의존성은
+  추가되지 않습니다.
 - SVG 그리기: `io.github.openhtmltopdf:openhtmltopdf-svg-support`(Batik)가 클래스패스에 있으면 `ofSvg`, HTML 의 `<svg>`, SVG 이미지를
   그립니다(`isSvgSupported()`). 스크립트는 끄고 `data:` 리소스만 허용합니다. SVG 안의 외부 참조(`<image>`, `<use>`)는 지웁니다(거부된
   참조 하나가 SVG 전체를 비우기 때문). URL 페이지의 SVG 안 이미지는 같은 규칙으로 받아 넣습니다.
