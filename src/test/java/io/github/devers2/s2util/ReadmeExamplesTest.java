@@ -98,6 +98,11 @@ class ReadmeExamplesTest {
             pdf.transferTo(responseOutput);
         }
 
+        var sessionId = "abc";
+        io.github.devers2.s2util.support.S2PdfUtil.merge(io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofUrl(
+                "https://intra.example.com/report/view?id=10", Map.of("Cookie", "JSESSIONID=" + sessionId),
+                java.time.Duration.ofSeconds(30)));
+
         InputStream uploadedStream = InputStream.nullInputStream();
         if (io.github.devers2.s2util.support.S2PdfUtil.isOfficeConversionAvailable()) {
             io.github.devers2.s2util.support.S2PdfUtil.merge(List.of(

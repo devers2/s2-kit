@@ -179,6 +179,11 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
     pdf.transferTo(response.getOutputStream());
 }
 
+// URL 로 받은 HTML 페이지는 화면처럼: 같은 출처의 이미지·CSS 와 공개 주소(CDN)의 이미지를 받아 넣음 (내부망 주소는 차단).
+// 헤더(로그인 쿠키 등)는 같은 출처 요청에만 보냄. JavaScript 는 실행하지 않음
+S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
+        Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
+
 // 오피스·한글 문서(docx, xlsx, pptx, hwp, hwpx 등)는 LibreOffice 가 설치되어 있으면 변환됨
 // (s2-soffice, soffice, libreoffice 를 자동으로 찾음). 없어도 다른 소스는 그대로 병합됨
 if (S2PdfUtil.isOfficeConversionAvailable()) {

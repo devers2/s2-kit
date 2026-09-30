@@ -96,6 +96,13 @@ before upgrading.
   dependency is added. Without LibreOffice every other source still merges, and a document source fails with "오피스·한글 문서를 변환하려면
   s2-office-converter 설치가 필요합니다." (details in the cause and the log); `isOfficeConversionAvailable()` tells the caller in advance. Each conversion uses its own
   profile folder (conversions can run concurrently) and a time limit (`setOfficeTimeout`, default 3 minutes).
+- HTML pages fetched by URL (`ofUrl`, `ofHtmlUrl`) come out as the browser shows them: the page's images (`<img>`, lazy
+  `data-src`/`srcset`, CSS backgrounds) and stylesheets (`<link>`, `@import`) are fetched and embedded. The same origin is
+  fetched as is, and request headers (login cookies) go only to it. Other hosts (CDNs) are fetched only when public;
+  internal, loopback and link-local addresses are refused, through redirects too. Up to 300 resources, 20MB each and
+  `maxBytes` in total are fetched concurrently; a resource that cannot be fetched is dropped with a warning (the PDF is
+  still made). JavaScript does not run, and the default font stands in for web fonts. String HTML (`ofHtml`) still
+  never fetches remote addresses.
 
 ### Security
 
@@ -106,7 +113,8 @@ before upgrading.
   also checks an allow list. The result is safe for MyBatis `${column}`.
 - `S2PaginationTag` escapes `jsParam` inside `onclick` and rejects a `jsFunction` that is not a function name.
 - `S2PdfUtil`: the HTML renderer loads only `data:` URIs, so URLs written in the HTML (`http:`, `file:`, `//host`) are
-  never fetched (SSRF). `PdfSource.ofUrl` accepts only http/https.
+  never fetched (SSRF). `PdfSource.ofUrl` accepts only http/https. Resources of an HTML page fetched by URL follow the
+  rule above (same origin or public addresses) only.
 - `FileManager.downloadRemoteFile` accepts only http/https (no `file:`/`jar:`), sets connect/read timeouts, fails on a
   non-2xx response, checks the local save path, and sends a single request (file information comes from the same
   response).
@@ -129,6 +137,10 @@ before upgrading.
   left unchanged); images of `TYPE_CUSTOM` no longer fail; transparency is kept in PNG and flattened on white for JPG;
   resizing uses bicubic interpolation; images over 100 megapixels are refused before decoding; the source file is deleted
   right after the result is written instead of in a JVM shutdown hook added per call.
+- HTML to PDF: content after side-by-side `<img>` elements no longer vanishes (the XML re-parse put it inside the
+  unclosed `<img>`). Whole documents (`<html>`, `<head>`) keep their own `<head>` CSS (it used to land inside the template
+  body). Every `font-family` falls back to the default font, so Korean set in a font the server lacks (Malgun Gothic)
+  no longer prints as `#`.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL

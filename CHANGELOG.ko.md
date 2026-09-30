@@ -82,6 +82,11 @@
   없어도 다른 소스는 그대로 병합되며, 문서 소스는 "오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다." 예외를 냅니다(상세는
   원인(cause)과 로그). `isOfficeConversionAvailable()`로 미리
   확인할 수 있습니다. 변환마다 별도 프로필 폴더(동시 변환 가능)와 제한 시간(`setOfficeTimeout`, 기본 3분)을 씁니다.
+- URL 로 받은 HTML 페이지(`ofUrl`, `ofHtmlUrl`)가 화면처럼 나옵니다. 페이지의 이미지(`<img>`, 지연 로딩 `data-src`·`srcset`, CSS 배경)와
+  스타일시트(`<link>`, `@import`)를 받아 넣습니다. 같은 출처는 그대로 받고 요청 헤더(로그인 쿠키 등)도 같은 출처에만 보냅니다. 다른
+  호스트(CDN 등)는 공개 주소일 때만 받으며, 내부망·루프백·링크 로컬 주소는 리다이렉트를 거쳐도 막습니다. 리소스는 최대 300개, 하나당 20MB,
+  전체 `maxBytes`까지 동시에 받고, 받지 못한 리소스는 경고 로그를 남기고 뺍니다(PDF 는 만듦). JavaScript 는 실행하지 않고 웹 폰트 대신
+  기본 폰트를 씁니다. 문자열 HTML(`ofHtml`)은 지금처럼 원격 주소를 가져오지 않습니다.
 
 ### 보안
 
@@ -92,7 +97,7 @@
   검사합니다. 결과를 MyBatis `${column}`에 그대로 써도 안전합니다.
 - `S2PaginationTag`는 `onclick` 안의 `jsParam`을 이스케이프하고 함수 이름이 아닌 `jsFunction`을 거부합니다.
 - `S2PdfUtil`: HTML 렌더러가 `data:` URI 만 읽으므로 HTML 에 적힌 URL(`http:`, `file:`, `//host`)을 가져오지 않습니다(SSRF).
-  `PdfSource.ofUrl`은 http/https 만 받습니다.
+  `PdfSource.ofUrl`은 http/https 만 받습니다. URL 로 받은 HTML 페이지의 리소스는 위 규칙(같은 출처 또는 공개 주소)으로만 받습니다.
 - `FileManager.downloadRemoteFile`은 http/https 만 받고(`file:`/`jar:` 거부), 연결·읽기 제한 시간을 두며, 2xx 가 아니면 실패하고,
   로컬 저장 경로를 검사하며, 요청을 한 번만 보냅니다(파일 정보는 같은 응답에서 읽음).
 
@@ -112,6 +117,9 @@
 - `S2ImageUtil`: 비율 무시 모드에서 제한을 넘는 쪽만 줄입니다(최대 너비 200 에 400×100 이미지가 그대로 남던 문제). `TYPE_CUSTOM`
   이미지도 처리하고, PNG 는 투명도를 유지하며 JPG 는 흰 배경으로 합성합니다. 고품질(bicubic) 보간을 쓰고, 1억 픽셀을 넘는 이미지는 디코딩
   전에 거부합니다. 원본 파일은 호출마다 JVM 종료 훅을 추가하던 방식 대신 결과를 쓴 직후 삭제합니다.
+- HTML → PDF: 나란히 놓인 `<img>` 뒤의 내용이 모두 사라지던 문제를 고쳤습니다(XML 로 다시 파싱하면서 닫히지 않은 `<img>` 안으로 뒤의 내용이
+  들어갔음). 전체 문서(`<html>`, `<head>`)는 자신의 `<head>` CSS 를 유지합니다(전에는 템플릿 body 안에 들어감). 모든 `font-family`에
+  기본 폰트를 대체 폰트로 붙여, 서버에 없는 폰트(예: 맑은 고딕)로 지정한 한글이 `#`으로 나오지 않습니다.
 - `S2FileUtil.deleteFilesOlderThan`은 접두사가 있으면 디렉토리를 지우지 않으며, 시작 디렉토리는 지우지 않습니다.
 - `licenses/NOTICE`가 OpenHTMLtoPDF 를 "LGPL 2.1 / MPL 2.0"으로 적고 있었습니다. 실제로는 LGPL 2.1 이상이며 MPL 2.0 을 쓰는 의존성이 없어
   `LICENSE-MPL-2.0`을 삭제했습니다. NOTICE 에 Spring Web, Spring Integration SFTP, JSR-305 를 추가하고, 컴파일 전용·선택 의존성을 표시하며,

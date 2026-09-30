@@ -79,9 +79,9 @@ import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.DataNode;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Entities;
-import org.jsoup.parser.Parser;
 
 import io.github.devers2.s2util.core.S2StringUtil;
 import io.github.devers2.s2util.core.S2ThreadUtil;
@@ -108,7 +108,8 @@ import io.github.devers2.s2util.log.S2Logger;
  *     <ul>
  *       <li>대용량 병합 시 PDFBox 디스크 캐시(createTempFileOnlyStreamCache) 사용으로 JVM Heap OOM 원천 방지</li>
  *       <li>변환 시 사용된 중간 임시 파일은 성공/실패 여부와 무관하게 즉시 삭제 (반환 스트림의 임시 파일은 close 또는 GC 시 삭제)</li>
- *       <li>HTML 렌더링 시 이미지·CSS 는 클래스패스에서 읽어 인라인하며, 렌더러는 HTML 에 적힌 원격/로컬 URL 을 가져오지 않는다 (SSRF 방지)</li>
+ *       <li>HTML 렌더링 시 이미지·CSS 는 클래스패스에서 읽어 인라인하며, 렌더러는 HTML 에 적힌 원격/로컬 URL 을 가져오지 않는다 (SSRF 방지).
+ *           URL 로 받은 HTML 페이지는 예외로, 화면 그대로 나오도록 페이지의 이미지·스타일시트를 받아 넣는다 (같은 출처 또는 공개 주소만, 내부망 차단)</li>
  *       <li>최종 결과는 {@link S2ResourceInputStream}으로 반환되어 호출자가 {@code close()} 시 결과 임시 파일 자동 삭제</li>
  *       <li>이미지 렌더링 후 {@link java.awt.image.BufferedImage#flush()}를 호출하여 네이티브 메모리 버퍼 즉시 해제</li>
  *     </ul>
@@ -260,7 +261,7 @@ public class S2PdfUtil {
                 ? loadCssContent(clazz, cssPath, staticResourceBasePath, convertCssBackgroundImageTargetSelectors)
                 : "";
 
-        var completeHtml = String.format(HTML_TEMPLATE, cssContent, htmlWithImages);
+        var completeHtml = composeHtml(htmlContent, htmlWithImages, cssContent);
 
         var xhtmlContent = convertToXhtml(completeHtml);
         var pdfBytes = createPdf(xhtmlContent, clazz, fontPath);
@@ -307,8 +308,8 @@ public class S2PdfUtil {
     }
 
     private static String embedImage(String src, String staticResourceBasePath) { // 이미지 처리 공통 로직
-        if (src == null || src.startsWith("data:")) {
-            return src; // 이미 Base64 인코딩된 이미지 또는 src가 null
+        if (src == null || src.isBlank() || src.startsWith("data:")) {
+            return src; // 이미 Base64 인코딩된 이미지, 빈 값(받지 못해 뺀 원격 이미지 등) 또는 null
         }
 
         if (src.contains(":") || src.startsWith("//")) {
@@ -325,11 +326,7 @@ public class S2PdfUtil {
             return null;
         }
 
-        // 상대 경로를 클래스패스 절대 경로로 변환
-        var absolutePath = resourcePath.startsWith("../") ? resourcePath.replace("../", "/") : resourcePath;
-        if (!absolutePath.startsWith("/")) {
-            absolutePath = "/" + absolutePath;
-        }
+        var absolutePath = classpathImagePath(resourcePath);
 
         // 로컬 이미지 처리 (클래스패스 기준)
         try (InputStream imageStream = S2PdfUtil.class
@@ -343,6 +340,24 @@ public class S2PdfUtil {
             logger.error("이미지 처리 오류: {}", src, e);
             return null;
         }
+    }
+
+    /** A relative image path as a classpath path | 상대 이미지 경로를 클래스패스 경로로 */
+    private static String classpathImagePath(String resourcePath) {
+        var absolutePath = resourcePath.startsWith("../") ? resourcePath.replace("../", "/") : resourcePath;
+        return absolutePath.startsWith("/") ? absolutePath : "/" + absolutePath;
+    }
+
+    /**
+     * Whether a relative image path of a remote page is served from the classpath (staticResourceBasePath set), so it
+     * is not fetched | 원격 페이지의 상대 이미지 경로가 클래스패스에 있는지 (있으면 받지 않음)
+     */
+    private static boolean classpathImageExists(String ref, String staticResourceBasePath) {
+        if (S2Util.isEmpty(staticResourceBasePath)) {
+            return false;
+        }
+        var resourcePath = ref.replaceFirst("[?#].*$", "");
+        return S2PdfUtil.class.getResource(S2FileUtil.joinPaths(staticResourceBasePath, classpathImagePath(resourcePath))) != null;
     }
 
     /**
@@ -520,8 +535,91 @@ public class S2PdfUtil {
         return combinedCssContent.toString();
     }
 
+    /** A whole page (not a fragment): it has its own html, head or body element | 조각이 아닌 전체 문서 */
+    private static final Pattern FULL_DOCUMENT = Pattern.compile("(?i)<(html|head|body)[\\s>]");
+
+    /** Base rules placed first in a whole page's head, so the page's own CSS wins | 전체 문서의 head 맨 앞 기본 규칙 */
+    private static final String PAGE_BASE_CSS = "body { font-family: " + DEFAULT_FONT_FAMILY + "; }\n"
+            + "pre, code, kbd, samp, tt { font-family: monospace, " + DEFAULT_FONT_FAMILY + "; }\n";
+
+    /**
+     * Fragments go into the template body. Whole pages keep their own head (their CSS would otherwise end up inside
+     * the template body): the base rules go first and the configured CSS last, so it overrides the page. Every
+     * font-family also falls back to the default font so fonts the server lacks do not turn Korean into "#".
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 조각은 템플릿 body 에 넣는다. 전체 문서는 자신의 head 를 유지한다(템플릿 body 에 넣으면 페이지 CSS 가 body 안에 들어감). 기본 규칙은
+     * 맨 앞, 지정한 CSS 는 맨 뒤에 두어 페이지를 덮어쓴다. 모든 font-family 에 기본 폰트를 대체 폰트로 붙여, 서버에 없는 폰트로 지정된 한글이
+     * "#" 으로 나오지 않게 한다.
+     */
+    private static String composeHtml(String originalHtml, String htmlWithImages, String cssContent) {
+        Document doc;
+        if (originalHtml != null && FULL_DOCUMENT.matcher(originalHtml).find()) {
+            doc = Jsoup.parse(htmlWithImages);
+            doc.head().prependElement("style").appendChild(new DataNode(PAGE_BASE_CSS));
+            if (S2Util.isNotEmpty(cssContent)) {
+                doc.head().appendElement("style").appendChild(new DataNode(cssContent));
+            }
+        } else {
+            doc = Jsoup.parse(String.format(HTML_TEMPLATE, cssContent, htmlWithImages));
+        }
+        for (var style : doc.select("style")) {
+            var css = addFontFallback(style.data());
+            style.empty();
+            style.appendChild(new DataNode(css));
+        }
+        for (var styled : doc.select("[style]")) {
+            styled.attr("style", addFontFallback(styled.attr("style")));
+        }
+        return doc.outerHtml();
+    }
+
+    private static final Pattern FONT_DECLARATION = Pattern.compile("(?i)(?<![\\w-])(font-family|font)(\\s*:\\s*)([^;{}]*)");
+    private static final Pattern IMPORTANT = Pattern.compile("(?i)\\s*!\\s*important\\s*$");
+
+    /**
+     * Appends the default font to font-family lists (and to font shorthands with a size) | font-family 목록(크기가 있는
+     * font 단축 속성 포함)에 기본 폰트를 덧붙임
+     */
+    static String addFontFallback(String css) {
+        var matcher = FONT_DECLARATION.matcher(css);
+        var out = new StringBuilder();
+        while (matcher.find()) {
+            var value = matcher.group(3);
+            var important = IMPORTANT.matcher(value);
+            var suffix = "";
+            if (important.find()) {
+                suffix = value.substring(important.start());
+                value = value.substring(0, important.start());
+            }
+            var trimmed = value.trim().toLowerCase(Locale.ROOT);
+            var keywordOnly = trimmed.isEmpty() || trimmed.matches("inherit|initial|unset|revert|revert-layer"
+                    + "|caption|icon|menu|message-box|small-caption|status-bar");
+            var shorthandWithoutSize = matcher.group(1).equalsIgnoreCase("font") && !trimmed.matches(".*\\d.*");
+            var replacement = matcher.group(0);
+            if (!keywordOnly && !shorthandWithoutSize && !trimmed.contains(DEFAULT_FONT_FAMILY.toLowerCase(Locale.ROOT))) {
+                var end = value.length();
+                while (end > 0 && Character.isWhitespace(value.charAt(end - 1))) {
+                    end--;
+                }
+                replacement = matcher.group(1) + matcher.group(2) + value.substring(0, end) + ", " + DEFAULT_FONT_FAMILY
+                        + value.substring(end) + suffix;
+            }
+            matcher.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    /**
+     * HTML to well-formed XHTML for the renderer. Parsed as HTML, so void elements such as {@code <img>} are closed;
+     * an XML parse would nest everything after an unclosed {@code <img>} inside it, and that content vanished
+     * | 렌더러용 XHTML 로 변환. HTML 로 파싱해 {@code <img>} 같은 빈 요소를 닫는다. XML 로 파싱하면 닫히지 않은 {@code <img>} 뒤의
+     * 내용이 모두 그 안으로 들어가 사라졌음
+     */
     private static String convertToXhtml(String html) {
-        var document = Jsoup.parse(html, "", Parser.xmlParser());
+        var document = Jsoup.parse(html);
         document.outputSettings().syntax(Document.OutputSettings.Syntax.xml).escapeMode(Entities.EscapeMode.xhtml);
         return document.html();
     }
@@ -1666,6 +1764,17 @@ public class S2PdfUtil {
          * 서버가 이 URL 로 직접 요청하므로, 사용자 입력을 그대로 넘기면 내부망 주소를 조회하는 SSRF 가 된다. 사용자 입력이 섞이면 호출자가
          * 허용 호스트를 검사해야 한다.
          * </p>
+         * <p>
+         * HTML 페이지이면 화면 그대로 나오도록 페이지의 이미지({@code <img>}, 지연 로딩 {@code data-src}, CSS 배경)와 스타일시트({@code <link>},
+         * {@code @import})를 받아 넣는다.
+         * </p>
+         * <ul>
+         * <li>페이지와 같은 출처는 그대로 받고, 요청 헤더(로그인 쿠키 등)도 같은 출처에만 보낸다.</li>
+         * <li>다른 호스트(CDN 등)는 공개 주소일 때만 받는다. 내부망·루프백 주소는 리다이렉트를 거쳐도 막는다.</li>
+         * <li>리소스는 최대 {@value S2HtmlResources#MAX_RESOURCES}개, 하나당 20MB, 전체 {@link #maxBytes(long)} 까지 받는다.</li>
+         * <li>받지 못한 리소스는 경고 로그를 남기고 빼며, PDF 는 그대로 만든다.</li>
+         * <li>JavaScript 는 실행하지 않으므로 스크립트로 그리는 화면은 나오지 않는다. 웹 폰트 대신 기본 폰트를 쓴다.</li>
+         * </ul>
          *
          * @param url http 또는 https URL
          * @return URL 소스
@@ -1995,7 +2104,11 @@ public class S2PdfUtil {
                                     pdfFileToMerge = tempFile.toFile();
                                 }
                                 case HTML -> {
-                                    var htmlContent = new String(fetched.data, responseCharset);
+                                    // Images and stylesheets of the page are fetched and embedded (same origin, or
+                                    // public hosts) | 페이지의 이미지·스타일시트를 받아 넣음 (같은 출처 또는 공개 호스트)
+                                    var htmlContent = S2HtmlResources.inline(new String(fetched.data, responseCharset),
+                                            fetched.uri, source.httpHeaders, source.timeout, source.maxBytes,
+                                            ref -> classpathImageExists(ref, source.staticResourceBasePath));
                                     var tempFile = createTrackedTempFile("url_html", ".pdf", intermediateTempFiles);
                                     renderHtmlToPdfFile(tempFile,
                                             htmlContent,
@@ -2661,7 +2774,7 @@ public class S2PdfUtil {
         var cssContent = S2Util.isNotEmpty(cssPath)
                 ? loadCssContent(clazz, cssPath, staticResourceBasePath, convertCssBackgroundImageTargetSelectors)
                 : "";
-        var completeHtml = String.format(HTML_TEMPLATE, cssContent, htmlWithImages);
+        var completeHtml = composeHtml(htmlContent, htmlWithImages, cssContent);
         createPdf(convertToXhtml(completeHtml), clazz, fontPath, out);
     }
 
@@ -3030,10 +3143,13 @@ public class S2PdfUtil {
     private static class UrlFetchResult {
         final byte[] data;
         final String contentType;
+        /** Address after redirects; relative paths in an HTML page resolve against it | 리다이렉트 후 주소 (HTML 상대 경로의 기준) */
+        final URI uri;
 
-        UrlFetchResult(byte[] data, String contentType) {
+        UrlFetchResult(byte[] data, String contentType, URI uri) {
             this.data = data;
             this.contentType = contentType;
+            this.uri = uri;
         }
     }
 
@@ -3061,7 +3177,8 @@ public class S2PdfUtil {
                     throw new IOException("URL 응답이 최대 크기(" + source.maxBytes + " bytes)를 넘습니다: " + declared + " bytes");
                 }
                 var contentType = response.headers().firstValue("Content-Type").orElse("");
-                return new UrlFetchResult(S2StreamUtil.streamToByteArray(body, false, source.maxBytes), contentType);
+                return new UrlFetchResult(S2StreamUtil.streamToByteArray(body, false, source.maxBytes), contentType,
+                        response.uri());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

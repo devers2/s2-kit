@@ -179,6 +179,11 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
     pdf.transferTo(response.getOutputStream());
 }
 
+// An HTML page fetched by URL comes out as on screen: images and CSS of the same origin and images of public hosts (CDNs)
+// are embedded (internal addresses are refused). Headers (login cookies) go only to the same origin. JavaScript does not run
+S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
+        Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
+
 // Office and Hangul documents (docx, xlsx, pptx, hwp, hwpx ...) are converted by LibreOffice when it is installed
 // (s2-soffice, soffice or libreoffice is found automatically); without it every other source still merges
 if (S2PdfUtil.isOfficeConversionAvailable()) {
