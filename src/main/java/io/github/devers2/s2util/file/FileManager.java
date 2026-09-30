@@ -54,14 +54,34 @@ public interface FileManager {
     boolean isRemote();
 
     /**
+     * 파일을 지정된 저장 경로에 작성합니다. 같은 이름의 파일이 이미 있으면 덮어쓰지 않고 예외를 던집니다.
+     * <p>
+     * 모든 구현(로컬, SFTP)이 같은 규칙을 따릅니다. 덮어쓰려면 {@link #writeFile(InputStream, String, String, boolean)}에
+     * {@code overwrite = true}를 넘깁니다.
+     * </p>
+     *
+     * @param fileData 저장할 파일 데이터 (InputStream, 이 메서드가 닫음)
+     * @param savePath 저장 경로
+     * @param saveName 저장할 파일명 (저장 경로를 벗어날 수 없음)
+     * @return 저장된 파일의 크기(바이트 단위)
+     * @throws io.github.devers2.s2util.exception.S2RuntimeException 같은 이름의 파일이 있거나, 경로가 저장 경로를 벗어나거나, 저장에 실패했을 때
+     */
+    default long writeFile(InputStream fileData, String savePath, String saveName) {
+        return writeFile(fileData, savePath, saveName, false);
+    }
+
+    /**
      * 파일을 지정된 저장 경로에 작성합니다.
      *
-     * @param fileData 저장할 파일 데이터 (InputStream)
-     * @param savePath 저장 경로
-     * @param saveName 저장할 파일명
-     * @return 저장된 파일의 크기(바이트 단위), 실패 시 -1
+     * @param fileData  저장할 파일 데이터 (InputStream, 이 메서드가 닫음)
+     * @param savePath  저장 경로
+     * @param saveName  저장할 파일명 (저장 경로를 벗어날 수 없음)
+     * @param overwrite true 면 같은 이름의 파일을 덮어쓰고, false 면 예외를 던짐
+     * @return 저장된 파일의 크기(바이트 단위)
+     * @throws io.github.devers2.s2util.exception.S2RuntimeException 덮어쓰지 않는데 같은 이름의 파일이 있거나, 경로가 저장 경로를 벗어나거나,
+     *                                                                저장에 실패했을 때
      */
-    long writeFile(InputStream fileData, String savePath, String saveName);
+    long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite);
 
     /**
      * 작성된 파일로부터 데이터를 읽어온다.

@@ -198,9 +198,12 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param fileData 업로드할 파일 데이터 (InputStream)
      * @param savePath 원격 서버의 대상 파일 저장 경로
      * @param saveName 원격 서버의 대상 파일 저장 명
-     * @return 저장된 파일의 크기(바이트 단위), 실패 시 -1
+     * @param overwrite true 면 같은 이름의 원격 파일을 덮어씀 (false 면 예외)
+     * @return 저장된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 같은 이름의 파일이 있거나(덮어쓰지 않을 때), 경로가 벗어나거나, 업로드에 실패했을 때
      */
-    public long writeFile(InputStream fileData, String savePath, String saveName) {
+    @Override
+    public long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite) {
         var fileSize = -1L;
         var remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         Session session = null;
@@ -232,7 +235,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             }
 
             // 기존 파일 존재 여부 확인
-            if (exists(channel, remoteFileFullPath)) {
+            if (!overwrite && exists(channel, remoteFileFullPath)) {
                 throw new S2RuntimeException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
             }
 

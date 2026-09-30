@@ -57,6 +57,12 @@ before upgrading.
   request headers.
 - `s2.util.js` `S2Util.validate(form)` is deprecated in favor of `S2Validator` in s2-validator.
 - Compile-time Spring versions: Spring Framework 6.2.19, Spring Integration 6.5.10.
+- ⚠️ **`FileManager.writeFile` no longer overwrites an existing file.** The local and Spring SFTP managers replaced it
+  silently while the JSch SFTP manager refused it; all three now throw `S2RuntimeException` and leave the existing file
+  unchanged. Pass `overwrite = true` to the new `writeFile(data, savePath, saveName, overwrite)` to replace it. Custom
+  `FileManager` implementations implement that four-argument method (the three-argument one is a default method). The
+  local manager creates the file atomically (`CREATE_NEW`), so concurrent writes of one name leave a single winner, and
+  a failed write removes its partial file. Failures throw instead of returning `-1`.
 - **jsch** moved to the maintained fork `com.github.mwiede:jsch` (same `com.jcraft.jsch` package; supports rsa-sha2 and
   current OpenSSH servers).
 

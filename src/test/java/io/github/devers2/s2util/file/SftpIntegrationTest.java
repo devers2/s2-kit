@@ -99,6 +99,29 @@ class SftpIntegrationTest {
         return sb.toString();
     }
 
+    /**
+     * The overwrite rule every FileManager follows: refuse by default, replace only when asked | 모든 FileManager 규칙: 기본 거부, 요청 시에만 덮어씀
+     */
+    static void assertOverwriteContract(FileManager files, String savePath, java.util.function.Supplier<String> stored)
+            throws IOException {
+        assertEquals(3, files.writeFile(data("one"), savePath, "same.txt"));
+        var e = assertThrows(S2RuntimeException.class, () -> files.writeFile(data("two"), savePath, "same.txt"));
+        assertTrue(causes(e).contains("이미 존재"), causes(e));
+        assertEquals("one", stored.get(), "a refused write must not change the file");
+
+        assertEquals(5, files.writeFile(data("three"), savePath, "same.txt", true));
+        assertEquals("three", stored.get());
+        files.deleteFile(savePath, "same.txt");
+    }
+
+    private static String read(Path path) {
+        try {
+            return Files.readString(path);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     @Nested
     class Jsch {
 
@@ -122,6 +145,13 @@ class SftpIntegrationTest {
 
                 sftp.deleteFile("/upload/2026", "a.txt");
                 assertFalse(Files.exists(root.resolve("upload/2026/a.txt")));
+            }
+        }
+
+        @Test
+        void overwritesOnlyWhenAsked() throws IOException {
+            try (var sftp = manager(knownHosts.toString(), false)) {
+                assertOverwriteContract(sftp, "/ow-jsch", () -> read(root.resolve("ow-jsch/same.txt")));
             }
         }
 
@@ -216,6 +246,14 @@ class SftpIntegrationTest {
                 }
                 sftp.deleteFile("/spring", "f.txt");
                 assertFalse(Files.exists(root.resolve("spring/f.txt")));
+            }
+        }
+
+        @Test
+        void overwritesOnlyWhenAsked() throws IOException {
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
+                assertOverwriteContract(context.getBean(SpringSftpFileManagerImpl.class), "/ow-spring",
+                        () -> read(root.resolve("ow-spring/same.txt")));
             }
         }
 

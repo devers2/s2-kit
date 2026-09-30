@@ -20,8 +20,12 @@
  */
 package io.github.devers2.s2util.file.impl;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.Paths;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
@@ -50,19 +54,40 @@ public class S2FileManagerImpl implements FileManager {
     }
 
     /**
-     * 파일을 지정된 저장 경로에 작성합니다.
+     * 파일을 지정된 저장 경로에 작성합니다. 덮어쓰지 않을 때는 파일 생성과 존재 확인이 한 번에 이뤄지므로(CREATE_NEW) 동시에 같은 이름으로
+     * 저장해도 하나만 성공합니다.
      *
-     * @param fileData 저장할 파일 데이터 (InputStream)
-     * @param savePath 저장 경로
-     * @param saveName 저장할 파일명
-     * @return 저장된 파일의 크기(바이트 단위), 실패 시 -1
+     * @param fileData  저장할 파일 데이터 (InputStream, 이 메서드가 닫음)
+     * @param savePath  저장 경로
+     * @param saveName  저장할 파일명
+     * @param overwrite true 면 같은 이름의 파일을 덮어씀
+     * @return 저장된 파일의 크기(바이트 단위)
+     * @throws S2RuntimeException 같은 이름의 파일이 있거나(덮어쓰지 않을 때), 경로가 벗어나거나, 저장에 실패했을 때
      */
-    public long writeFile(InputStream fileData, String savePath, String saveName) {
-        var fileSize = -1L;
-        if (fileData != null && savePath != null && !savePath.isBlank() && saveName != null && !saveName.isBlank()) {
-            fileSize = S2FileUtil.streamToFile(fileData, resolveSafePath(savePath, saveName), true);
+    @Override
+    public long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite) {
+        if (fileData == null || savePath == null || savePath.isBlank()) {
+            throw new IllegalArgumentException("fileData 와 savePath 는 필수입니다.");
         }
-        return fileSize;
+        var target = resolveSafePath(savePath, saveName);
+        try (var in = fileData) {
+            Files.createDirectories(target.getParent());
+            if (overwrite) {
+                return Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            try {
+                // Files.copy without REPLACE_EXISTING creates the file with CREATE_NEW (atomic) | REPLACE_EXISTING 없이는 CREATE_NEW 로 생성 (원자적)
+                return Files.copy(in, target);
+            } catch (FileAlreadyExistsException e) {
+                throw new S2RuntimeException("이미 존재하는 파일입니다: " + target, e);
+            } catch (IOException e) {
+                // Remove the partial file this call created | 이 호출이 만든 불완전한 파일 삭제
+                Files.deleteIfExists(target);
+                throw e;
+            }
+        } catch (IOException e) {
+            throw new S2RuntimeException("파일 저장 실패: " + target + " (" + e.getMessage() + ")", e);
+        }
     }
 
     /**

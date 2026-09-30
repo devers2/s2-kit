@@ -49,6 +49,11 @@
   `byte[]`)이 없으면 `application/x-www-form-urlencoded`로 보내며, 요청 헤더를 받는 오버로드를 추가했습니다.
 - `s2.util.js`의 `S2Util.validate(form)`은 폐기 예정입니다. s2-validator 의 `S2Validator`를 쓰십시오.
 - 컴파일 기준 Spring 버전: Spring Framework 6.2.19, Spring Integration 6.5.10.
+- ⚠️ **`FileManager.writeFile`이 기존 파일을 덮어쓰지 않습니다.** 로컬·Spring SFTP 관리자는 조용히 덮어쓰고 JSch SFTP 관리자는 거부해
+  동작이 달랐습니다. 이제 셋 다 `S2RuntimeException`을 던지고 기존 파일은 그대로 둡니다. 덮어쓰려면 새
+  `writeFile(data, savePath, saveName, overwrite)`에 `overwrite = true`를 넘기십시오. 직접 만든 `FileManager` 구현은 이 4 인자 메서드를
+  구현합니다(3 인자 메서드는 default). 로컬 관리자는 파일을 원자적으로 만들어(`CREATE_NEW`) 같은 이름으로 동시에 써도 하나만 성공하며,
+  실패하면 쓰다 만 파일을 지웁니다. 실패 시 `-1` 대신 예외를 던집니다.
 - **jsch** 를 유지보수되는 포크 `com.github.mwiede:jsch`로 바꿨습니다(패키지 `com.jcraft.jsch` 동일, rsa-sha2 와 최신 OpenSSH 지원).
 
 ### 보안
