@@ -1,19 +1,18 @@
 ## GNU Lesser General Public License, Version 2.1 (LGPL 2.1) Compliance Guide
 
-### 1. License Notice and Written Offer for Source Code Provision
+### 1. License Notice
 
-This product uses the OpenHTMLToPDF library (Modules: openhtmltopdf-core, openhtmltopdf-pdfbox), which is licensed under the **LGPL 2.1 License**.
-Since this library is used via dynamic linking, the source code of your final product is not affected by the LGPL.
+`S2PdfUtil` uses the OpenHTMLToPDF library (modules: openhtmltopdf-core, openhtmltopdf-pdfbox), which is licensed under the
+**GNU LGPL, version 2.1 or later**.
 
-In compliance with the requirements of LGPL 2.1 Section 6, we provide the following written offer:
+s2-support **does not include or redistribute** OpenHTMLToPDF (see section 2): the application adds it as its own
+dependency from Maven Central, and s2-support only calls its public API. s2-support itself remains under the Apache
+License 2.0, and the source code of OpenHTMLToPDF is available from its project:
+[https://github.com/openhtmltopdf/openhtmltopdf](https://github.com/openhtmltopdf/openhtmltopdf).
 
-> **Source Code Provision Offer:**
->
-> To anyone who receives this distribution, the complete source code for the LGPL library (OpenHTMLToPDF) included in this product can be obtained for the cost of distribution only (actual costs for preparing and shipping the media).
->
-> To request the source code, please contact the following email address, which will be valid for a minimum of **three years** from the date this product was distributed.
->
-> **Source Code Request Email:** eseungsu.dev@gmail.com
+If **your application redistributes** OpenHTMLToPDF (for example inside a Fat JAR, a WAR or an installer), the LGPL
+obligations apply to your distribution: include the LGPL text (`licenses/LICENSE-LGPL-2.1`), provide or point to the
+library's source code, and allow the library to be replaced (keep it as a separate JAR, or otherwise allow relinking).
 
 ---
 

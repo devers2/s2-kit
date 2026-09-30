@@ -97,6 +97,10 @@ before upgrading.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL
   2.0, so `LICENSE-MPL-2.0` was removed. The NOTICE also lists Spring Web, Spring Integration SFTP and JSR-305, marks
   compile-only and optional dependencies, and names the licenses bundled with the JSch fork (JZlib, jBCrypt).
+- `README-LGPL-2.1-PDF.md` said OpenHTMLToPDF was included and offered its source code, while s2-support does not
+  include it (`compileOnly`). It now states that the application adds it and what applies when the application
+  redistributes it. A stray "All right reserved" line in `s2.dropzone.js` and a modal header logo that does not exist
+  (`SEEK_logo.png`) in `s2.util.css` were removed.
 - README examples used APIs that do not exist (`S2ContextUtil.getBean`, `S2PaginationInfo` setters). They were replaced,
   and a test compiles them.
 - `S2AnnotationResolver` loads scanned classes without running static initializers, through the base class's class

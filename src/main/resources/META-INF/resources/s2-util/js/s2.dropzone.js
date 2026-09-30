@@ -24,8 +24,6 @@
  * @author devers2
  * @since  2025
  * @version 1.0
- * @see
- * Copyright (C)  All right reserved.
  */
 export class S2DropZone {
   /**
