@@ -59,6 +59,17 @@ class ReadmeExamplesTest {
         String plain = S2EncryptionUtil.decrypt(encrypted, key);
         assertEquals("010-1234-5678", plain);
 
+        var newKey = S2EncryptionUtil.generateKey();
+        var keys = S2EncryptionUtil.KeyRing.builder()
+                .add("default", key)
+                .add("2027", newKey)
+                .primary("2027")
+                .build();
+        String value = keys.decrypt(encrypted);
+        String moved = keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted;
+        assertEquals(plain, value);
+        assertEquals("2027", S2EncryptionUtil.keyIdOf(moved));
+
         var password = "typed by a person";
         String sealed = S2EncryptionUtil.encrypt("secret text", password);
         assertEquals("secret text", S2EncryptionUtil.decrypt(sealed, password));
@@ -97,6 +108,7 @@ class ReadmeExamplesTest {
             assertTrue(text.contains("searchVO.getOrderByList(List.of(\"REG_DT\", \"TITLE\"))"), readme);
             assertTrue(text.contains("S2HashUtil.needsRehash(stored)"), readme);
             assertTrue(text.contains("S2EncryptionUtil.keyFromBase64(System.getenv(\"APP_ENCRYPTION_KEY\"))"), readme);
+            assertTrue(text.contains("keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted"), readme);
             assertTrue(text.contains("\"/etc/ssh/known_hosts_sftp\", false)"), readme);
             assertTrue(text.contains("S2JsonUtil.fromJson(json, MyDto.class)"), readme);
             assertFalse(text.contains("getBean("), readme);

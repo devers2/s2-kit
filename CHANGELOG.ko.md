@@ -64,7 +64,9 @@
 ### 추가
 
 - 여러 건을 처리하기 위한 `S2EncryptionUtil` 키 방식: `generateKey()`, `keyToBase64`/`keyFromBase64`, `encrypt(text, SecretKey)`/
-  `decrypt(text, SecretKey)`(AES-256-GCM, 접두사 `s2k1:`, 1건 1ms 미만, 1,000건 왕복 약 0.1초). 비밀번호 방식은 사람이 입력한 비밀번호로 가끔
+  `decrypt(text, SecretKey)`(AES-256-GCM, 접두사 `s2k1:<키 이름>:`, 1건 1ms 미만, 1,000건 왕복 약 0.1초). 키 이름은 인증 데이터에 포함되며,
+  `KeyRing`으로 서비스를 멈추지 않고 키를 교체합니다. 주 키로 암호화하고, 암호문에 적힌 이름의 키로 복호화하며, `needsReencrypt`/`reencrypt`로
+  옛 값을 주 키로 옮깁니다. 단일 키 API 는 키 이름 `default`를 기록하므로 교체 후에도 그대로 읽힙니다. 비밀번호 방식은 사람이 입력한 비밀번호로 가끔
   쓰도록 일부러 느리게(PBKDF2, 1건 약 70ms) 유지합니다. 두 형식은 섞어 쓸 수 없으며, 다른 API 로 복호화하면 맞는 API 를 알려 주는 예외가
   납니다.
 

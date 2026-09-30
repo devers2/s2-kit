@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.Map;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -40,8 +41,9 @@ import javax.crypto.spec.SecretKeySpec;
  * AES-256-GCM 암호화를 두 가지 방식으로 제공한다. 두 방식의 암호문은 접두사로 구분되며 서로 섞어 쓸 수 없다.
  * </p>
  * <ul>
- * <li><b>키 방식</b> ({@link #encrypt(String, SecretKey)}, 접두사 {@code s2k1:}): {@link #generateKey()}로 만든 무작위 키를 설정·비밀 저장소에
- * 보관하고 계속 사용한다. 호출마다 AES 만 수행하므로 빠르다(1건 1ms 미만). DB 컬럼 암호화, 목록 화면 복호화처럼 여러 건을 처리할 때 쓴다.</li>
+ * <li><b>키 방식</b> ({@link #encrypt(String, SecretKey)}, 접두사 {@code s2k1:<키 이름>:}): {@link #generateKey()}로 만든 무작위 키를
+ * 설정·비밀 저장소에 보관하고 계속 사용한다. 호출마다 AES 만 수행하므로 빠르다(1건 1ms 미만). DB 컬럼 암호화, 목록 화면 복호화처럼 여러 건을 처리할 때
+ * 쓴다. 암호문에 키 이름이 기록되므로 {@link KeyRing}으로 서비스를 멈추지 않고 키를 교체할 수 있다.</li>
  * <li><b>비밀번호 방식</b> ({@link #encrypt(String, String)}, 접두사 {@code s2v2:}): 사람이 입력한 비밀번호에서 매번 PBKDF2(65,536회)로 키를
  * 만든다. 추측 공격을 늦추려고 일부러 느리게(1건 약 70ms) 만든 것이므로 가끔 한 건씩 쓸 때 사용한다.</li>
  * </ul>
@@ -66,7 +68,7 @@ public class S2EncryptionUtil {
     /** Prefix of the password-based format | 비밀번호 방식 형식의 접두사 */
     public static final String FORMAT_PREFIX = "s2v2:";
 
-    /** Prefix of the key-based format: Base64(IV 12 bytes + ciphertext and tag) | 키 방식 형식의 접두사 */
+    /** Prefix of the key-based format: s2k1:&lt;key name&gt;:Base64(IV 12 bytes + ciphertext and tag) | 키 방식 형식의 접두사 */
     public static final String KEY_FORMAT_PREFIX = "s2k1:";
 
     private static final int KEY_BYTES = 32;
@@ -203,26 +205,30 @@ public class S2EncryptionUtil {
         return new SecretKeySpec(bytes, "AES");
     }
 
+    /** Key name recorded by the single-key API | 단일 키 API 가 기록하는 키 이름 */
+    public static final String DEFAULT_KEY_ID = "default";
+
     /**
      * 키로 평문을 AES-256-GCM 암호화한다. 호출마다 새 IV 를 쓰므로 같은 평문도 매번 다른 암호문이 나온다.
+     * <p>
+     * 암호문에는 키 이름 {@value #DEFAULT_KEY_ID}가 기록된다. 나중에 키를 교체할 때는 지금 키를 {@value #DEFAULT_KEY_ID}로 {@link KeyRing}에
+     * 등록하면 기존 암호문을 그대로 읽을 수 있다.
+     * </p>
      *
      * @param plainText 암호화할 원본 텍스트
      * @param key       {@link #generateKey()} 또는 {@link #keyFromBase64(String)}로 얻은 키
-     * @return {@code s2k1:}로 시작하는 암호문
+     * @return {@code s2k1:default:}로 시작하는 암호문
      * @throws GeneralSecurityException 암호화 알고리즘을 사용할 수 없을 때
      * @throws IllegalArgumentException AES-256 키가 아닐 때
+     * @see KeyRing
      */
     public static String encrypt(String plainText, SecretKey key) throws GeneralSecurityException {
-        var iv = randomBytes(GCM_IV_LENGTH);
-        var cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, iv));
-        var encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
-        var combined = ByteBuffer.allocate(iv.length + encrypted.length).put(iv).put(encrypted).array();
-        return KEY_FORMAT_PREFIX + Base64.getEncoder().encodeToString(combined);
+        return encryptWithKey(plainText, DEFAULT_KEY_ID, key);
     }
 
     /**
-     * 키로 암호문을 복호화한다.
+     * 키로 암호문을 복호화한다. 암호문에 기록된 키 이름과 관계없이 주어진 키로 복호화를 시도한다(키 이름은 무결성 검증에 포함되므로 바뀐 암호문은
+     * 실패한다). 여러 키를 이름으로 고르려면 {@link KeyRing#decrypt(String)}을 쓴다.
      *
      * @param encryptedText {@link #encrypt(String, SecretKey)}로 만든 암호문
      * @param key           암호화에 쓴 키
@@ -232,23 +238,263 @@ public class S2EncryptionUtil {
      * @throws IllegalArgumentException AES-256 키가 아닐 때
      */
     public static String decrypt(String encryptedText, SecretKey key) throws GeneralSecurityException {
+        var parsed = parseKeyCiphertext(encryptedText);
+        return decryptWithKey(parsed, key);
+    }
+
+    /**
+     * 키 방식 암호문에 기록된 키 이름을 돌려준다. 어떤 키로 암호화했는지 확인하거나, 교체할 대상을 고를 때 쓴다.
+     *
+     * @param encryptedText 키 방식 암호문
+     * @return 키 이름
+     * @throws GeneralSecurityException 키 방식 암호문이 아닐 때
+     */
+    public static String keyIdOf(String encryptedText) throws GeneralSecurityException {
+        return parseKeyCiphertext(encryptedText).keyId();
+    }
+
+    private record KeyCiphertext(String keyId, byte[] data) {
+    }
+
+    /** A key name: letters, digits, '.', '_' and '-' (it goes into the ciphertext as is) | 키 이름: 영문·숫자·'.'·'_'·'-' */
+    private static final java.util.regex.Pattern KEY_ID = java.util.regex.Pattern.compile("[A-Za-z0-9._-]{1,64}");
+
+    private static String checkKeyId(String keyId) {
+        if (keyId == null || !KEY_ID.matcher(keyId).matches()) {
+            throw new IllegalArgumentException("키 이름은 영문·숫자·'.'·'_'·'-' 1~64자여야 합니다: " + keyId);
+        }
+        return keyId;
+    }
+
+    /** The key name is authenticated data: changing it in the ciphertext makes decryption fail | 키 이름은 인증 데이터라 바꾸면 복호화 실패 */
+    private static byte[] associatedData(String keyId) {
+        return (KEY_FORMAT_PREFIX + keyId).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String encryptWithKey(String plainText, String keyId, SecretKey key) throws GeneralSecurityException {
+        var iv = randomBytes(GCM_IV_LENGTH);
+        var cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, iv));
+        cipher.updateAAD(associatedData(keyId));
+        var encrypted = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+        var combined = ByteBuffer.allocate(iv.length + encrypted.length).put(iv).put(encrypted).array();
+        return KEY_FORMAT_PREFIX + keyId + ":" + Base64.getEncoder().encodeToString(combined);
+    }
+
+    private static KeyCiphertext parseKeyCiphertext(String encryptedText) throws GeneralSecurityException {
         if (!encryptedText.startsWith(KEY_FORMAT_PREFIX)) {
             throw new GeneralSecurityException(encryptedText.startsWith(FORMAT_PREFIX) || isLegacyFormat(encryptedText)
                     ? "비밀번호 방식 암호문입니다. decrypt(String, String)으로 복호화하십시오."
                     : "키 방식 암호문이 아닙니다.");
         }
-        byte[] combined;
+        var rest = encryptedText.substring(KEY_FORMAT_PREFIX.length());
+        var colon = rest.indexOf(':');
+        if (colon < 1 || !KEY_ID.matcher(rest.substring(0, colon)).matches()) {
+            throw new GeneralSecurityException("키 방식 암호문의 키 이름이 올바르지 않습니다.");
+        }
+        byte[] data;
         try {
-            combined = Base64.getDecoder().decode(encryptedText.substring(KEY_FORMAT_PREFIX.length()));
+            data = Base64.getDecoder().decode(rest.substring(colon + 1));
         } catch (IllegalArgumentException e) {
             throw new GeneralSecurityException("암호문이 Base64 형식이 아닙니다.", e);
         }
-        if (combined.length < GCM_IV_LENGTH + GCM_TAG_BITS / 8) {
+        if (data.length < GCM_IV_LENGTH + GCM_TAG_BITS / 8) {
             throw new GeneralSecurityException("암호문이 너무 짧습니다.");
         }
+        return new KeyCiphertext(rest.substring(0, colon), data);
+    }
+
+    private static String decryptWithKey(KeyCiphertext parsed, SecretKey key) throws GeneralSecurityException {
+        var data = parsed.data();
         var cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, combined, 0, GCM_IV_LENGTH));
-        return new String(cipher.doFinal(combined, GCM_IV_LENGTH, combined.length - GCM_IV_LENGTH), StandardCharsets.UTF_8);
+        cipher.init(Cipher.DECRYPT_MODE, checkKey(key), new GCMParameterSpec(GCM_TAG_BITS, data, 0, GCM_IV_LENGTH));
+        cipher.updateAAD(associatedData(parsed.keyId()));
+        return new String(cipher.doFinal(data, GCM_IV_LENGTH, data.length - GCM_IV_LENGTH), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 이름을 붙인 여러 키 묶음. 키를 교체(로테이션)할 때 쓴다. 불변이며 여러 스레드에서 함께 써도 된다.
+     * <ul>
+     * <li>암호화는 주 키(primary)로 하고, 암호문에 그 키의 이름을 기록한다.</li>
+     * <li>복호화는 암호문에 기록된 이름의 키를 골라 쓰므로, 옛 키로 만든 암호문도 계속 읽힌다.</li>
+     * <li>{@link #needsReencrypt(String)}와 {@link #reencrypt(String)}로 옛 암호문을 주 키로 천천히 옮긴다. 모두 옮긴 뒤 옛 키를 뺀다.</li>
+     * </ul>
+     *
+     * <pre>{@code
+     * // 교체 전: 단일 키 API (키 이름 "default")
+     * String enc = S2EncryptionUtil.encrypt(phone, oldKey);
+     *
+     * // 교체 후: 옛 키는 "default" 그대로, 새 키를 주 키로
+     * var keys = S2EncryptionUtil.KeyRing.builder()
+     *         .add("default", oldKey)
+     *         .add("2027", newKey)
+     *         .primary("2027")
+     *         .build();
+     * String phone = keys.decrypt(row.getPhone());            // 옛 암호문도 읽힘
+     * if (keys.needsReencrypt(row.getPhone())) {
+     *     row.setPhone(keys.reencrypt(row.getPhone()));        // 읽을 때 또는 야간 작업으로 옮김
+     * }
+     * }</pre>
+     */
+    public static final class KeyRing {
+
+        private final Map<String, SecretKey> keys;
+        private final String primaryId;
+
+        private KeyRing(Map<String, SecretKey> keys, String primaryId) {
+            this.keys = Map.copyOf(keys);
+            this.primaryId = primaryId;
+        }
+
+        /**
+         * 키 하나로 된 묶음을 만든다.
+         *
+         * @param keyId 키 이름 (영문·숫자·'.'·'_'·'-' 1~64자)
+         * @param key   AES-256 키
+         * @return 주 키가 그 키인 묶음
+         */
+        public static KeyRing of(String keyId, SecretKey key) {
+            return builder().add(keyId, key).primary(keyId).build();
+        }
+
+        /**
+         * @return 묶음 빌더
+         */
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        /**
+         * @return 암호화에 쓰는 주 키의 이름
+         */
+        public String primaryId() {
+            return primaryId;
+        }
+
+        /**
+         * @return 등록된 키 이름들
+         */
+        public java.util.Set<String> keyIds() {
+            return keys.keySet();
+        }
+
+        /**
+         * 주 키로 암호화한다.
+         *
+         * @param plainText 암호화할 원본 텍스트
+         * @return {@code s2k1:<주 키 이름>:}으로 시작하는 암호문
+         * @throws GeneralSecurityException 암호화 알고리즘을 사용할 수 없을 때
+         */
+        public String encrypt(String plainText) throws GeneralSecurityException {
+            return encryptWithKey(plainText, primaryId, keys.get(primaryId));
+        }
+
+        /**
+         * 암호문에 기록된 이름의 키로 복호화한다.
+         *
+         * @param encryptedText 키 방식 암호문
+         * @return 복호화된 원본 텍스트
+         * @throws GeneralSecurityException 기록된 키 이름이 묶음에 없거나, 키가 틀렸거나, 데이터가 손상·변조되었을 때
+         */
+        public String decrypt(String encryptedText) throws GeneralSecurityException {
+            var parsed = parseKeyCiphertext(encryptedText);
+            var key = keys.get(parsed.keyId());
+            if (key == null) {
+                throw new GeneralSecurityException(
+                        "등록되지 않은 키 이름입니다: " + parsed.keyId() + " (등록된 키: " + new java.util.TreeSet<>(keys.keySet()) + ")");
+            }
+            return decryptWithKey(parsed, key);
+        }
+
+        /**
+         * 주 키가 아닌 키로 만든 암호문인지 확인한다.
+         *
+         * @param encryptedText 키 방식 암호문
+         * @return 주 키로 다시 암호화해야 하면 true
+         * @throws GeneralSecurityException 키 방식 암호문이 아닐 때
+         */
+        public boolean needsReencrypt(String encryptedText) throws GeneralSecurityException {
+            return !primaryId.equals(parseKeyCiphertext(encryptedText).keyId());
+        }
+
+        /**
+         * 암호문을 주 키로 다시 암호화한다. 이미 주 키로 만든 암호문은 그대로 돌려준다.
+         *
+         * @param encryptedText 키 방식 암호문
+         * @return 주 키로 만든 암호문
+         * @throws GeneralSecurityException 복호화할 수 없을 때 ({@link #decrypt(String)} 참고)
+         */
+        public String reencrypt(String encryptedText) throws GeneralSecurityException {
+            return needsReencrypt(encryptedText) ? encrypt(decrypt(encryptedText)) : encryptedText;
+        }
+
+        /**
+         * {@link KeyRing} 빌더.
+         */
+        public static final class Builder {
+            private final Map<String, SecretKey> keys = new java.util.LinkedHashMap<>();
+            private String primaryId;
+
+            private Builder() {
+            }
+
+            /**
+             * 키를 등록한다.
+             *
+             * @param keyId 키 이름 (영문·숫자·'.'·'_'·'-' 1~64자, 암호문에 그대로 기록됨)
+             * @param key   AES-256 키
+             * @return 이 빌더
+             * @throws IllegalArgumentException 이름이 올바르지 않거나 이미 등록되었거나, AES-256 키가 아닐 때
+             */
+            public Builder add(String keyId, SecretKey key) {
+                checkKeyId(keyId);
+                checkKey(key);
+                if (keys.putIfAbsent(keyId, key) != null) {
+                    throw new IllegalArgumentException("이미 등록된 키 이름입니다: " + keyId);
+                }
+                return this;
+            }
+
+            /**
+             * {@link S2EncryptionUtil#keyToBase64(SecretKey)}로 저장한 키를 등록한다.
+             *
+             * @param keyId  키 이름
+             * @param base64 Base64 키 문자열
+             * @return 이 빌더
+             */
+            public Builder add(String keyId, String base64) {
+                return add(keyId, keyFromBase64(base64));
+            }
+
+            /**
+             * 암호화에 쓸 주 키를 정한다. 키가 하나뿐이면 생략할 수 있다.
+             *
+             * @param keyId 등록한 키 이름
+             * @return 이 빌더
+             */
+            public Builder primary(String keyId) {
+                this.primaryId = keyId;
+                return this;
+            }
+
+            /**
+             * @return 키 묶음
+             * @throws IllegalStateException 키가 없거나, 주 키를 정하지 않았거나(키가 둘 이상일 때), 주 키가 등록되지 않았을 때
+             */
+            public KeyRing build() {
+                if (keys.isEmpty()) {
+                    throw new IllegalStateException("등록된 키가 없습니다.");
+                }
+                var primary = primaryId != null ? primaryId : keys.size() == 1 ? keys.keySet().iterator().next() : null;
+                if (primary == null) {
+                    throw new IllegalStateException("키가 둘 이상이면 primary(키 이름)로 주 키를 정해야 합니다.");
+                }
+                if (!keys.containsKey(primary)) {
+                    throw new IllegalStateException("주 키가 등록되지 않았습니다: " + primary);
+                }
+                return new KeyRing(keys, primary);
+            }
+        }
     }
 
     private static SecretKey checkKey(SecretKey key) {

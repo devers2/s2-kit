@@ -143,8 +143,17 @@ List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "T
 ```java
 // Many values (DB columns, list pages): a random key kept in a secret store, fast (< 1 ms per value)
 SecretKey key = S2EncryptionUtil.keyFromBase64(System.getenv("APP_ENCRYPTION_KEY")); // made once by generateKey()
-String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:..." (AES-256-GCM)
+String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:default:..." (AES-256-GCM)
 String plain = S2EncryptionUtil.decrypt(encrypted, key);           // wrong key → GeneralSecurityException
+
+// Key rotation without downtime: the ciphertext records its key name
+var keys = S2EncryptionUtil.KeyRing.builder()
+        .add("default", key)                                        // old key (single-key API writes "default")
+        .add("2027", newKey)
+        .primary("2027")                                            // new values use the new key
+        .build();
+String value = keys.decrypt(encrypted);                             // old ciphertexts still read
+String moved = keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted; // migrate gradually
 
 // A password typed by a person, occasionally: deliberately slow (PBKDF2, ~70 ms per value)
 String sealed = S2EncryptionUtil.encrypt("secret text", password); // "s2v2:..."

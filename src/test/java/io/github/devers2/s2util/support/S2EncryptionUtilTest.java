@@ -199,7 +199,8 @@ class S2EncryptionUtilTest {
         void roundTrip() throws Exception {
             var enc1 = S2EncryptionUtil.encrypt("010-1234-5678", key);
             var enc2 = S2EncryptionUtil.encrypt("010-1234-5678", key);
-            assertTrue(enc1.startsWith(S2EncryptionUtil.KEY_FORMAT_PREFIX));
+            assertTrue(enc1.startsWith("s2k1:default:"), enc1);
+            assertEquals(S2EncryptionUtil.DEFAULT_KEY_ID, S2EncryptionUtil.keyIdOf(enc1));
             assertNotEquals(enc1, enc2);
             assertEquals("010-1234-5678", S2EncryptionUtil.decrypt(enc1, key));
             assertEquals("", S2EncryptionUtil.decrypt(S2EncryptionUtil.encrypt("", key), key));
@@ -228,11 +229,14 @@ class S2EncryptionUtilTest {
             var enc = S2EncryptionUtil.encrypt("secret", key);
             assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(enc, S2EncryptionUtil.generateKey()));
 
-            byte[] raw = Base64.getDecoder().decode(enc.substring(S2EncryptionUtil.KEY_FORMAT_PREFIX.length()));
+            var prefix = "s2k1:default:";
+            byte[] raw = Base64.getDecoder().decode(enc.substring(prefix.length()));
             raw[raw.length - 1] ^= 1;
-            var tampered = S2EncryptionUtil.KEY_FORMAT_PREFIX + Base64.getEncoder().encodeToString(raw);
+            var tampered = prefix + Base64.getEncoder().encodeToString(raw);
             assertThrows(AEADBadTagException.class, () -> S2EncryptionUtil.decrypt(tampered, key));
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2k1:default:AAAA", key));
             assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2k1:AAAA", key));
+            assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt("s2k1:bad name:AAAA", key));
         }
 
         @Test
@@ -258,6 +262,75 @@ class S2EncryptionUtilTest {
             }
             var millis = (System.nanoTime() - start) / 1_000_000;
             assertTrue(millis < 5_000, "1,000 round trips took " + millis + "ms");
+        }
+    }
+
+    @Nested
+    @DisplayName("키 교체 (KeyRing)")
+    class Rotation {
+
+        private final javax.crypto.SecretKey oldKey = S2EncryptionUtil.generateKey();
+        private final javax.crypto.SecretKey newKey = S2EncryptionUtil.generateKey();
+
+        private S2EncryptionUtil.KeyRing rotated() {
+            return S2EncryptionUtil.KeyRing.builder().add("default", oldKey).add("2027", newKey).primary("2027").build();
+        }
+
+        @Test
+        @DisplayName("단일 키로 만든 암호문을 교체 후에도 읽고, 새 암호문은 주 키로 만든다")
+        void rotatesFromTheSingleKeyApi() throws Exception {
+            var old = S2EncryptionUtil.encrypt("010-1111-2222", oldKey);
+            var keys = rotated();
+
+            assertEquals("010-1111-2222", keys.decrypt(old));
+            var fresh = keys.encrypt("010-3333-4444");
+            assertEquals("2027", S2EncryptionUtil.keyIdOf(fresh));
+            assertEquals("010-3333-4444", keys.decrypt(fresh));
+        }
+
+        @Test
+        @DisplayName("옛 암호문만 다시 암호화 대상이며, 옮긴 뒤에는 옛 키 없이 읽힌다")
+        void reencryptsOldCiphertexts() throws Exception {
+            var keys = rotated();
+            var old = S2EncryptionUtil.encrypt("value", oldKey);
+            assertTrue(keys.needsReencrypt(old));
+
+            var moved = keys.reencrypt(old);
+            assertFalse(keys.needsReencrypt(moved));
+            assertSame(moved, keys.reencrypt(moved), "already on the primary key: unchanged");
+
+            var withoutOldKey = S2EncryptionUtil.KeyRing.of("2027", newKey);
+            assertEquals("value", withoutOldKey.decrypt(moved));
+            var e = assertThrows(GeneralSecurityException.class, () -> withoutOldKey.decrypt(old));
+            assertTrue(e.getMessage().contains("등록되지 않은 키 이름입니다: default"), e.getMessage());
+        }
+
+        @Test
+        @DisplayName("암호문의 키 이름을 바꿔치기하면 두 키가 모두 있어도 복호화되지 않는다")
+        void keyNameIsAuthenticated() throws Exception {
+            // Same key under two names: only the name differs, and it is part of the authenticated data | 같은 키를 두 이름으로 등록해 이름만 다르게
+            var keys = S2EncryptionUtil.KeyRing.builder().add("a", newKey).add("b", newKey).primary("a").build();
+            var enc = keys.encrypt("x");
+            var renamed = enc.replaceFirst("^s2k1:a:", "s2k1:b:");
+            assertThrows(AEADBadTagException.class, () -> keys.decrypt(renamed));
+        }
+
+        @Test
+        @DisplayName("키 묶음 설정 오류는 만들 때 알려 준다")
+        void validatesTheRing() {
+            assertThrows(IllegalStateException.class, () -> S2EncryptionUtil.KeyRing.builder().build());
+            assertThrows(IllegalStateException.class,
+                    () -> S2EncryptionUtil.KeyRing.builder().add("a", oldKey).add("b", newKey).build());
+            assertThrows(IllegalStateException.class,
+                    () -> S2EncryptionUtil.KeyRing.builder().add("a", oldKey).primary("z").build());
+            assertThrows(IllegalArgumentException.class,
+                    () -> S2EncryptionUtil.KeyRing.builder().add("a", oldKey).add("a", newKey));
+            assertThrows(IllegalArgumentException.class, () -> S2EncryptionUtil.KeyRing.of("bad name", oldKey));
+            assertThrows(IllegalArgumentException.class, () -> S2EncryptionUtil.KeyRing.of("a:b", oldKey));
+
+            var single = S2EncryptionUtil.KeyRing.builder().add("only", S2EncryptionUtil.keyToBase64(oldKey)).build();
+            assertEquals("only", single.primaryId());
+            assertEquals(java.util.Set.of("default", "2027"), rotated().keyIds());
         }
     }
 }

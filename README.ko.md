@@ -143,8 +143,17 @@ List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "T
 ```java
 // 여러 건(DB 컬럼, 목록 화면): 비밀 저장소에 둔 무작위 키, 빠름 (1건 1ms 미만)
 SecretKey key = S2EncryptionUtil.keyFromBase64(System.getenv("APP_ENCRYPTION_KEY")); // generateKey()로 한 번 생성
-String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:..." (AES-256-GCM)
+String encrypted = S2EncryptionUtil.encrypt("010-1234-5678", key); // "s2k1:default:..." (AES-256-GCM)
 String plain = S2EncryptionUtil.decrypt(encrypted, key);           // 틀린 키 → GeneralSecurityException
+
+// 서비스 중단 없는 키 교체: 암호문에 키 이름이 기록됨
+var keys = S2EncryptionUtil.KeyRing.builder()
+        .add("default", key)                                        // 옛 키 (단일 키 API 는 "default"로 기록)
+        .add("2027", newKey)
+        .primary("2027")                                            // 새 값은 새 키로
+        .build();
+String value = keys.decrypt(encrypted);                             // 옛 암호문도 읽힘
+String moved = keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted; // 천천히 옮김
 
 // 사람이 입력한 비밀번호로 가끔: 일부러 느림 (PBKDF2, 1건 약 70ms)
 String sealed = S2EncryptionUtil.encrypt("비밀 문자열", password);   // "s2v2:..."
