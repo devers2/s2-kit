@@ -575,7 +575,7 @@ public class S2PdfUtil {
      * 문서 변환에 쓸 LibreOffice 호환 명령을 정한다. 지정하지 않으면 다음 순서로 찾는다.
      * <ol>
      * <li>환경 변수 {@code S2_SOFFICE}</li>
-     * <li>PATH 의 {@code s2-soffice} (_devtools2 {@code setup-s2-office-converter.sh}가 설치하는 Podman 변환기)</li>
+     * <li>PATH 의 {@code s2-soffice} (_devtools2 {@code scripts/linux/setup-projects/s2/s2-office-converter/setup-s2-office-converter.sh}가 설치하는 Podman 변환기)</li>
      * <li>PATH 의 {@code soffice}, {@code libreoffice}</li>
      * <li>고정 경로 {@code /usr/local/bin/s2-soffice}(PATH 에 없을 때), 운영체제별 기본 설치 경로 (Windows {@code C:\Program Files\LibreOffice\program\soffice.exe}, macOS
      * {@code /Applications/LibreOffice.app/Contents/MacOS/soffice}, Linux {@code /opt/libreoffice}*{@code /program/soffice})</li>
@@ -678,7 +678,7 @@ public class S2PdfUtil {
                 }
             }
         } else {
-            // Where setup-s2-office-converter.sh installs it, for PATHs without /usr/local/bin (cron, trimmed services)
+            // Where s2-office-converter/setup-s2-office-converter.sh (_devtools2) installs it, for PATHs without /usr/local/bin (cron, trimmed services)
             // | 설치 스크립트가 두는 위치. /usr/local/bin 이 PATH 에 없는 환경(cron, PATH 를 좁힌 서비스) 대비
             candidates.add(Path.of("/usr/local/bin/s2-soffice"));
             candidates.add(Path.of("/Applications/LibreOffice.app/Contents/MacOS/soffice"));
