@@ -355,4 +355,6 @@ dependencies {
     testImplementation(libs.jakarta.servlet.jsp)
     testImplementation(libs.spring6.context) // S2AnnotationResolver, S2RestApiUtil 시험
     testImplementation(libs.spring6.web)
+    testImplementation(libs.spring.integration.sftp) // SFTP 통합 시험 (SpringSftpConfig)
+    testImplementation(libs.sshd.sftp) // SFTP 통합 시험용 내장 SSH 서버 (Apache MINA SSHD)
 }

@@ -21,6 +21,7 @@ javaparser = "3.27.1"
 jsch = "2.28.7"
 junit = "6.0.2"
 lz4 = "1.10.2"
+sshd = "2.15.0"
 uuid-creator = "6.1.1"
 
 # Spring Framework
@@ -62,6 +63,7 @@ jakarta-servlet-api = { group = "jakarta.servlet", name = "jakarta.servlet-api",
 jakarta-servlet-jsp = { group = "jakarta.servlet.jsp", name = "jakarta.servlet.jsp-api", version.ref = "jakarta-servlet-jsp" }
 
 # Testing
+sshd-sftp = { group = "org.apache.sshd", name = "sshd-sftp", version.ref = "sshd" }
 junit-jupiter-api = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junit" }
 junit-jupiter-engine = { group = "org.junit.jupiter", name = "junit-jupiter-engine", version.ref = "junit" }
 junit-jupiter-params = { group = "org.junit.jupiter", name = "junit-jupiter-params", version.ref = "junit" }

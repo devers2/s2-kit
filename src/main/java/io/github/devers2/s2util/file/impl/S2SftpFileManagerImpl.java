@@ -51,7 +51,7 @@ import io.github.devers2.s2util.support.S2StreamUtil;
  * @version 1.0
  * @since 2025. 02. 01.
  */
-public class S2SftpFileManagerImpl implements FileManager {
+public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
     private static final S2Logger logger = S2LogManager.getLogger(S2SftpFileManagerImpl.class);
 
@@ -262,7 +262,7 @@ public class S2SftpFileManagerImpl implements FileManager {
             } else {
                 logger.error("Failed to upload file: {}", saveName);
             }
-            throw new S2RuntimeException("Failed to upload file");
+            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect();
@@ -319,7 +319,7 @@ public class S2SftpFileManagerImpl implements FileManager {
                 jschSessionFactory.returnSession(session);
             }
             logger.error("원격 파일 다운로드 스트림 열기 실패: {}", saveName, e);
-            throw new S2RuntimeException("원격 파일 다운로드 스트림 열기에 실패하였습니다.");
+            throw new S2RuntimeException("원격 파일 다운로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         }
     }
 
@@ -344,13 +344,22 @@ public class S2SftpFileManagerImpl implements FileManager {
             }
         } catch (Exception e) {
             logger.error("원격 파일 삭제 실패: {}", saveName, e);
-            throw new S2RuntimeException("원격 파일 삭제 실패: " + e.getMessage());
+            throw new S2RuntimeException("원격 파일 삭제 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect(); // 채널 종료
             }
             jschSessionFactory.returnSession(session);
         }
+    }
+
+    /**
+     * 세션 풀을 닫아 유휴 SSH 연결과 풀 정비 스레드를 정리한다. 애플리케이션 종료 시 호출한다(Spring 빈이면 종료 시 자동 호출).
+     * 닫은 뒤에는 이 객체를 사용할 수 없다.
+     */
+    @Override
+    public void close() {
+        jschSessionFactory.close();
     }
 
     private boolean exists(ChannelSftp channel, String path) throws Exception {

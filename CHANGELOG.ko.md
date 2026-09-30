@@ -87,6 +87,11 @@
 - `README-LGPL-2.1-PDF.md`가 OpenHTMLToPDF 를 포함한다며 소스 제공을 약속하고 있었으나 s2-support 는 포함하지 않습니다(`compileOnly`).
   애플리케이션이 직접 추가한다는 점과, 애플리케이션이 재배포할 때 적용되는 의무를 적도록 고쳤습니다. `s2.dropzone.js`의 "All right
   reserved" 문구와 `s2.util.css`의 존재하지 않는 모달 헤더 로고(`SEEK_logo.png`) 참조를 삭제했습니다.
+- `S2SftpFileManagerImpl`이 `AutoCloseable`을 구현합니다. `close()`로 SSH 세션 풀을 닫습니다(연결과 풀 스레드를 정리할 방법이 없었음).
+  SFTP 실패 예외가 원인과 메시지(예: "이미 존재하는 파일", 거부된 호스트 키)를 담습니다.
+- `SpringSftpConfig`가 `sftp.private-key-path`를 필수로 요구하고 `sftp.password`를 무시하던 문제를 고쳤습니다. 개인키가 있으면 개인키,
+  없으면 비밀번호를 쓰며, 둘 다 없으면 시작 시 실패합니다.
+- 두 SFTP 관리자를 내장 SSH 서버(Apache MINA SSHD)로 시험합니다: 전송, 모르는·바뀐 호스트 키 거부, `allowUnknownHosts`, 경로 이탈 차단.
 - README 예제가 존재하지 않는 API(`S2ContextUtil.getBean`, `S2PaginationInfo` 세터)를 쓰고 있었습니다. 실제 API 로 바꾸고 시험에서
   컴파일합니다.
 - `S2AnnotationResolver`는 스캔한 클래스를 정적 초기화 없이 베이스 클래스의 클래스 로더로 로드합니다. 캐시가 DevTools 재시작 후에도

@@ -101,6 +101,13 @@ before upgrading.
   include it (`compileOnly`). It now states that the application adds it and what applies when the application
   redistributes it. A stray "All right reserved" line in `s2.dropzone.js` and a modal header logo that does not exist
   (`SEEK_logo.png`) in `s2.util.css` were removed.
+- `S2SftpFileManagerImpl` implements `AutoCloseable`: `close()` shuts down its SSH session pool (there was no way to
+  release the connections and pool threads). SFTP failures keep the cause and its message (for example "file already
+  exists" or the rejected host key).
+- `SpringSftpConfig` required `sftp.private-key-path` and ignored `sftp.password`; it now uses the private key when set
+  and the password otherwise, and fails at startup when neither is set.
+- Both SFTP managers are tested against an embedded SSH server (Apache MINA SSHD): transfers, rejection of unknown and
+  changed host keys, `allowUnknownHosts`, and path containment.
 - README examples used APIs that do not exist (`S2ContextUtil.getBean`, `S2PaginationInfo` setters). They were replaced,
   and a test compiles them.
 - `S2AnnotationResolver` loads scanned classes without running static initializers, through the base class's class

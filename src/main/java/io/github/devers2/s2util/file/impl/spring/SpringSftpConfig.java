@@ -65,7 +65,8 @@ public class SpringSftpConfig {
     @Value("${sftp.password:#{null}}")
     private String sftpPassword;
 
-    @Value("${sftp.private-key-path}")
+    /* 개인키 경로 (선택). 없으면 sftp.password 로 인증한다. */
+    @Value("${sftp.private-key-path:#{null}}")
     private String privateKeyPath;
 
     // 패스프레이즈 없는 개인키가 흔하므로 sftp.password 와 마찬가지로 선택 값으로 처리한다.
@@ -120,7 +121,6 @@ public class SpringSftpConfig {
         factory.setHost(sftpHost);
         factory.setPort(sftpPort);
         factory.setUser(sftpUser);
-        // factory.setPassword(sftpPassword); // 개인키 설정으로 사용할때는 개인키 확인을 위해 주석처리
 
         // 호스트 키 검증: known-hosts-path 가 설정되면 그 파일 기준으로 항상 검증한다(allowUnknownHosts와
         // 무관하게 우선 적용됨). known-hosts-path 가 없으면 allowUnknownHosts 값을 따르는데, 기본값(false)
@@ -137,10 +137,15 @@ public class SpringSftpConfig {
         }
         factory.setAllowUnknownKeys(allowUnknownHosts);
 
-        // 개인키 설정
-        factory.setPrivateKey(new FileSystemResource(privateKeyPath));
-        // 개인키 암호 설정 (암호가 있는 경우)
-        factory.setPrivateKeyPassphrase(privateKeyPassphrase);
+        // Private key when configured, otherwise password (same rule as JschSessionFactory) | 개인키가 있으면 개인키, 없으면 비밀번호 (JschSessionFactory 와 같은 규칙)
+        if (privateKeyPath != null && !privateKeyPath.isBlank()) {
+            factory.setPrivateKey(new FileSystemResource(privateKeyPath));
+            factory.setPrivateKeyPassphrase(privateKeyPassphrase);
+        } else if (sftpPassword != null && !sftpPassword.isEmpty()) {
+            factory.setPassword(sftpPassword);
+        } else {
+            throw new IllegalStateException("sftp.private-key-path 또는 sftp.password 중 하나를 설정해야 합니다.");
+        }
         return factory;
     }
 

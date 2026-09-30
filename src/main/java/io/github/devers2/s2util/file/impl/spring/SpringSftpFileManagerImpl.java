@@ -120,7 +120,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
         }
 
         throw new S2RuntimeException(
-                "SFTP 세션 획득 실패: " + (lastException != null ? lastException.getMessage() : "최대 재시도 횟수 초과"));
+                "SFTP 세션 획득 실패: " + (lastException != null ? lastException.getMessage() : "최대 재시도 횟수 초과"),
+                lastException);
     }
 
     /**
@@ -152,7 +153,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
             }
         } catch (IOException | InterruptedException e) {
             logger.error("Failed to upload file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("파일 업로드에 실패하였습니다.");
+            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (session != null) {
                 try {
@@ -210,7 +211,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
             return resultStream;
         } catch (IOException | InterruptedException e) {
             logger.error("Failed to open download stream for file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("파일 다운로드 스트림 열기에 실패하였습니다.");
+            throw new S2RuntimeException("원격 파일 다운로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (!success && session != null) {
                 try {
