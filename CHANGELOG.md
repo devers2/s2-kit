@@ -93,8 +93,8 @@ before upgrading.
   csv, ppt, pptx, odp, hwp, hwpx) is converted by a LibreOffice-compatible command when one is installed:
   `setOfficeCommand`, the `S2_SOFFICE` environment variable, `s2-soffice` (a Podman converter with LibreOffice,
   H2Orestart and Korean fonts), `soffice`/`libreoffice` on the PATH, or the default install folders. No Java
-  dependency is added. Without LibreOffice every other source still merges, and a document source fails with a message
-  naming what to install; `isOfficeConversionAvailable()` tells the caller in advance. Each conversion uses its own
+  dependency is added. Without LibreOffice every other source still merges, and a document source fails with "오피스·한글 문서를 변환하려면
+  s2-office-converter 설치가 필요합니다." (details in the cause and the log); `isOfficeConversionAvailable()` tells the caller in advance. Each conversion uses its own
   profile folder (conversions can run concurrently) and a time limit (`setOfficeTimeout`, default 3 minutes).
 
 ### Security

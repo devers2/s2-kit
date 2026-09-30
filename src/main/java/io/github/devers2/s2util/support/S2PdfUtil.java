@@ -563,6 +563,8 @@ public class S2PdfUtil {
 
     private static final java.util.Set<String> HWP_EXTENSIONS = java.util.Set.of("hwp", "hwpx");
 
+    private static final String CONVERTER_REQUIRED = "오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.";
+
     private static volatile List<String> officeCommand;
     private static volatile boolean officeCommandResolved;
     private static volatile Duration officeTimeout = Duration.ofMinutes(3);
@@ -612,7 +614,16 @@ public class S2PdfUtil {
      * @return 변환 명령이 있으면 true
      */
     public static boolean isOfficeConversionAvailable() {
-        return resolveOfficeCommand() != null;
+        var command = resolveOfficeCommand();
+        return command != null && commandExists(command.get(0));
+    }
+
+    /** A path must be executable; a bare name must be on the PATH | 경로는 실행 가능해야 하고, 이름만 있으면 PATH 에 있어야 함 */
+    private static boolean commandExists(String command) {
+        if (command.contains("/") || command.contains("\\")) {
+            return Files.isExecutable(Path.of(command));
+        }
+        return findOnPath(command) != null;
     }
 
     /**
@@ -705,9 +716,8 @@ public class S2PdfUtil {
      */
     private static void convertDocumentToPdf(PdfSource source, Path target) throws IOException {
         var command = resolveOfficeCommand();
-        if (command == null) {
-            throw new IOException("LibreOffice(soffice)를 찾을 수 없어 문서를 변환할 수 없습니다. 변환기를 설치하거나(Podman: "
-                    + "_devtools2 setup-s2-office-converter.sh) S2PdfUtil.setOfficeCommand(...)로 명령을 지정하십시오.");
+        if (command == null || !commandExists(command.get(0))) {
+            throw new IOException(CONVERTER_REQUIRED);
         }
         var extension = S2FileUtil.getExtension(source.documentName, true);
         var work = Files.createTempDirectory("s2_office_");
@@ -735,7 +745,12 @@ public class S2PdfUtil {
                     outDir.toString(), input.toString()));
 
             var log = work.resolve("soffice.log");
-            var process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            Process process;
+            try {
+                process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            } catch (IOException e) {
+                throw new IOException(CONVERTER_REQUIRED, e);
+            }
             var timeout = officeTimeout;
             boolean finished;
             try {
@@ -751,12 +766,15 @@ public class S2PdfUtil {
             }
             var output = outDir.resolve("document.pdf");
             if (process.exitValue() != 0 || !Files.isRegularFile(output) || Files.size(output) == 0) {
-                var detail = readTail(log, 2000);
-                var hint = HWP_EXTENSIONS.contains(extension)
-                        ? " 한글(hwp, hwpx) 변환에는 LibreOffice 에 H2Orestart 확장이 설치되어 있어야 합니다."
-                        : "";
-                throw new IOException("문서를 PDF 로 변환하지 못했습니다 (종료 코드 " + process.exitValue() + "): "
-                        + source.documentName + "." + hint + (detail.isBlank() ? "" : " 출력: " + detail));
+                // Short message for users; the exit code and LibreOffice output go to the cause and the log
+                // | 사용자에게는 짧은 메시지, 종료 코드와 LibreOffice 출력은 원인(cause)과 로그로
+                var detail = new IOException("soffice 종료 코드 " + process.exitValue() + ", 명령 " + args.get(0) + ", 출력: "
+                        + readTail(log, 2000));
+                logger.warn("문서 변환 실패: {} ({})", source.documentName, detail.getMessage());
+                // Plain LibreOffice without the H2Orestart extension cannot read Hangul files | H2Orestart 없는 LibreOffice 는 한글 파일을 못 읽음
+                var message = HWP_EXTENSIONS.contains(extension) && !wrapper ? CONVERTER_REQUIRED
+                        : "문서를 PDF로 변환하지 못했습니다: " + source.documentName;
+                throw new IOException(message, detail);
             }
             Files.move(output, target, StandardCopyOption.REPLACE_EXISTING);
         } finally {

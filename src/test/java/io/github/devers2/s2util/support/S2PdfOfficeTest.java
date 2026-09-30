@@ -112,7 +112,10 @@ class S2PdfOfficeTest {
         S2PdfUtil.setOfficeCommand(dir.resolve("missing-soffice").toString());
         var e = assertThrows(IOException.class,
                 () -> S2PdfUtil.merge(PdfSource.ofText("ok"), PdfSource.ofDocument(new byte[] { 1 }, "보고서.docx")));
-        assertTrue(e.getMessage().startsWith("병합 소스 #2 (DOCUMENT 보고서.docx) 처리 실패"), e.getMessage());
+        assertEquals("병합 소스 #2 (DOCUMENT 보고서.docx) 처리 실패: 오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.",
+                e.getMessage());
+
+        assertFalse(S2PdfUtil.isOfficeConversionAvailable(), "a configured command that does not exist");
 
         // Other sources still merge | 다른 소스는 그대로 병합
         try (var doc = load(S2PdfUtil.merge(PdfSource.ofText("still works")))) {
@@ -125,12 +128,17 @@ class S2PdfOfficeTest {
         S2PdfUtil.setOfficeCommand(fakeSoffice("fail").toString());
         var e = assertThrows(IOException.class,
                 () -> S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "보고서.hwp")));
-        assertTrue(e.getMessage().contains("H2Orestart"), e.getMessage());
-        assertTrue(e.getMessage().contains("source file could not be loaded"), e.getMessage());
+        // Plain LibreOffice failing on a Hangul file: the converter (with H2Orestart) is what is missing
+        // | 일반 LibreOffice 가 한글 파일에서 실패: 빠진 것은 변환기(H2Orestart 포함)
+        assertTrue(e.getMessage().endsWith("s2-office-converter 설치가 필요합니다."), e.getMessage());
+        // Details stay in the cause, not in the message | 상세는 메시지가 아닌 원인(cause)에
+        var detail = e.getCause().getCause();
+        assertTrue(detail.getMessage().contains("source file could not be loaded"), detail.getMessage());
+        assertFalse(e.getMessage().contains("source file could not be loaded"));
 
         var docx = assertThrows(IOException.class,
                 () -> S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "a.docx")));
-        assertFalse(docx.getMessage().contains("H2Orestart"), docx.getMessage());
+        assertTrue(docx.getMessage().endsWith("문서를 PDF로 변환하지 못했습니다: a.docx"), docx.getMessage());
     }
 
     @Test
