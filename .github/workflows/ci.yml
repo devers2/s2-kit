@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: s2-support
-      # s2-core 1.2.0 is not on Maven Central yet, so build against s2-util main via the composite build. | s2-core 1.2.0 이 아직 Maven Central 에 없으므로 composite build 로 s2-util main 소스를 참조
+      # s2-core 2.0.0 is not on Maven Central yet, so build against s2-util main via the composite build. | s2-core 2.0.0 이 아직 Maven Central 에 없으므로 composite build 로 s2-util main 소스를 참조
       - name: Checkout s2-util (sibling for composite build)
         uses: actions/checkout@v7
         with:
