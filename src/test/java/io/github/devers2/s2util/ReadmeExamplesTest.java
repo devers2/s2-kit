@@ -97,6 +97,13 @@ class ReadmeExamplesTest {
                 options)) {
             pdf.transferTo(responseOutput);
         }
+
+        InputStream uploadedStream = InputStream.nullInputStream();
+        if (io.github.devers2.s2util.support.S2PdfUtil.isOfficeConversionAvailable()) {
+            io.github.devers2.s2util.support.S2PdfUtil.merge(List.of(
+                    io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
+                    io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));
+        }
     }
 
     /** Compiled, not run: it would connect to a server | 컴파일만 확인 (실행하면 서버에 접속함) */

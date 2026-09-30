@@ -76,6 +76,11 @@
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`. 폰트를 지정하지 않으면 설치된 한글 TrueType 폰트를
   씁니다(`SYSTEM_FONT_CANDIDATES`: 맑은 고딕, 나눔고딕, Noto Sans KR 등).
 - `PdfSource.maxBytes(long)` (다운로드·메모리 이미지 소스 기본 100MB).
+- `S2PdfUtil.merge`의 오피스·한글 문서: `PdfSource.ofDocument(...)`(doc, docx, odt, rtf, xls, xlsx, ods, csv, ppt, pptx, odp, hwp, hwpx)는
+  LibreOffice 호환 명령이 설치되어 있으면 변환됩니다. `setOfficeCommand`, 환경 변수 `S2_SOFFICE`, `s2-soffice`(LibreOffice·H2Orestart·한글
+  폰트가 든 Podman 변환기), PATH 의 `soffice`/`libreoffice`, 기본 설치 경로 순으로 찾습니다. Java 의존성은 추가되지 않습니다. LibreOffice 가
+  없어도 다른 소스는 그대로 병합되며, 문서 소스는 무엇을 설치해야 하는지 알려 주는 예외를 냅니다. `isOfficeConversionAvailable()`로 미리
+  확인할 수 있습니다. 변환마다 별도 프로필 폴더(동시 변환 가능)와 제한 시간(`setOfficeTimeout`, 기본 3분)을 씁니다.
 
 ### 보안
 

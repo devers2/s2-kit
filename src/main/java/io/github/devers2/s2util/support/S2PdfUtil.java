@@ -27,6 +27,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.util.Locale;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.net.URI;
@@ -551,6 +552,230 @@ public class S2PdfUtil {
 
         builder.toStream(outputStream);
         builder.run();
+    }
+
+    // ------------------------------------------------------------------------
+    // Office and Hangul documents (LibreOffice) | 오피스·한글 문서 (LibreOffice)
+
+    /** Extensions accepted by {@link PdfSource#ofDocument(Path)}; hwp/hwpx need the H2Orestart extension | 문서 확장자 */
+    public static final java.util.Set<String> DOCUMENT_EXTENSIONS = java.util.Set.of(
+            "doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp", "hwp", "hwpx");
+
+    private static final java.util.Set<String> HWP_EXTENSIONS = java.util.Set.of("hwp", "hwpx");
+
+    private static volatile List<String> officeCommand;
+    private static volatile boolean officeCommandResolved;
+    private static volatile Duration officeTimeout = Duration.ofMinutes(3);
+
+    /**
+     * 문서 변환에 쓸 LibreOffice 호환 명령을 정한다. 지정하지 않으면 다음 순서로 찾는다.
+     * <ol>
+     * <li>환경 변수 {@code S2_SOFFICE}</li>
+     * <li>PATH 의 {@code s2-soffice} (_devtools2 {@code setup-s2-office-converter.sh}가 설치하는 Podman 변환기)</li>
+     * <li>PATH 의 {@code soffice}, {@code libreoffice}</li>
+     * <li>운영체제별 기본 설치 경로 (Windows {@code C:\Program Files\LibreOffice\program\soffice.exe}, macOS
+     * {@code /Applications/LibreOffice.app/Contents/MacOS/soffice}, Linux {@code /opt/libreoffice}*{@code /program/soffice})</li>
+     * </ol>
+     * 명령은 {@code --headless --convert-to pdf --outdir <폴더> <파일>} 형식을 받아야 한다.
+     *
+     * @param command 명령과 앞부분 인자 (예: {@code "s2-soffice"}, {@code "/opt/libreoffice/program/soffice"})
+     */
+    public static void setOfficeCommand(String... command) {
+        if (command == null || command.length == 0 || command[0] == null || command[0].isBlank()) {
+            throw new IllegalArgumentException("명령이 비었습니다.");
+        }
+        officeCommand = List.of(command);
+        officeCommandResolved = true;
+    }
+
+    /** 지정한 명령을 지우고 다음 사용 때 다시 찾게 한다 (설치 후 재시작 없이 반영할 때). */
+    public static void resetOfficeCommand() {
+        officeCommand = null;
+        officeCommandResolved = false;
+    }
+
+    /**
+     * 문서 한 건의 변환 제한 시간 (기본 3분). 넘으면 변환 프로세스를 강제로 끝내고 예외를 던진다.
+     *
+     * @param timeout 제한 시간
+     */
+    public static void setOfficeTimeout(Duration timeout) {
+        if (timeout == null || timeout.isNegative() || timeout.isZero()) {
+            throw new IllegalArgumentException("제한 시간은 0 보다 커야 합니다: " + timeout);
+        }
+        officeTimeout = timeout;
+    }
+
+    /**
+     * 오피스·한글 문서를 변환할 수 있는지 확인한다 (변환 명령이 있는지만 보며 실행하지는 않음). 화면에서 문서 첨부 기능을 보여 줄지 정할 때 쓴다.
+     *
+     * @return 변환 명령이 있으면 true
+     */
+    public static boolean isOfficeConversionAvailable() {
+        return resolveOfficeCommand() != null;
+    }
+
+    /**
+     * 사용할 변환 명령. 없으면 비어 있다.
+     *
+     * @return 명령과 앞부분 인자
+     */
+    public static java.util.Optional<List<String>> officeCommand() {
+        return java.util.Optional.ofNullable(resolveOfficeCommand());
+    }
+
+    private static List<String> resolveOfficeCommand() {
+        if (officeCommandResolved) {
+            return officeCommand;
+        }
+        synchronized (S2PdfUtil.class) {
+            if (!officeCommandResolved) {
+                officeCommand = detectOfficeCommand();
+                officeCommandResolved = true;
+                if (officeCommand != null) {
+                    logger.info("문서 변환 명령: {}", officeCommand);
+                }
+            }
+            return officeCommand;
+        }
+    }
+
+    private static List<String> detectOfficeCommand() {
+        var fromEnv = System.getenv("S2_SOFFICE");
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return List.of(fromEnv.trim());
+        }
+        var windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        for (var name : windows ? List.of("soffice.exe", "soffice.com") : List.of("s2-soffice", "soffice", "libreoffice")) {
+            var found = findOnPath(name);
+            if (found != null) {
+                return List.of(found.toString());
+            }
+        }
+        var candidates = new ArrayList<Path>();
+        if (windows) {
+            for (var base : new String[] { System.getenv("ProgramFiles"), System.getenv("ProgramFiles(x86)") }) {
+                if (base != null) {
+                    candidates.add(Path.of(base, "LibreOffice", "program", "soffice.exe"));
+                }
+            }
+        } else {
+            candidates.add(Path.of("/Applications/LibreOffice.app/Contents/MacOS/soffice"));
+            candidates.add(Path.of("/usr/lib/libreoffice/program/soffice"));
+            try (var dirs = Files.newDirectoryStream(Path.of("/opt"), "libreoffice*")) {
+                for (var dir : dirs) {
+                    candidates.add(dir.resolve("program").resolve("soffice"));
+                }
+            } catch (IOException | RuntimeException ignored) {
+                // No /opt or not readable | /opt 가 없거나 읽을 수 없음
+            }
+        }
+        for (var candidate : candidates) {
+            if (Files.isExecutable(candidate)) {
+                return List.of(candidate.toString());
+            }
+        }
+        return null;
+    }
+
+    private static Path findOnPath(String name) {
+        var path = System.getenv("PATH");
+        if (path == null) {
+            return null;
+        }
+        for (var dir : path.split(java.io.File.pathSeparator)) {
+            if (dir.isBlank()) {
+                continue;
+            }
+            try {
+                var candidate = Path.of(dir, name);
+                if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                    return candidate;
+                }
+            } catch (RuntimeException ignored) {
+                // Invalid PATH entry | 잘못된 PATH 항목
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Converts one document with LibreOffice in a private temporary folder (its own user profile, so conversions can
+     * run concurrently) and moves the PDF to {@code target}.
+     */
+    private static void convertDocumentToPdf(PdfSource source, Path target) throws IOException {
+        var command = resolveOfficeCommand();
+        if (command == null) {
+            throw new IOException("LibreOffice(soffice)를 찾을 수 없어 문서를 변환할 수 없습니다. 변환기를 설치하거나(Podman: "
+                    + "_devtools2 setup-s2-office-converter.sh) S2PdfUtil.setOfficeCommand(...)로 명령을 지정하십시오.");
+        }
+        var extension = S2FileUtil.getExtension(source.documentName, true);
+        var work = Files.createTempDirectory("s2_office_");
+        try {
+            // A plain ASCII name avoids encoding issues in the command line | 명령줄 인코딩 문제를 피하려고 ASCII 이름 사용
+            var input = work.resolve("document." + extension);
+            if (source.pathData != null) {
+                Files.copy(source.pathData, input);
+            } else if (source.byteData != null) {
+                Files.write(input, source.byteData);
+            } else {
+                try (var out = Files.newOutputStream(input)) {
+                    source.inputStream.transferTo(out);
+                }
+            }
+            var outDir = Files.createDirectories(work.resolve("out"));
+
+            var args = new ArrayList<>(command);
+            var wrapper = Path.of(command.get(0)).getFileName().toString().startsWith("s2-soffice");
+            if (!wrapper) {
+                // A separate LibreOffice profile per call lets conversions run at the same time | 호출마다 별도 프로필 → 동시 변환 가능
+                args.add("-env:UserInstallation=" + work.resolve("profile").toUri());
+            }
+            args.addAll(List.of("--headless", "--norestore", "--nolockcheck", "--convert-to", "pdf", "--outdir",
+                    outDir.toString(), input.toString()));
+
+            var log = work.resolve("soffice.log");
+            var process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            var timeout = officeTimeout;
+            boolean finished;
+            try {
+                finished = process.waitFor(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                destroyTree(process);
+                Thread.currentThread().interrupt();
+                throw new IOException("문서 변환이 중단되었습니다.", e);
+            }
+            if (!finished) {
+                destroyTree(process);
+                throw new IOException("문서 변환 제한 시간(" + timeout.toSeconds() + "초)을 넘었습니다: " + source.documentName);
+            }
+            var output = outDir.resolve("document.pdf");
+            if (process.exitValue() != 0 || !Files.isRegularFile(output) || Files.size(output) == 0) {
+                var detail = readTail(log, 2000);
+                var hint = HWP_EXTENSIONS.contains(extension)
+                        ? " 한글(hwp, hwpx) 변환에는 LibreOffice 에 H2Orestart 확장이 설치되어 있어야 합니다."
+                        : "";
+                throw new IOException("문서를 PDF 로 변환하지 못했습니다 (종료 코드 " + process.exitValue() + "): "
+                        + source.documentName + "." + hint + (detail.isBlank() ? "" : " 출력: " + detail));
+            }
+            Files.move(output, target, StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            S2FileUtil.deleteQuietly(work);
+        }
+    }
+
+    private static void destroyTree(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+    }
+
+    private static String readTail(Path log, int maxChars) {
+        try {
+            var text = Files.readString(log, StandardCharsets.UTF_8).strip();
+            return text.length() > maxChars ? "..." + text.substring(text.length() - maxChars) : text;
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -1142,7 +1367,7 @@ public class S2PdfUtil {
 
     public static class PdfSource implements AutoCloseable {
         public enum SourceType {
-            PDF, HTML, IMAGE, TEXT, SVG, URL
+            PDF, HTML, IMAGE, TEXT, SVG, URL, DOCUMENT
         }
 
         private final SourceType type;
@@ -1167,6 +1392,9 @@ public class S2PdfUtil {
         private String[] cssSelectors;
 
         private boolean autoCloseStream = true;
+
+        // DOCUMENT: original file name (the extension selects the LibreOffice import filter) | 원래 파일명 (확장자로 변환 필터 결정)
+        private String documentName;
 
         // Merge options | 병합 옵션
         private String title;
@@ -1344,6 +1572,67 @@ public class S2PdfUtil {
         }
 
         /**
+         * 오피스·한글 문서 소스를 만든다. 병합할 때 LibreOffice({@link S2PdfUtil#setOfficeCommand(String...)} 참고)로 PDF 로 변환한다.
+         * LibreOffice 가 없으면 이 소스를 병합할 때 원인을 알려 주는 예외가 나며, 다른 소스만 병합하는 데는 영향이 없다.
+         *
+         * @param path 문서 파일 ({@link S2PdfUtil#DOCUMENT_EXTENSIONS}, hwp·hwpx 는 H2Orestart 확장 필요)
+         * @return 문서 소스
+         * @throws IllegalArgumentException 지원하지 않는 확장자일 때
+         */
+        public static PdfSource ofDocument(Path path) {
+            var src = new PdfSource(SourceType.DOCUMENT);
+            src.pathData = Objects.requireNonNull(path, "[PdfSource] path must not be null");
+            src.documentName = checkDocumentName(String.valueOf(path.getFileName()));
+            return src;
+        }
+
+        /**
+         * @param file 문서 파일
+         * @return 문서 소스
+         * @see #ofDocument(Path)
+         */
+        public static PdfSource ofDocument(File file) {
+            return ofDocument(Objects.requireNonNull(file, "[PdfSource] file must not be null").toPath());
+        }
+
+        /**
+         * 업로드 등으로 받은 문서 스트림으로 소스를 만든다. 형식은 파일명의 확장자로 정한다.
+         *
+         * @param stream   문서 스트림 ({@link #autoClose(boolean)} 설정에 따라 병합 후 닫힘)
+         * @param fileName 원래 파일명 (예: {@code 보고서.hwp})
+         * @return 문서 소스
+         * @see #ofDocument(Path)
+         */
+        public static PdfSource ofDocument(InputStream stream, String fileName) {
+            var src = new PdfSource(SourceType.DOCUMENT);
+            src.inputStream = Objects.requireNonNull(stream, "[PdfSource] stream must not be null");
+            src.documentName = checkDocumentName(fileName);
+            return src;
+        }
+
+        /**
+         * @param bytes    문서 내용
+         * @param fileName 원래 파일명 (예: {@code 보고서.docx})
+         * @return 문서 소스
+         * @see #ofDocument(Path)
+         */
+        public static PdfSource ofDocument(byte[] bytes, String fileName) {
+            var src = new PdfSource(SourceType.DOCUMENT);
+            src.byteData = Objects.requireNonNull(bytes, "[PdfSource] bytes must not be null");
+            src.documentName = checkDocumentName(fileName);
+            return src;
+        }
+
+        private static String checkDocumentName(String fileName) {
+            var extension = S2FileUtil.getExtension(fileName == null ? "" : fileName, true);
+            if (!DOCUMENT_EXTENSIONS.contains(extension)) {
+                throw new IllegalArgumentException(
+                        "[PdfSource] 지원하지 않는 문서 형식입니다: " + fileName + " (지원: " + DOCUMENT_EXTENSIONS + ")");
+            }
+            return fileName;
+        }
+
+        /**
          * URL 소스 생성 (원격 리소스 다운로드 및 Content-Type/Magic-Byte 기반 자동 감지)
          * <p>
          * 서버가 이 URL 로 직접 요청하므로, 사용자 입력을 그대로 넘기면 내부망 주소를 조회하는 SSRF 가 된다. 사용자 입력이 섞이면 호출자가
@@ -1454,6 +1743,9 @@ public class S2PdfUtil {
 
         /** Readable description for error messages | 오류 메시지용 설명 */
         private String describe() {
+            if (documentName != null) {
+                return type + " " + documentName;
+            }
             if (urlString != null) {
                 return type + " " + urlString;
             }
@@ -1469,6 +1761,9 @@ public class S2PdfUtil {
         private String bookmarkTitle(int index) {
             if (title != null && !title.isBlank()) {
                 return title;
+            }
+            if (documentName != null) {
+                return documentName;
             }
             if (pathData != null) {
                 return String.valueOf(pathData.getFileName());
@@ -1634,6 +1929,11 @@ public class S2PdfUtil {
                             var tempFile = createTrackedTempFile("txt", ".pdf", intermediateTempFiles);
                             renderHtmlToPdfFile(tempFile, convertTextToHtml(source.textOrHtmlContent), null, null, null,
                                     S2PdfUtil.class);
+                            pdfFileToMerge = tempFile.toFile();
+                        }
+                        case DOCUMENT -> {
+                            var tempFile = createTrackedTempFile("doc", ".pdf", intermediateTempFiles);
+                            convertDocumentToPdf(source, tempFile);
                             pdfFileToMerge = tempFile.toFile();
                         }
                         case SVG -> {

@@ -178,6 +178,13 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
         S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
     pdf.transferTo(response.getOutputStream());
 }
+
+// Office and Hangul documents (docx, xlsx, pptx, hwp, hwpx ...) are converted by LibreOffice when it is installed
+// (s2-soffice, soffice or libreoffice is found automatically); without it every other source still merges
+if (S2PdfUtil.isOfficeConversionAvailable()) {
+    S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("plan.docx")),
+            S2PdfUtil.PdfSource.ofDocument(uploadedStream, "report.hwp")));
+}
 ```
 
 #### SFTP (`S2SftpFileManagerImpl`)

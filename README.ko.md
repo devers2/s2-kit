@@ -178,6 +178,13 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
         S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
     pdf.transferTo(response.getOutputStream());
 }
+
+// 오피스·한글 문서(docx, xlsx, pptx, hwp, hwpx 등)는 LibreOffice 가 설치되어 있으면 변환됨
+// (s2-soffice, soffice, libreoffice 를 자동으로 찾음). 없어도 다른 소스는 그대로 병합됨
+if (S2PdfUtil.isOfficeConversionAvailable()) {
+    S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
+            S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));
+}
 ```
 
 #### SFTP (`S2SftpFileManagerImpl`)

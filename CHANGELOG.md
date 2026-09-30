@@ -89,6 +89,13 @@ before upgrading.
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`; without a configured font an
   installed Korean TrueType font is used (`SYSTEM_FONT_CANDIDATES`: Malgun Gothic, NanumGothic, Noto Sans KR, ...).
 - `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).
+- Office and Hangul documents in `S2PdfUtil.merge`: `PdfSource.ofDocument(...)` (doc, docx, odt, rtf, xls, xlsx, ods,
+  csv, ppt, pptx, odp, hwp, hwpx) is converted by a LibreOffice-compatible command when one is installed:
+  `setOfficeCommand`, the `S2_SOFFICE` environment variable, `s2-soffice` (a Podman converter with LibreOffice,
+  H2Orestart and Korean fonts), `soffice`/`libreoffice` on the PATH, or the default install folders. No Java
+  dependency is added. Without LibreOffice every other source still merges, and a document source fails with a message
+  naming what to install; `isOfficeConversionAvailable()` tells the caller in advance. Each conversion uses its own
+  profile folder (conversions can run concurrently) and a time limit (`setOfficeTimeout`, default 3 minutes).
 
 ### Security
 
