@@ -146,7 +146,11 @@ public class S2MarkupUtil {
     }
 
     /**
-     * 마크업 문자열에서 특정 태그와 그 내용을 제거한다. (중첩된 태그도 제거)
+     * 마크업 문자열에서 특정 태그와 그 내용을 제거한다. (중첩된 태그도 제거, 닫히지 않은 태그는 문자열 끝까지 제거)
+     * <p>
+     * 정규식 기반의 단순 처리이므로 XSS 방어용 HTML 정화기로 쓰면 안 된다(이벤트 속성, {@code javascript:} URL 등은 그대로 남음). 신뢰할 수 없는
+     * HTML 은 jsoup {@code Safelist} 같은 정화기를 사용한다.
+     * </p>
      *
      * @param markupString  마크업 문자열
      * @param removeTagName 삭제할 태그
@@ -190,7 +194,10 @@ public class S2MarkupUtil {
                 }
             }
         }
-        sb.append(markupString, lastAppendEnd, markupString.length());
+        // An unclosed tag removes everything after it, so "<script>alert(1)" does not survive | 닫히지 않은 태그는 끝까지 제거
+        if (depth == 0) {
+            sb.append(markupString, lastAppendEnd, markupString.length());
+        }
 
         return sb.toString();
     }

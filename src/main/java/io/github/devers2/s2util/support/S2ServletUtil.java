@@ -21,15 +21,19 @@
 package io.github.devers2.s2util.support;
 
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
 import java.util.StringJoiner;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -58,70 +62,145 @@ public class S2ServletUtil {
     }
 
     /**
-     * 실제 서버 이름을 가져온다
+     * 요청을 받은 서버 이름(호스트)을 가져온다. 서블릿 컨테이너가 정한 {@code request.getServerName()}을 쓴다.
+     * <p>
+     * 리버스 프록시 뒤라면 컨테이너가 {@code X-Forwarded-Host}를 반영하도록 설정하는 것이 정석이다(Spring Boot:
+     * {@code server.forward-headers-strategy=native}, Tomcat: {@code RemoteIpValve}). 직접 처리하려면
+     * {@link #getRealServerName(HttpServletRequest, Set)}에 신뢰하는 프록시 주소를 넘긴다.
+     * </p>
      *
      * @param request HttpServletRequest
-     * @return 실제 서버 이름
+     * @return 서버 이름
      */
     public static String getRealServerName(HttpServletRequest request) {
-        var serverName = request.getHeader("X-Forwarded-Host");
-        if (serverName == null || serverName.isBlank()) {
-            serverName = request.getHeader("Host");
-        }
-
-        if (serverName != null && !serverName.isBlank()) {
-            // X-Forwarded-Host / Host 는 클라이언트나 프록시가 조작할 수 있으므로 신뢰성을 점검하는 로직 필요할 수 있음
-            serverName = serverName.split(":")[0]; // 포트 제거
-        } else {
-            // request.getServerName 은 서블릿 컨테이너가 결정한 서버 이름으로 클라이언트 조작 불가능
-            serverName = request.getServerName();
-        }
-
-        return serverName;
+        return request.getServerName();
     }
 
     /**
-     * 실제 요청 IP를 가져온다
+     * 요청이 신뢰하는 프록시에서 왔을 때만 {@code X-Forwarded-Host}(없으면 {@code Host})를 쓴다. 그 외에는
+     * {@code request.getServerName()}을 쓴다. 클라이언트가 보낸 헤더로 호스트를 위조하지 못하게 한다.
+     *
+     * @param request        HttpServletRequest
+     * @param trustedProxies 신뢰하는 프록시 IP 주소 (예: {@code Set.of("10.0.0.5")})
+     * @return 서버 이름 (포트 제외, IPv6 는 대괄호 제외)
+     */
+    public static String getRealServerName(HttpServletRequest request, Set<String> trustedProxies) {
+        if (trustedProxies != null && trustedProxies.contains(request.getRemoteAddr())) {
+            var forwarded = firstListValue(request.getHeader("X-Forwarded-Host"));
+            if (forwarded == null) {
+                forwarded = request.getHeader("Host");
+            }
+            if (forwarded != null && !forwarded.isBlank()) {
+                return stripPort(forwarded.trim());
+            }
+        }
+        return request.getServerName();
+    }
+
+    /** "host:port", "[::1]:8080", "::1" → host without port or brackets | 포트와 IPv6 대괄호 제거 */
+    private static String stripPort(String host) {
+        if (host.startsWith("[")) {
+            var end = host.indexOf(']');
+            return end > 0 ? host.substring(1, end) : host;
+        }
+        var colon = host.indexOf(':');
+        // More than one colon without brackets is a bare IPv6 address | 대괄호 없이 콜론이 여럿이면 IPv6 주소 자체
+        return colon > 0 && colon == host.lastIndexOf(':') ? host.substring(0, colon) : host;
+    }
+
+    private static String firstListValue(String header) {
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        var first = header.split(",")[0].trim();
+        return first.isEmpty() ? null : first;
+    }
+
+    /**
+     * 클라이언트 IP 를 가져온다. 서블릿 컨테이너가 정한 {@code request.getRemoteAddr()}를 쓴다.
+     * <p>
+     * {@code X-Forwarded-For} 같은 헤더는 클라이언트가 마음대로 보낼 수 있으므로 기본으로 믿지 않는다. 리버스 프록시 뒤라면 컨테이너가 헤더를
+     * 반영하도록 설정하거나(Spring Boot: {@code server.forward-headers-strategy=native}, Tomcat: {@code RemoteIpValve}),
+     * {@link #getClientIp(HttpServletRequest, Set)}에 신뢰하는 프록시 주소를 넘긴다.
+     * </p>
      *
      * @param request HttpServletRequest
      * @return 클라이언트 IP
      */
     public static String getClientIp(HttpServletRequest request) {
-        var clientIp = request.getHeader("X-Forwarded-For");
-        if (clientIp != null && !clientIp.isBlank() && clientIp.contains(",")) {
-            // X-Forwarded-For 헤더에 여러 IP가 있을 경우 첫 번째 IP가 클라이언트의 실제 IP
-            clientIp = clientIp.split(",")[0].trim();
-        }
-        if (clientIp == null || clientIp.isBlank()) {
-            clientIp = request.getHeader("Proxy-Client-IP");
-        }
-        if (clientIp == null || clientIp.isBlank()) {
-            clientIp = request.getHeader("WL-Proxy-Client-IP");
-        }
-        if (clientIp == null || clientIp.isBlank()) {
-            clientIp = request.getRemoteAddr();
-        }
-        return clientIp;
+        return request.getRemoteAddr();
     }
 
     /**
-     * REFERER 를 활용하여 이전 페이지의 URI 를 가져온다. (링크를 통해 들어온 경우에만 확인 가능)
+     * 신뢰하는 프록시를 거친 요청의 실제 클라이언트 IP 를 가져온다.
+     * <p>
+     * 직접 연결한 주소({@code getRemoteAddr()})가 신뢰하는 프록시일 때만 {@code X-Forwarded-For}를 오른쪽(가장 가까운 프록시)부터 읽어,
+     * 신뢰하는 프록시가 아닌 첫 주소를 돌려준다. 클라이언트가 헤더 앞쪽에 넣은 가짜 주소는 쓰이지 않는다.
+     * </p>
+     *
+     * @param request        HttpServletRequest
+     * @param trustedProxies 신뢰하는 프록시 IP 주소 (예: {@code Set.of("10.0.0.5", "10.0.0.6")})
+     * @return 클라이언트 IP
+     */
+    public static String getClientIp(HttpServletRequest request, Set<String> trustedProxies) {
+        var remoteAddr = request.getRemoteAddr();
+        if (trustedProxies == null || !trustedProxies.contains(remoteAddr)) {
+            return remoteAddr;
+        }
+        var forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor == null || forwardedFor.isBlank()) {
+            return remoteAddr;
+        }
+        var hops = forwardedFor.split(",");
+        for (int i = hops.length - 1; i >= 0; i--) {
+            var hop = hops[i].trim();
+            if (!hop.isEmpty() && !trustedProxies.contains(hop)) {
+                return hop;
+            }
+        }
+        return remoteAddr;
+    }
+
+    /**
+     * Referer 로 이전 페이지의 경로(컨텍스트 경로 이후 + 쿼리)를 가져온다. 같은 서버(스킴·호스트·포트)의 같은 컨텍스트에서 온 경우에만 돌려준다.
+     * <p>
+     * 다른 사이트의 Referer 를 돌려주면 이 값으로 리다이렉트할 때 외부 사이트로 이동하는 오픈 리다이렉트가 되므로 빈 문자열을 돌려준다.
+     * </p>
      *
      * @param request HttpServletRequest 객체
-     * @return URI
+     * @return 이전 경로 (예: {@code /board/list?page=2}), 없거나 외부·다른 컨텍스트면 빈 문자열
      */
     public static String getPrevServletPath(HttpServletRequest request) {
-        var prevServletPath = "";
-        try {
-            var referer = request.getHeader("REFERER");
-            if (referer != null && !referer.isBlank()) {
-                prevServletPath = referer
-                        .replace(request.getRequestURL().toString().replace(request.getServletPath(), ""), "");
-            }
-        } catch (Exception e) {
-            logger.error("getPrevServletPath failed", e);
+        var referer = request.getHeader("Referer");
+        if (referer == null || referer.isBlank()) {
+            return "";
         }
-        return prevServletPath;
+        URI uri;
+        try {
+            uri = new URI(referer.trim());
+        } catch (URISyntaxException e) {
+            return "";
+        }
+        if (uri.getScheme() == null || uri.getHost() == null || uri.getRawPath() == null
+                || !uri.getScheme().equalsIgnoreCase(request.getScheme())
+                || !stripPort(uri.getHost()).equalsIgnoreCase(stripPort(request.getServerName()))
+                || effectivePort(uri.getPort(), uri.getScheme()) != request.getServerPort()) {
+            return "";
+        }
+        var contextPath = request.getContextPath() == null ? "" : request.getContextPath();
+        var path = uri.getRawPath();
+        if (!path.startsWith(contextPath + "/")) {
+            return "";
+        }
+        var result = path.substring(contextPath.length());
+        return uri.getRawQuery() != null ? result + "?" + uri.getRawQuery() : result;
+    }
+
+    private static int effectivePort(int port, String scheme) {
+        if (port != -1) {
+            return port;
+        }
+        return "https".equalsIgnoreCase(scheme) ? 443 : 80;
     }
 
     /**
@@ -331,12 +410,18 @@ public class S2ServletUtil {
      *
      * @param request HttpServletRequest 객체
      * @return 어플리케이션 루트 경로
+     * @throws IllegalStateException 파일 시스템 경로가 없는 배포(실행 가능한 jar 등)일 때
      */
     public static String getApplicationRootPath(HttpServletRequest request) {
-        var rootPath = request.getSession().getServletContext().getRealPath("/");
+        // request.getServletContext() does not create a session | 세션을 만들지 않음
+        var servletContext = request.getServletContext();
+        var rootPath = servletContext.getRealPath("/");
         if (S2Util.isEmpty(rootPath)) {
-            rootPath = Objects.requireNonNull(request.getSession().getServletContext().getClassLoader().getResource(""))
-                    .getPath();
+            var resource = servletContext.getClassLoader().getResource("");
+            if (resource == null) {
+                throw new IllegalStateException("애플리케이션 루트 경로를 알 수 없습니다 (실행 가능한 jar 등 파일 시스템에 풀리지 않은 배포).");
+            }
+            rootPath = resource.getPath();
         }
         return rootPath;
     }
@@ -351,7 +436,8 @@ public class S2ServletUtil {
      * @return 추출된 값들의 목록 (순서 보장 안 됨)
      */
     public static <T> List<Object> getValueAll(Object object, Class<T> voClass, Object... fieldNames) {
-        return S2ServletUtil.getValueAll(new ArrayList<>(), object, voClass, fieldNames);
+        return S2ServletUtil.getValueAll(new ArrayList<>(), Collections.newSetFromMap(new IdentityHashMap<>()), object,
+                voClass, fieldNames);
     }
 
     /**
@@ -359,14 +445,20 @@ public class S2ServletUtil {
      *
      * @param <T>        VO 타입을 제한하기 위한 제네릭
      * @param values     결과 목록
+     * @param visited    이미 방문한 컨테이너·VO (순환 참조 방지)
      * @param object     데이터를 추출할 원본 객체 (Collection, Map, HttpServletRequest 등 포함)
      * @param voClass    VO 계열 클래스 타입 (해당 타입일 경우 Getter를 통해 하위 탐색)
      * @param fieldNames 필드명(VO) 또는 Key(Map) 가변인자
      * @return 추출된 값들의 목록 (순서 보장 안 됨)
      */
-    private static <T> List<Object> getValueAll(List<Object> values, Object object, Class<T> voClass,
-            Object... fieldNames) {
+    private static <T> List<Object> getValueAll(List<Object> values, Set<Object> visited, Object object,
+            Class<T> voClass, Object... fieldNames) {
         if (object == null || fieldNames == null || fieldNames.length == 0) {
+            return values;
+        }
+        // Skip objects already on the path (a VO referencing its parent, a Map containing itself) | 순환 참조는 한 번만 방문
+        if (!(object instanceof CharSequence || object instanceof Number || object instanceof Boolean)
+                && !visited.add(object)) {
             return values;
         }
 
@@ -376,11 +468,11 @@ public class S2ServletUtil {
         // 1. Array/List 순회 처리
         if (object instanceof Object[] array) {
             for (var obj : array) {
-                getValueAll(values, obj, voClass, fieldNames);
+                getValueAll(values, visited, obj, voClass, fieldNames);
             }
-        } else if (object instanceof List<?> list) {
-            for (var obj : list) {
-                getValueAll(values, obj, voClass, fieldNames);
+        } else if (object instanceof Collection<?> collection) {
+            for (var obj : collection) {
+                getValueAll(values, visited, obj, voClass, fieldNames);
             }
         }
         // 2. Map 처리 (하이패스 MAP_GET 활용)
@@ -406,7 +498,7 @@ public class S2ServletUtil {
                         values.add(val);
                     }
                 } else {
-                    getValueAll(values, val, voClass, fieldNames);
+                    getValueAll(values, visited, val, voClass, fieldNames);
                 }
             }
         }
@@ -420,7 +512,7 @@ public class S2ServletUtil {
                 if (fieldNameList.contains(parameterNm)) {
                     values.add(val);
                 } else {
-                    getValueAll(values, val, voClass, fieldNames);
+                    getValueAll(values, visited, val, voClass, fieldNames);
                 }
             }
         }
@@ -446,7 +538,7 @@ public class S2ServletUtil {
                             if (fieldNameList.contains(fieldName)) {
                                 values.add(fieldObj);
                             } else {
-                                getValueAll(values, fieldObj, voClass, fieldNames);
+                                getValueAll(values, visited, fieldObj, voClass, fieldNames);
                             }
                         } catch (Throwable e) {
                             // 추출 실패 시 다음 필드로 진행함

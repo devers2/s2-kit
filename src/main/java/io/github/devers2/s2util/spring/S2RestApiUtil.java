@@ -22,10 +22,12 @@ package io.github.devers2.s2util.spring;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
 
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -38,7 +40,6 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import io.github.devers2.s2util.core.S2StringUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
 
@@ -101,6 +102,7 @@ public class S2RestApiUtil {
      * @param params  요청에 포함할 매개변수로, 키-값 쌍의 배열. (선택)
      * @return API 호출 결과로 반환된 문자열 응답. 응답 본문이 없으면 null을 반환.
      * @throws IllegalArgumentException POST/GET 이외의 HTTP 메서드를 전달한 경우
+     * @see #callApi(String, HttpMethod, Integer, HttpHeaders, Map.Entry...)
      * @apiNote
      *
      *          <pre>{@code
@@ -112,9 +114,39 @@ public class S2RestApiUtil {
      * );
      * }</pre>
      */
-    @SuppressWarnings("null")
     @SafeVarargs
     public static String callApi(String url, HttpMethod method, Integer timeout, Map.Entry<String, Object>... params) {
+        return callApi(url, method, timeout, null, params);
+    }
+
+    /**
+     * 요청 헤더를 지정하여 REST API 를 호출하고 응답 본문을 그대로 문자열로 반환한다.
+     * <ul>
+     * <li>POST: 파라미터에 파일({@link Resource}, {@code byte[]})이 있으면 {@code multipart/form-data}, 없으면
+     * {@code application/x-www-form-urlencoded}로 보낸다.</li>
+     * <li>GET: 파라미터를 쿼리 문자열로 붙인다.</li>
+     * <li>응답 본문은 가공하지 않는다(JSON 의 유니코드 이스케이프도 풀지 않으므로 JSON 이 깨지지 않음).</li>
+     * </ul>
+     *
+     * @param url     호출할 REST API의 URL. (필수)
+     * @param method  사용할 HTTP 메서드. {@link HttpMethod#POST}, {@link HttpMethod#GET}만 지원한다. (필수)
+     * @param timeout 연결 및 읽기 타임아웃(밀리초 단위). null인 경우 기본값 30,000ms 사용. (선택)
+     * @param headers 추가할 요청 헤더 (예: Authorization). null 허용 (선택)
+     * @param params  요청에 포함할 매개변수로, 키-값 쌍의 배열. (선택)
+     * @return 응답 본문. 본문이 없으면 null
+     * @throws IllegalArgumentException POST/GET 이외의 HTTP 메서드를 전달한 경우
+     * @throws org.springframework.web.client.RestClientException 요청 실패 또는 4xx/5xx 응답
+     *
+     *         <pre>{@code
+     * var headers = new HttpHeaders();
+     * headers.setBearerAuth(token);
+     * String json = S2RestApiUtil.callApi("https://api.example.com/users", HttpMethod.GET, null, headers,
+     *         Map.entry("page", 1));
+     * }</pre>
+     */
+    @SafeVarargs
+    public static String callApi(String url, HttpMethod method, Integer timeout, HttpHeaders headers,
+            Map.Entry<String, Object>... params) {
         int vTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
 
         RestTemplate restTemplate;
@@ -128,24 +160,34 @@ public class S2RestApiUtil {
             restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setAcceptCharset(Collections.singletonList(StandardCharsets.UTF_8));
+        var requestHeaders = new HttpHeaders();
+        requestHeaders.setAcceptCharset(Collections.singletonList(StandardCharsets.UTF_8));
+        if (headers != null) {
+            requestHeaders.putAll(headers);
+        }
 
         String result = null;
         ResponseEntity<String> responseEntity = null;
 
         if (method == HttpMethod.POST) {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            var multipart = false;
             if (params != null) {
                 for (Map.Entry<String, Object> param : params) {
                     if (param != null && param.getKey() != null && param.getValue() != null) {
+                        multipart |= param.getValue() instanceof Resource || param.getValue() instanceof byte[];
                         body.add(param.getKey(), param.getValue());
                     }
                 }
             }
-
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            if (!multipart) {
+                // A form body needs string values | 폼 본문은 문자열 값이어야 함
+                body.replaceAll((key, values) -> new ArrayList<>(values.stream().map(String::valueOf).toList()));
+            }
+            if (requestHeaders.getContentType() == null) {
+                requestHeaders.setContentType(multipart ? MediaType.MULTIPART_FORM_DATA : MediaType.APPLICATION_FORM_URLENCODED);
+            }
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, requestHeaders);
             responseEntity = restTemplate.postForEntity(url, requestEntity, String.class);
         } else if (method == HttpMethod.GET) {
             UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(url);
@@ -159,7 +201,7 @@ public class S2RestApiUtil {
 
             // URI 객체를 직접 사용하여 이중 인코딩 방지
             java.net.URI uri = builder.build().encode().toUri();
-            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+            HttpEntity<Void> requestEntity = new HttpEntity<>(requestHeaders);
             responseEntity = restTemplate.exchange(uri, HttpMethod.GET, requestEntity, String.class);
         } else {
             // POST/GET 외 메서드는 지원하지 않는다. 조용히 null을 반환하면 "서버 응답이 없어서 null"인지
@@ -169,10 +211,9 @@ public class S2RestApiUtil {
         }
 
         if (responseEntity != null && responseEntity.getBody() != null) {
-            result = S2StringUtil.decodeUnicode(responseEntity.getBody());
-
-            logger.debug("Call URL: {}, Method: {}", url, method);
-            logger.debug("Raw Response: {}", result);
+            // Returned as is: decoding unicode escapes here would break JSON strings containing quotes | 그대로 반환 (유니코드 이스케이프를 풀면 JSON 이 깨짐)
+            result = responseEntity.getBody();
+            logger.debug("Call URL: {}, Method: {}, Status: {}", url, method, responseEntity.getStatusCode());
         }
 
         return result;

@@ -117,6 +117,16 @@ const CONFIG_VALUE_VALIDATORS = {
 // S2Util.fetch()의 responseType으로 인식되는 값 목록. 이 목록에 없는 값이 들어오면 JSON으로 처리하되 콘솔에 경고를 남긴다.
 const KNOWN_RESPONSE_TYPES = ['JSON', 'BLOB', 'HTML', 'TEXT', 'ARRAY_BUFFER', 'FORM_DATA'];
 
+/**
+ * Replaces {{=key}} with the raw values as plain text (for option values and labels) | {{=key}}를 값 그대로 텍스트로 치환
+ * @private
+ */
+const fillText = (pattern, data) =>
+  pattern.replace(/{{[=-]([^}]+)}}/g, (match, key) => {
+    const value = data ? data[key] : undefined;
+    return value || value === 0 ? String(value) : '';
+  });
+
 /** Entities for S2Util.escapeHtml | escapeHtml 용 엔티티 */
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -714,7 +724,7 @@ export const S2Util = {
           ) {
             S2Util.showToast(error.message);
           } else if (error.status === 401) {
-            S2Util.confirm('인증이 필요합니다.<br/>로그인 페이지로 이동하시겠습니까?', function () {
+            S2Util.confirm('인증이 필요합니다.\n로그인 페이지로 이동하시겠습니까?', function () {
               // 로그인 페이지로 리다이렉트 등 추가 처리 가능
               location.href = '/login';
             });
@@ -924,13 +934,10 @@ export const S2Util = {
           const itemLabel = String(option.itemLabel);
 
           // 값 및 레이블 계산 로직 (기존 로직 유지)
-          const value = itemValue.match(/{{=([^}}]+)}}/)
-            ? S2Util.template(itemValue, item)
-            : item[itemValue];
+          // Plain text, not HTML: value and textContent must not get "&amp;" | HTML 이 아닌 텍스트로 치환 ("&amp;" 방지)
+          const value = itemValue.match(/{{=([^}}]+)}}/) ? fillText(itemValue, item) : item[itemValue];
           const label =
-            itemLabel && itemLabel.match(/{{=([^}}]+)}}/)
-              ? S2Util.template(itemLabel, item)
-              : item[itemLabel];
+            itemLabel && itemLabel.match(/{{=([^}}]+)}}/) ? fillText(itemLabel, item) : item[itemLabel];
 
           // <option> 요소 생성
           const optionElement = document.createElement('option');
@@ -1265,6 +1272,9 @@ export const S2Util = {
   },
   /**
    * 주어진 폼(form) 요소의 모든 입력 필드에 설정된 HTML 속성(required, length, dataType, mask 등)을 기반으로 유효성 검사를 수행한다.
+   *
+   * @deprecated 서버와 같은 규칙으로 검증하려면 s2-validator 의 `S2Validator`(s2.validator.js)를 사용한다. 이 함수는 HTML 속성 기반
+   * 검증으로, 서버 규칙과 연결되지 않는다. 기존 화면 호환을 위해 남겨 둔다.
    * 유효성 검사에서 문제가 발견되면 false를 반환하고, 오류 메시지 배열을 S2Util.alert를 통해 사용자에게 보여준다.
    *
    * @param {string|HTMLFormElement} form - 검사할 폼을 나타내는 CSS 선택자 문자열 또는 실제 form DOM 요소.
@@ -1620,7 +1630,7 @@ export const S2Util = {
     }
 
     if (!valid && messageArr.length) {
-      S2Util.alert(messageArr.join('<br/>'));
+      S2Util.alert(messageArr.join('\n'));
     }
 
     return valid;

@@ -21,6 +21,7 @@
 package io.github.devers2.s2util.support;
 
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.GenericArrayType;
@@ -123,23 +124,15 @@ public class S2TypeUtil {
     public static <T> T createInstance(Class<? extends T> resolvedClass, Object... args) {
         try {
             // DevTools 환경에서 ClassLoader 불일치 문제를 해결하기 위해 현재 컨텍스트의 ClassLoader로 클래스를 다시 로드한다.
+            var contextLoader = Thread.currentThread().getContextClassLoader();
             @SuppressWarnings("unchecked")
-            Class<? extends T> typeClass = (Class<? extends T>) Class.forName(
-                    resolvedClass.getName(), true, Thread.currentThread().getContextClassLoader());
+            Class<? extends T> typeClass = contextLoader == null ? resolvedClass
+                    : (Class<? extends T>) Class.forName(resolvedClass.getName(), true, contextLoader);
 
-            Constructor<? extends T> constructor;
-            if (args == null || args.length == 0) {
-                constructor = typeClass.getDeclaredConstructor();
-                constructor.setAccessible(true);
-                return constructor.newInstance();
-            } else {
-                Class<?>[] parameterTypes = Arrays.stream(args)
-                        .map(Object::getClass)
-                        .toArray(Class<?>[]::new);
-                constructor = typeClass.getDeclaredConstructor(parameterTypes);
-                constructor.setAccessible(true);
-                return constructor.newInstance(args);
-            }
+            var arguments = args == null ? new Object[0] : args;
+            var constructor = findConstructor(typeClass, arguments);
+            constructor.setAccessible(true);
+            return constructor.newInstance(arguments);
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
@@ -147,6 +140,38 @@ public class S2TypeUtil {
                             resolvedClass.getName(), Arrays.toString(args != null ? args : new Object[] { "null" })),
                     e);
         }
+    }
+
+    /**
+     * Finds a constructor that accepts the arguments (subtypes, boxing and null for reference types), not only one whose
+     * parameter types equal the argument classes | 인자 클래스와 정확히 같은 타입뿐 아니라 하위 타입·박싱·null 을 받는 생성자를 찾음
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> Constructor<? extends T> findConstructor(Class<? extends T> type, Object[] args)
+            throws NoSuchMethodException {
+        Constructor<?> match = null;
+        for (var candidate : type.getDeclaredConstructors()) {
+            var parameters = candidate.getParameterTypes();
+            if (parameters.length != args.length) {
+                continue;
+            }
+            var accepts = true;
+            for (int i = 0; i < parameters.length && accepts; i++) {
+                var parameter = parameters[i].isPrimitive() ? MethodType.methodType(parameters[i]).wrap().returnType()
+                        : parameters[i];
+                accepts = args[i] == null ? !parameters[i].isPrimitive() : parameter.isInstance(args[i]);
+            }
+            if (accepts) {
+                if (match != null) {
+                    throw new NoSuchMethodException("인자에 맞는 생성자가 여럿입니다: " + type.getName() + " " + Arrays.toString(args));
+                }
+                match = candidate;
+            }
+        }
+        if (match == null) {
+            throw new NoSuchMethodException("인자에 맞는 생성자가 없습니다: " + type.getName() + " " + Arrays.toString(args));
+        }
+        return (Constructor<? extends T>) match;
     }
 
     /**
@@ -164,33 +189,39 @@ public class S2TypeUtil {
     }
 
     /**
-     * 클래스 로더와 관계없이 이름 기반으로 객체를 안전하게 캐스팅한다.
+     * 객체를 대상 타입으로 캐스팅한다. 실패 원인이 클래스 로더 차이인지 알려 준다.
+     * <p>
+     * 이름은 같지만 다른 클래스 로더(예: Spring DevTools 재시작 전후)로 로드된 클래스는 JVM 에서 서로 다른 타입이므로 캐스팅할 수 없다. 예전
+     * 구현은 이 경우에도 그대로 돌려줘 호출한 쪽에서 원인을 알기 어려운 {@link ClassCastException}이 났다. 이제 이 자리에서
+     * 클래스 로더 차이를 설명하는 {@link TypeMismatchException}을 던진다. 이름만으로 호환 여부를 알고 싶다면
+     * {@link #instanceOfByName(Object, Class)}를 쓴다.
+     * </p>
      *
      * @param obj       변환할 객체
      * @param typeClass 대상 클래스 타입
      * @param <T>       대상 제네릭 타입
      * @return 캐스팅된 객체 (obj가 null이면 null 반환함)
-     * @throws TypeMismatchException 타입 이름 기반의 호환성이 없을 경우 발생함
+     * @throws TypeMismatchException 타입이 호환되지 않거나, 이름은 같지만 클래스 로더가 달라 캐스팅할 수 없을 때
      */
-    @SuppressWarnings("unchecked")
     public static <T> T castByName(Object obj, Class<T> typeClass) {
         if (obj == null) {
             return null;
         }
-
-        if (isAssignableFromByName(obj.getClass(), typeClass)) {
-            // 클래스 로더 불일치 시 추적을 위한 디버그 로그.
-            if (logger.isDebugEnabled() && obj.getClass().getClassLoader() != typeClass.getClassLoader()) {
-                logger.debug("서로 다른 클래스 로더 간 캐스팅 수행: {}", typeClass.getName());
-            }
-            // 런타임 타입 소거를 이용해 클래스 로더 제약 우회.
-            return (T) obj;
+        var target = typeClass.isPrimitive() ? MethodType.methodType(typeClass).wrap().returnType() : typeClass;
+        if (target.isInstance(obj)) {
+            @SuppressWarnings("unchecked")
+            T cast = (T) target.cast(obj);
+            return cast;
         }
-
+        if (isAssignableFromByName(obj.getClass(), typeClass)) {
+            throw new TypeMismatchException(String.format(
+                    "타입 불일치: %s 는 이름상 %s 와 호환되지만 클래스 로더가 달라 캐스팅할 수 없습니다 (객체: %s, 대상: %s). "
+                            + "DevTools 재시작 전에 만든 객체를 재사용하고 있지 않은지 확인하십시오.",
+                    obj.getClass().getName(), typeClass.getName(), obj.getClass().getClassLoader(),
+                    typeClass.getClassLoader()));
+        }
         throw new TypeMismatchException(
-                String.format(
-                        "타입 불일치: %s를 %s로 캐스팅할 수 없습니다.",
-                        obj.getClass().getName(), typeClass.getName()));
+                String.format("타입 불일치: %s를 %s로 캐스팅할 수 없습니다.", obj.getClass().getName(), typeClass.getName()));
     }
 
     /**
@@ -487,13 +518,16 @@ public class S2TypeUtil {
      * 클래스 로더와 관계없이 이름 기반 타입 검증을 통해 두 객체의 값의 크기를 비교한다.
      * <p>
      * S2TypeUtil의 isAssignableFromByName을 활용하여 논리적으로 호환되는 타입일 때만
-     * Comparable 인터페이스를 통해 실제 값의 차이를 반환함. 타입 불호환 또는 비교 중 예외 발생 시
-     * 안전하게 0을 반환하여 런타임 오류를 방지함 (필요 시 예외 throw로 변경 가능).
+     * Comparable 인터페이스를 통해 실제 값의 차이를 반환한다. null 은 가장 작은 값으로 본다.
+     * </p>
+     * <p>
+     * 비교할 수 없는 값(호환되지 않는 타입, Comparable 이 아닌 타입)은 예외를 던진다. 예전처럼 0(같음)을 돌려주면 정렬 결과가 조용히 틀어진다.
      * </p>
      *
      * @param v1 첫 번째 객체 (대상값)
      * @param v2 두 번째 객체 (기준값)
-     * @return v1이 작으면 음수, 같으면 0, v1이 크면 양수. 비교 불가 시 0 반환함.
+     * @return v1이 작으면 음수, 같으면 0, v1이 크면 양수
+     * @throws IllegalArgumentException 두 값을 비교할 수 없을 때
      */
     @SuppressWarnings({ "unchecked", "rawtypes" }) // 제네릭 소거로 인한 경고 억제 (이름 기반 비교로 안전함)
     public static int compare(Object v1, Object v2) {
@@ -514,29 +548,27 @@ public class S2TypeUtil {
                 try {
                     Comparable comp = (Comparable) v1;
                     return comp.compareTo(v2);
-                } catch (ClassCastException | NullPointerException e) {
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("값 비교 중 예외 발생: v1={} ({}), v2={} ({}) - 0 반환", v1, c1.getName(), v2, c2.getName(),
-                                e);
-                    }
+                } catch (ClassCastException e) {
+                    throw incomparable(v1, v2, e);
                 }
             }
             // 3. v1이 Comparable 아니면 v2로 대칭 시도 (대칭성 강화)
             else if (hasInterfaceByNameIterative(c2, "java.lang.Comparable")) {
                 try {
                     Comparable comp = (Comparable) v2;
-                    return -comp.compareTo(v1); // 부호 반전으로 v1 기준 반환
-                } catch (ClassCastException | NullPointerException e) {
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("대칭 비교 중 예외 발생: v1={} ({}), v2={} ({}) - 0 반환", v1, c1.getName(), v2, c2.getName(),
-                                e);
-                    }
+                    return -Integer.signum(comp.compareTo(v1)); // 부호 반전으로 v1 기준 반환 (MIN_VALUE 반전 방지)
+                } catch (ClassCastException e) {
+                    throw incomparable(v1, v2, e);
                 }
             }
         }
 
-        // 4. 타입 불호환 또는 비교 불가 시 안전 fallback
-        return 0;
+        throw incomparable(v1, v2, null);
+    }
+
+    private static IllegalArgumentException incomparable(Object v1, Object v2, Throwable cause) {
+        return new IllegalArgumentException(String.format("비교할 수 없는 값입니다: %s (%s), %s (%s)", v1,
+                v1.getClass().getName(), v2, v2.getClass().getName()), cause);
     }
 
     /**

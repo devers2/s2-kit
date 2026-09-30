@@ -129,10 +129,15 @@ public class S2LruMap<K, V> extends LinkedHashMap<K, V> {
      * @param <K>         키 타입
      * @param <V>         값 타입
      * @return 쓰레드 안전한 LRU Map
+     * @throws IllegalArgumentException maxCapacity 가 1 보다 작을 때
      */
     public static <K, V> Map<K, V> createSynchronizedLRUMap(int maxCapacity) {
+        if (maxCapacity < 1) {
+            throw new IllegalArgumentException("maxCapacity 는 1 이상이어야 합니다: " + maxCapacity);
+        }
+        // Start small; the map grows as entries are added | 작게 시작하고 항목이 늘면 커짐
         return Collections.synchronizedMap(
-                new S2LruMap<>(maxCapacity / 2, 0.75f, true, maxCapacity));
+                new S2LruMap<>(Math.min(maxCapacity, 16), 0.75f, true, maxCapacity));
     }
 
 }

@@ -221,19 +221,30 @@ class S2CollectionUtilTest {
         }
 
         @Test
-        @DisplayName("잘못된 orderBy 값이면 원본 리스트를 반환한다")
+        @DisplayName("잘못된 orderBy 값이면 예외가 발생한다 (정렬하지 않은 목록을 조용히 돌려주지 않음)")
         void invalidOrderBy() {
             List<Map<String, Object>> list = List.of(Map.of("name", "a"));
-            List<Map<String, Object>> result = S2CollectionUtil.listSort(list, "name", "INVALID");
-            assertSame(list, result);
+            assertThrows(IllegalArgumentException.class, () -> S2CollectionUtil.listSort(list, "name", "INVALID"));
+            assertEquals(list, S2CollectionUtil.listSort(list, "name", null), "null orderBy means ASC");
         }
 
         @Test
-        @DisplayName("빈 리스트이면 원본을 반환한다")
+        @DisplayName("NaN·무한대도 정렬한다")
+        void nonFiniteNumbers() {
+            List<Map<String, Object>> list = List.of(Map.of("v", Double.NaN), Map.of("v", 1.5),
+                    Map.of("v", Double.NEGATIVE_INFINITY));
+            var result = S2CollectionUtil.listSort(list, "v", "ASC");
+            assertEquals(Double.NEGATIVE_INFINITY, result.get(0).get("v"));
+            assertEquals(1.5, result.get(1).get("v"));
+        }
+
+        @Test
+        @DisplayName("빈 리스트도 항상 새 리스트를 반환한다")
         void emptyList() {
             List<Map<String, Object>> list = new ArrayList<>();
             List<Map<String, Object>> result = S2CollectionUtil.listSort(list, "name", "ASC");
-            assertSame(list, result);
+            assertNotSame(list, result);
+            assertTrue(result.isEmpty());
         }
 
         @Test

@@ -103,6 +103,8 @@ public class S2FileUtil {
         if (paths == null || paths.length == 0)
             return "";
 
+        // Work on a copy so the caller's array is not modified | 호출자의 배열을 바꾸지 않도록 복사본 사용
+        paths = paths.clone();
         // 초기 변환
         for (int i = 0; i < paths.length; i++) {
             paths[i] = (paths[i] == null) ? "" : S2StringUtil.replaceChars(paths[i], "/", '\\');
@@ -1602,17 +1604,26 @@ public class S2FileUtil {
     }
 
     /**
-     * 애플리케이션의 루트 디렉토리에 해당하는 실제 파일 시스템 경로를 가져온다.
+     * 클래스가 로드된 위치의 파일 시스템 경로를 가져온다. 클래스 디렉토리에서 실행하면 그 디렉토리(예: {@code build/classes/java/main}),
+     * jar 에서 실행하면 jar 가 있는 디렉토리이다. 경로의 공백·한글은 디코딩된다.
      *
      * @param clazz class
-     * @return 어플리케이션 루트 경로
+     * @return 클래스 디렉토리 또는 jar 가 있는 디렉토리
+     * @throws NullPointerException  clazz 가 null 일 때
+     * @throws IllegalStateException 파일 시스템 경로로 나타낼 수 없는 위치일 때 (JDK 클래스, 중첩 jar 등)
      */
     public static String getApplicationRootPath(Class<?> clazz) {
-        String rootPath = "";
-        if (clazz != null) {
-            rootPath = Objects.requireNonNull(clazz.getClassLoader().getResource("")).getPath();
+        Objects.requireNonNull(clazz, "clazz");
+        var codeSource = clazz.getProtectionDomain().getCodeSource();
+        if (codeSource == null || codeSource.getLocation() == null) {
+            throw new IllegalStateException("클래스의 위치를 알 수 없습니다: " + clazz.getName());
         }
-        return rootPath;
+        try {
+            var location = Paths.get(codeSource.getLocation().toURI());
+            return (Files.isRegularFile(location) ? location.getParent() : location).toString();
+        } catch (java.net.URISyntaxException | IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+            throw new IllegalStateException("파일 시스템 경로가 아닌 위치입니다: " + codeSource.getLocation(), e);
+        }
     }
 
 }

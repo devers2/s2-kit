@@ -28,9 +28,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -39,6 +41,7 @@ import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
+import org.springframework.util.ClassUtils;
 
 import io.github.devers2.s2util.core.S2Cache;
 import io.github.devers2.s2util.log.S2LogManager;
@@ -66,16 +69,6 @@ import io.github.devers2.s2util.support.S2TypeUtil;
 public final class S2AnnotationResolver {
 
     private static final S2Logger logger = S2LogManager.getLogger(S2AnnotationResolver.class);
-
-    /**
-     * 캐시 키: 베이스 클래스와 애노테이션 클래스를 기준으로 정의한다.
-     */
-    private record CacheKey(Class<?> baseClass, Class<? extends Annotation> annotationClass) {
-        public CacheKey {
-            Objects.requireNonNull(baseClass);
-            Objects.requireNonNull(annotationClass);
-        }
-    }
 
     /**
      * resolveValue용 캐시 키: returnType을 포함하여 타입별 캐싱 안전성 보장.
@@ -115,7 +108,7 @@ public final class S2AnnotationResolver {
 
             var packagesToScan = new HashSet<String>();
             for (var pkg : requestedPackages) {
-                if (!scannedPackages.contains(pkg)) {
+                if (!isCovered(pkg)) {
                     packagesToScan.add(pkg);
                 }
             }
@@ -127,7 +120,7 @@ public final class S2AnnotationResolver {
             synchronized (this) {
                 cleanup(); // GC된 참조 제거
 
-                packagesToScan.removeIf(scannedPackages::contains);
+                packagesToScan.removeIf(this::isCovered);
                 if (packagesToScan.isEmpty()) {
                     return;
                 }
@@ -135,6 +128,18 @@ public final class S2AnnotationResolver {
                 performScan(baseClass, annotationClass, packagesToScan);
                 scannedPackages.addAll(packagesToScan);
             }
+        }
+
+        /** A package scanned itself or through a parent package | 직접 또는 상위 패키지로 이미 스캔된 패키지 */
+        private boolean isCovered(String pkg) {
+            synchronized (scannedPackages) {
+                for (var scanned : scannedPackages) {
+                    if (pkg.equals(scanned) || pkg.startsWith(scanned + ".")) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /**
@@ -155,15 +160,23 @@ public final class S2AnnotationResolver {
                         continue;
                     }
                     for (var bd : scanner.findCandidateComponents(basePackage)) {
-                        var clazz = Class.forName(bd.getBeanClassName());
+                        // Load without running static initializers, through the application's class loader
+                        // | 정적 초기화 없이, 애플리케이션 클래스 로더로 로드
+                        var clazz = ClassUtils.forName(bd.getBeanClassName(), classLoaderFor(baseClass));
 
                         if (clazz.isAnnotationPresent(annotationClass)) {
                             var annotation = clazz.getAnnotation(annotationClass);
                             var value = valueMethod.invoke(annotation);
                             var valueString = String.valueOf(value);
 
-                            valueMap.computeIfAbsent(valueString, k -> Collections.synchronizedList(new ArrayList<>()))
-                                    .add(new WeakReference<>(clazz, queue));
+                            var refs = valueMap.computeIfAbsent(valueString,
+                                    k -> Collections.synchronizedList(new ArrayList<>()));
+                            synchronized (refs) {
+                                // A parent package scanned later finds the same class again | 나중에 스캔한 상위 패키지가 같은 클래스를 다시 찾음
+                                if (refs.stream().noneMatch(ref -> ref.get() == clazz)) {
+                                    refs.add(new WeakReference<>(clazz, queue));
+                                }
+                            }
                         }
                     }
                 }
@@ -231,8 +244,23 @@ public final class S2AnnotationResolver {
         }
     }
 
-    // 전역 캐시: 복합 키(CacheKey)별로 AnnotationScopeCache를 저장 (static 유지)
-    private static final ConcurrentMap<CacheKey, AnnotationScopeCache> FACTORY_CACHE = new ConcurrentHashMap<>();
+    /**
+     * Scan results stored on the base class itself (ClassValue), keyed weakly by annotation class, so classes and
+     * their class loader can be unloaded (e.g. Spring DevTools restarts) | 결과를 베이스 클래스 자체(ClassValue)에 두고 애노테이션
+     * 클래스는 약한 키로 보관하여, 클래스와 클래스 로더가 언로드될 수 있게 함 (DevTools 재시작 등)
+     */
+    private static final ClassValue<Map<Class<? extends Annotation>, AnnotationScopeCache>> FACTORY_CACHE = new ClassValue<>() {
+        @Override
+        protected Map<Class<? extends Annotation>, AnnotationScopeCache> computeValue(Class<?> type) {
+            return Collections.synchronizedMap(new WeakHashMap<>());
+        }
+    };
+
+    private static ClassLoader classLoaderFor(Class<?> baseClass) {
+        var loader = baseClass.getClassLoader();
+        // Object and JDK classes have the bootstrap loader: use the application's | 부트스트랩 로더면 애플리케이션 로더 사용
+        return loader != null ? loader : ClassUtils.getDefaultClassLoader();
+    }
 
     private S2AnnotationResolver() {
         // private 생성자: 인스턴스화 방지
@@ -267,8 +295,8 @@ public final class S2AnnotationResolver {
             @NonNull String annotationValue,
             @NonNull String[] packagesToScan) {
 
-        CacheKey key = new CacheKey(baseClass, annotationClass);
-        AnnotationScopeCache scopeCache = FACTORY_CACHE.computeIfAbsent(key, k -> new AnnotationScopeCache());
+        AnnotationScopeCache scopeCache = FACTORY_CACHE.get(baseClass).computeIfAbsent(annotationClass,
+                k -> new AnnotationScopeCache());
 
         scopeCache.scanMissingPackages(baseClass, annotationClass, packagesToScan);
 
@@ -288,6 +316,7 @@ public final class S2AnnotationResolver {
      * @param annotationClass 값 조회를 위한 애노테이션 클래스
      * @param annotationValue 애노테이션의 값과 일치하는 문자열
      * @return 조회된 구체 클래스 타입. 없으면 {@code null}
+     * @throws IllegalStateException 해당하는 클래스가 여럿일 때
      *
      *         <pre>{@code
      * // 예시: baseClass의 패키지만 스캔
@@ -322,6 +351,7 @@ public final class S2AnnotationResolver {
      * @param annotationValue   애노테이션의 값과 일치하는 문자열
      * @param ignoreClassLoader 클래스 로더가 달라도 이름 기반으로 검증할지 여부
      * @return 조회된 구체 클래스 타입. 없으면 {@code null}
+     * @throws IllegalStateException 해당하는 클래스가 여럿일 때
      *
      *         <pre>{@code
      * // 예시: baseClass의 패키지만 스캔
@@ -340,11 +370,7 @@ public final class S2AnnotationResolver {
 
         List<Class<?>> candidates = resolveInternal(baseClass, annotationClass, annotationValue, packagesToScan);
 
-        if (candidates.isEmpty()) {
-            return null;
-        }
-
-        return castToSubclass(candidates.get(0), baseClass, ignoreClassLoader);
+        return single(candidates, baseClass, annotationClass, annotationValue, ignoreClassLoader);
     }
 
     /**
@@ -360,6 +386,7 @@ public final class S2AnnotationResolver {
      * @param annotationValue 애노테이션의 값과 일치하는 문자열
      * @param scanPackages    스캔 대상 패키지 가변 인자 (예: "com.mycompany.entity", "com.mycompany.domain")
      * @return 조회된 구체 클래스 타입. 없으면 {@code null}
+     * @throws IllegalStateException 해당하는 클래스가 여럿일 때
      *
      *         <pre>{@code
      * // 예시: 지정된 패키지 스캔
@@ -396,6 +423,7 @@ public final class S2AnnotationResolver {
      * @param ignoreClassLoader 클래스 로더가 달라도 이름 기반으로 검증할지 여부
      * @param scanPackages      스캔 대상 패키지 가변 인자 (예: "com.mycompany.entity", "com.mycompany.domain")
      * @return 조회된 구체 클래스 타입. 없으면 {@code null}
+     * @throws IllegalStateException 해당하는 클래스가 여럿일 때
      *
      *         <pre>{@code
      * // 예시: 지정된 패키지 스캔
@@ -418,11 +446,7 @@ public final class S2AnnotationResolver {
 
         List<Class<?>> candidates = resolveInternal(baseClass, annotationClass, annotationValue, packagesToScan);
 
-        if (candidates.isEmpty()) {
-            return null;
-        }
-
-        return castToSubclass(candidates.get(0), baseClass, ignoreClassLoader);
+        return single(candidates, baseClass, annotationClass, annotationValue, ignoreClassLoader);
     }
 
     /**
@@ -436,6 +460,7 @@ public final class S2AnnotationResolver {
      * @param annotationValue 애노테이션의 값과 일치하는 문자열
      * @param scanPackages    스캔 대상 패키지 가변 인자 (필수)
      * @return 조회된 구체 클래스 타입. 없으면 {@code null}
+     * @throws IllegalStateException 해당하는 클래스가 여럿일 때
      * @throws IllegalArgumentException 스캔 패키지가 설정되지 않은 경우
      *
      *                                  <pre>{@code
@@ -635,6 +660,25 @@ public final class S2AnnotationResolver {
         }
 
         return resolveTypes(Object.class, annotationClass, annotationValue, packagesToScan);
+    }
+
+    /**
+     * One match or null; several matches are an error instead of an arbitrary pick | 하나 또는 null. 여럿이면 임의로 고르지 않고 오류
+     */
+    private static <T> Class<? extends T> single(List<Class<?>> candidates, Class<T> baseClass,
+            Class<? extends Annotation> annotationClass, String annotationValue, boolean ignoreClassLoader) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        if (candidates.size() > 1) {
+            var names = new ArrayList<String>();
+            for (var candidate : candidates) {
+                names.add(candidate.getName());
+            }
+            throw new IllegalStateException("@" + annotationClass.getSimpleName() + "(\"" + annotationValue
+                    + "\") 에 해당하는 클래스가 여럿입니다. resolveTypes 를 쓰거나 스캔 패키지를 좁히십시오: " + names);
+        }
+        return castToSubclass(candidates.get(0), baseClass, ignoreClassLoader);
     }
 
     /**

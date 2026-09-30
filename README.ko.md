@@ -214,9 +214,9 @@ s2-support Version: 2.0.0 (2026-09-30)
 dependencies {
     // 선택적 기능을 위한 필수 런타임 의존성
     implementation 'com.google.code.findbugs:jsr305:3.0.2'
-    implementation 'org.springframework:spring-context:6.1.1'
-    implementation 'org.springframework:spring-web:6.1.1'
-    implementation 'org.springframework.integration:spring-integration-sftp:6.1.1'
+    implementation 'org.springframework:spring-context:6.2.19'
+    implementation 'org.springframework:spring-web:6.2.19'
+    implementation 'org.springframework.integration:spring-integration-sftp:6.5.10'
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'

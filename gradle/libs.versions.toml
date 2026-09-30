@@ -25,7 +25,8 @@ uuid-creator = "6.1.1"
 
 # Spring Framework
 spring-framework-5 = "5.3.39"
-spring-framework-6 = "6.1.1"
+spring-framework-6 = "6.2.19"
+spring-integration = "6.5.10"
 
 # Servlet / JSP
 javax-servlet-api = "4.0.1"
@@ -52,7 +53,7 @@ uuid-creator = { group = "com.github.f4b6a3", name = "uuid-creator", version.ref
 spring5-context = { group = "org.springframework", name = "spring-context", version.ref = "spring-framework-5" }
 spring6-context = { group = "org.springframework", name = "spring-context", version.ref = "spring-framework-6" }
 spring6-web = { group = "org.springframework", name = "spring-web", version.ref = "spring-framework-6" }
-spring-integration-sftp = { group = "org.springframework.integration", name = "spring-integration-sftp", version.ref = "spring-framework-6" }
+spring-integration-sftp = { group = "org.springframework.integration", name = "spring-integration-sftp", version.ref = "spring-integration" }
 
 # Servlet (Legacy vs Modern)
 javax-servlet-api = { group = "javax.servlet", name = "javax.servlet-api", version.ref = "javax-servlet-api" }

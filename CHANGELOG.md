@@ -39,6 +39,24 @@ before upgrading.
   when to re-save them.
 - **`S2AutoConfiguration` was removed** with `META-INF/spring.factories` and the `AutoConfiguration.imports` entry. It only
   created a logger; nothing needs to be configured.
+- ⚠️ **`S2ServletUtil.getClientIp` / `getRealServerName` no longer trust request headers.** They return
+  `request.getRemoteAddr()` / `request.getServerName()`, which a client cannot forge. Behind a reverse proxy, let the
+  container apply the forwarded headers (Spring Boot `server.forward-headers-strategy=native`, Tomcat `RemoteIpValve`), or
+  use the new overloads that take the trusted proxy addresses (`getClientIp(request, Set.of("10.0.0.5"))`), which read
+  `X-Forwarded-For` from the right and skip only trusted hops.
+- ⚠️ **`S2ServletUtil.getPrevServletPath` returns `""` for a Referer from another origin or context** (it was returned
+  as is, an open redirect when used for redirects).
+- ⚠️ **Errors instead of arbitrary results:** `S2AnnotationResolver.resolveType` throws `IllegalStateException` when
+  several classes match (it picked the first); `S2TypeUtil.compare` throws `IllegalArgumentException` for values that
+  cannot be compared (it returned 0, "equal"); `S2TypeUtil.castByName` throws `TypeMismatchException` explaining a class
+  loader mismatch (the `ClassCastException` used to appear later in the caller); `S2CollectionUtil.listSort` throws for an
+  `orderBy` other than ASC/DESC and always returns a new list; `S2LruMap.createSynchronizedLRUMap` rejects a capacity
+  below 1.
+- **`S2RestApiUtil.callApi` returns the response body as is** (unicode escapes used to be decoded, which broke JSON). POST
+  sends `application/x-www-form-urlencoded` unless a parameter is a file (`Resource`, `byte[]`); a new overload takes
+  request headers.
+- `s2.util.js` `S2Util.validate(form)` is deprecated in favor of `S2Validator` in s2-validator.
+- Compile-time Spring versions: Spring Framework 6.2.19, Spring Integration 6.5.10.
 - **jsch** moved to the maintained fork `com.github.mwiede:jsch` (same `com.jcraft.jsch` package; supports rsa-sha2 and
   current OpenSSH servers).
 
@@ -78,4 +96,15 @@ before upgrading.
   directory.
 - README examples used APIs that do not exist (`S2ContextUtil.getBean`, `S2PaginationInfo` setters). They were replaced,
   and a test compiles them.
+- `S2AnnotationResolver` loads scanned classes without running static initializers, through the base class's class
+  loader; its cache no longer keeps classes (and their class loader) alive after a DevTools restart; scanning a
+  subpackage after its parent no longer returns the same class twice.
+- `S2ServletUtil.getApplicationRootPath` no longer creates an HTTP session; `getValueAll` stops at cycles.
+- `S2FileUtil.joinPaths` no longer modifies the caller's array; `getApplicationRootPath(Class)` works for a class in a
+  jar (the jar's directory) instead of throwing `NullPointerException`.
+- `S2TypeUtil.createInstance` finds constructors whose parameters accept subtypes and boxed values.
+- `S2CollectionUtil.listSort` sorts `NaN` and infinity instead of failing.
+- `S2MarkupUtil.removeTagContent` removes an unclosed tag to the end (`"<script>alert(1)"` used to survive). It is not
+  an HTML sanitizer.
+- `s2.util.js` `S2Util.options` put HTML-escaped text into option values and labels (`A&B` became `A&amp;B`).
 - `S2PdfUtil` no longer calls `deleteOnExit` for every temporary file (the JVM kept every path until shutdown).

@@ -135,8 +135,9 @@ public class S2CollectionUtil {
      * @param <T>       리스트 요소의 타입
      * @param list      (Map 또는 VO 객체의 List)
      * @param fieldName 정렬기준 필드명(VO) 또는 Key(Map)
-     * @param orderBy   정렬순서("DESC", "ASC")
-     * @return 정렬된 객체 목록
+     * @param orderBy   정렬순서("DESC", "ASC", 대소문자 무시. null/공백이면 ASC)
+     * @return 정렬된 새 목록 (원본은 바꾸지 않음. null 값은 ASC 에서 맨 앞, DESC 에서 맨 뒤)
+     * @throws IllegalArgumentException orderBy 가 ASC/DESC 가 아닐 때
      * @apiNote
      *
      *          <pre>{@code
@@ -144,9 +145,15 @@ public class S2CollectionUtil {
      * }</pre>
      */
     public static <V, T> List<T> listSort(List<T> list, V fieldName, String orderBy) {
-        if (S2Util.isEmpty(list) || S2Util.isEmpty(fieldName) || orderBy == null || orderBy.isBlank() ||
-                (!"DESC".equalsIgnoreCase(orderBy) && !"ASC".equalsIgnoreCase(orderBy))) {
-            return list;
+        var descending = orderBy != null && "DESC".equalsIgnoreCase(orderBy.trim());
+        if (orderBy != null && !orderBy.isBlank() && !descending && !"ASC".equalsIgnoreCase(orderBy.trim())) {
+            throw new IllegalArgumentException("orderBy 는 ASC 또는 DESC 여야 합니다: " + orderBy);
+        }
+        if (list == null) {
+            return null;
+        }
+        if (S2Util.isEmpty(fieldName)) {
+            return new ArrayList<>(list);
         }
 
         Comparator<T> comparator = (a, b) -> {
@@ -165,6 +172,10 @@ public class S2CollectionUtil {
 
             // 숫자끼리 비교 (정밀도 위해 BigDecimal 사용)
             if (va instanceof Number && vb instanceof Number) {
+                if (!isFinite((Number) va) || !isFinite((Number) vb)) {
+                    // NaN and infinity have no BigDecimal form | NaN·무한대는 BigDecimal 로 나타낼 수 없음
+                    return Double.compare(((Number) va).doubleValue(), ((Number) vb).doubleValue());
+                }
                 BigDecimal na = new BigDecimal(String.valueOf(va));
                 BigDecimal nb = new BigDecimal(String.valueOf(vb));
                 return na.compareTo(nb);
@@ -193,7 +204,7 @@ public class S2CollectionUtil {
         // 호출자가 넘긴 리스트가 불변 리스트(List.of() 등)일 수 있으므로 원본을 직접 정렬하지
         // 않고 복사본을 정렬해 반환한다.
         var result = new ArrayList<>(list);
-        var effectiveComparator = "DESC".equalsIgnoreCase(orderBy) ? comparator.reversed() : comparator;
+        var effectiveComparator = descending ? comparator.reversed() : comparator;
 
         try {
             result.sort(effectiveComparator);
@@ -203,9 +214,13 @@ public class S2CollectionUtil {
             // 항상 유효한 총순서를 보장하는 문자열 비교로 안전하게 다시 정렬한다.
             Comparator<T> stringComparator = Comparator
                     .comparing(item -> String.valueOf(S2Util.getValue(item, fieldName)));
-            result.sort("DESC".equalsIgnoreCase(orderBy) ? stringComparator.reversed() : stringComparator);
+            result.sort(descending ? stringComparator.reversed() : stringComparator);
         }
         return result;
+    }
+
+    private static boolean isFinite(Number number) {
+        return !(number instanceof Double || number instanceof Float) || Double.isFinite(number.doubleValue());
     }
 
 }

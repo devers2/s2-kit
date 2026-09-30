@@ -35,6 +35,20 @@
   `S2EncryptionUtil.isLegacyFormat`, `S2HashUtil.needsRehash`로 다시 저장할 대상을 알 수 있습니다.
 - **`S2AutoConfiguration`을 삭제**했습니다(`META-INF/spring.factories`, `AutoConfiguration.imports` 등록 포함). 로거를 만드는 것 외에 하는
   일이 없었으며 설정할 것은 없습니다.
+- ⚠️ **`S2ServletUtil.getClientIp` / `getRealServerName`이 요청 헤더를 믿지 않습니다.** 클라이언트가 위조할 수 없는
+  `request.getRemoteAddr()` / `request.getServerName()`을 돌려줍니다. 리버스 프록시 뒤라면 컨테이너가 전달 헤더를 반영하게 하거나(Spring
+  Boot `server.forward-headers-strategy=native`, Tomcat `RemoteIpValve`), 신뢰하는 프록시 주소를 받는 새 오버로드
+  (`getClientIp(request, Set.of("10.0.0.5"))`)를 쓰십시오. `X-Forwarded-For`를 오른쪽부터 읽어 신뢰하는 프록시만 건너뜁니다.
+- ⚠️ **`S2ServletUtil.getPrevServletPath`는 다른 출처·컨텍스트의 Referer 에 `""`를 돌려줍니다**(그대로 돌려줘 리다이렉트에 쓰면 오픈
+  리다이렉트였음).
+- ⚠️ **임의의 결과 대신 오류:** `S2AnnotationResolver.resolveType`은 여러 클래스가 일치하면 `IllegalStateException`(첫 번째를 골랐음),
+  `S2TypeUtil.compare`는 비교할 수 없는 값에 `IllegalArgumentException`(0, 즉 "같음"을 돌려줬음), `S2TypeUtil.castByName`은 클래스 로더
+  차이를 설명하는 `TypeMismatchException`(호출한 쪽에서 나중에 `ClassCastException`이 났음), `S2CollectionUtil.listSort`는 ASC/DESC 가
+  아닌 `orderBy`에 예외이며 항상 새 목록을 돌려줍니다. `S2LruMap.createSynchronizedLRUMap`은 1 미만 용량을 거부합니다.
+- **`S2RestApiUtil.callApi`는 응답 본문을 그대로 돌려줍니다**(유니코드 이스케이프를 풀어 JSON 이 깨졌음). POST 는 파일(`Resource`,
+  `byte[]`)이 없으면 `application/x-www-form-urlencoded`로 보내며, 요청 헤더를 받는 오버로드를 추가했습니다.
+- `s2.util.js`의 `S2Util.validate(form)`은 폐기 예정입니다. s2-validator 의 `S2Validator`를 쓰십시오.
+- 컴파일 기준 Spring 버전: Spring Framework 6.2.19, Spring Integration 6.5.10.
 - **jsch** 를 유지보수되는 포크 `com.github.mwiede:jsch`로 바꿨습니다(패키지 `com.jcraft.jsch` 동일, rsa-sha2 와 최신 OpenSSH 지원).
 
 ### 보안
@@ -69,4 +83,13 @@
 - `S2FileUtil.deleteFilesOlderThan`은 접두사가 있으면 디렉토리를 지우지 않으며, 시작 디렉토리는 지우지 않습니다.
 - README 예제가 존재하지 않는 API(`S2ContextUtil.getBean`, `S2PaginationInfo` 세터)를 쓰고 있었습니다. 실제 API 로 바꾸고 시험에서
   컴파일합니다.
+- `S2AnnotationResolver`는 스캔한 클래스를 정적 초기화 없이 베이스 클래스의 클래스 로더로 로드합니다. 캐시가 DevTools 재시작 후에도
+  클래스(와 클래스 로더)를 붙잡지 않으며, 상위 패키지 다음에 하위 패키지를 스캔해도 같은 클래스가 두 번 나오지 않습니다.
+- `S2ServletUtil.getApplicationRootPath`가 HTTP 세션을 만들지 않으며, `getValueAll`은 순환 참조에서 멈춥니다.
+- `S2FileUtil.joinPaths`가 호출자의 배열을 바꾸지 않으며, `getApplicationRootPath(Class)`는 jar 안의 클래스에서도
+  `NullPointerException` 없이 jar 가 있는 디렉토리를 돌려줍니다.
+- `S2TypeUtil.createInstance`가 하위 타입·박싱 값을 받는 생성자도 찾습니다.
+- `S2CollectionUtil.listSort`가 `NaN`·무한대를 실패 없이 정렬합니다.
+- `S2MarkupUtil.removeTagContent`가 닫히지 않은 태그를 끝까지 제거합니다(`"<script>alert(1)"`이 남았음). HTML 정화기는 아닙니다.
+- `s2.util.js`의 `S2Util.options`가 option 값·라벨에 HTML 이스케이프된 텍스트를 넣던 문제(`A&B` → `A&amp;B`)를 고쳤습니다.
 - `S2PdfUtil`이 임시 파일마다 `deleteOnExit`를 호출하지 않습니다(JVM 종료 때까지 모든 경로를 메모리에 보관했음).

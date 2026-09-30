@@ -352,4 +352,6 @@ dependencies {
     testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85")
     testImplementation(libs.jakarta.servlet.api) // S2PaginationTag 시험 (TagSupport)
     testImplementation(libs.jakarta.servlet.jsp)
+    testImplementation(libs.spring6.context) // S2AnnotationResolver, S2RestApiUtil 시험
+    testImplementation(libs.spring6.web)
 }

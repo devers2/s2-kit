@@ -217,9 +217,37 @@ class S2TypeUtilTest {
         }
 
         @Test
-        @DisplayName("비교 불가한 타입이면 0을 반환한다 (fallback)")
-        void incompatibleFallback() {
-            assertEquals(0, S2TypeUtil.compare("hello", 123));
+        @DisplayName("비교 불가한 타입이면 0(같음) 대신 예외가 발생한다")
+        void incompatibleThrows() {
+            assertThrows(IllegalArgumentException.class, () -> S2TypeUtil.compare("hello", 123));
+            assertThrows(IllegalArgumentException.class, () -> S2TypeUtil.compare(new Object(), new Object()));
+        }
+
+        @Test
+        @DisplayName("castByName 은 이름이 같아도 클래스 로더가 다르면 원인을 알려 주는 예외를 던진다")
+        void castAcrossClassLoaders() throws Exception {
+            var location = SampleBean.class.getProtectionDomain().getCodeSource().getLocation();
+            try (var isolated = new java.net.URLClassLoader(new java.net.URL[] { location }, null)) {
+                var constructor = isolated.loadClass(SampleBean.class.getName()).getDeclaredConstructor();
+                constructor.setAccessible(true);
+                var foreign = constructor.newInstance();
+                assertTrue(S2TypeUtil.instanceOfByName(foreign, SampleBean.class));
+                var e = assertThrows(S2TypeUtil.TypeMismatchException.class,
+                        () -> S2TypeUtil.castByName(foreign, SampleBean.class));
+                assertTrue(e.getMessage().contains("클래스 로더"), e.getMessage());
+            }
+            assertEquals(Integer.valueOf(5), S2TypeUtil.castByName(5, int.class));
+        }
+
+        @Test
+        @DisplayName("createInstance 는 하위 타입·박싱 인자로도 생성자를 찾는다")
+        void createInstanceWithAssignableArgs() {
+            record Box(Number value, int count) {
+            }
+            var box = S2TypeUtil.createInstance(Box.class, 3L, 2);
+            assertEquals(3L, box.value());
+            assertEquals(2, box.count());
+            assertThrows(RuntimeException.class, () -> S2TypeUtil.createInstance(Box.class, "x", 2));
         }
     }
 }
