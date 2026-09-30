@@ -59,4 +59,8 @@ For more details, please refer to the 'LICENSE' file in the root directory.
     - License: MIT License (See 'LICENSE-MIT' for details)
     - URL: [https://jsoup.org/](https://jsoup.org/)
 
+14. OpenHTMLtoPDF SVG support (openhtmltopdf-svg-support) and Apache Batik (Optional; added by the user to draw SVG in S2PdfUtil)
+    - License: openhtmltopdf-svg-support: GNU Lesser General Public License, Version 2.1 or later; Apache Batik, Apache XML Graphics Commons: Apache License 2.0
+    - URL: [https://xmlgraphics.apache.org/batik/](https://xmlgraphics.apache.org/batik/)
+
 ---

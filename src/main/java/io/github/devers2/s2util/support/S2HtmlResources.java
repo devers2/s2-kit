@@ -200,7 +200,14 @@ final class S2HtmlResources {
         for (var style : doc.select("style")) {
             collectCssImages(style.data(), images);
         }
+        for (var reference : doc.select("svg image, svg feImage, svg feimage")) {
+            var uri = resolve(page(reference), svgHref(reference));
+            if (uri != null) {
+                images.add(uri);
+            }
+        }
         images.forEach(this::prefetch);
+        doc.select("svg").forEach(svg -> embedSvgImages(svg, page(svg)));
 
         // 3. Substitute data URIs; failures are dropped with a warning | data URI 로 바꿈. 실패한 것은 경고 후 뺌
         for (var entry : imgTargets) {
@@ -212,9 +219,12 @@ final class S2HtmlResources {
             styled.attr("style", embedCssImages(styled.attr("style")));
         }
         for (var style : doc.select("style")) {
-            var css = embedCssImages(style.data());
+            var css = screenMedia(embedCssImages(style.data()));
             style.empty();
             style.appendChild(new DataNode(css));
+            if (style.hasAttr("media")) {
+                style.attr("media", swapMediaTypes(style.attr("media")));
+            }
         }
         return doc.outerHtml();
     }
@@ -417,10 +427,177 @@ final class S2HtmlResources {
         return StandardCharsets.UTF_8;
     }
 
+    // ---------------------------------------------------------------- media
+
+    private static final Pattern MEDIA_RULE = Pattern.compile("(?i)@media\\s+([^{;]+)\\{");
+
+    /**
+     * The renderer always matches the print media type, while the goal is the page as seen on screen: print and screen
+     * are swapped in media queries, so {@code @media screen} applies and {@code @media print} (link addresses appended
+     * after links, hidden navigation ...) does not | 렌더러는 항상 print 미디어로 맞추지만 목적은 화면 그대로이므로 미디어 쿼리의 print 와
+     * screen 을 맞바꾼다. {@code @media screen} 은 적용되고 {@code @media print}(링크 뒤 주소 표시, 메뉴 숨김 등)는 적용되지 않는다
+     */
+    static String screenMedia(String css) {
+        var matcher = MEDIA_RULE.matcher(css);
+        var out = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(out, Matcher.quoteReplacement("@media " + swapMediaTypes(matcher.group(1)) + "{"));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    /** The screen the page is laid out for: the A4 page width in CSS pixels | 레이아웃 기준 화면: A4 쪽 너비(CSS 픽셀) */
+    static final double VIEWPORT_WIDTH = 794;
+    private static final double VIEWPORT_HEIGHT = 1123;
+
+    private static final Pattern MEDIA_FEATURE = Pattern.compile(
+            "\\(\\s*([a-z-]+)\\s*(?::\\s*([^)]*?))?\\s*\\)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Decides each query of a media list for a screen as wide as the A4 page, since the renderer matches only the
+     * print type and ignores features ({@code min-width} ...) and {@code not}: a matching query becomes {@code print},
+     * the rest {@code speech}, which never matches. Responsive pages then get the one layout that fits the page instead
+     * of all of them | 미디어 목록의 각 쿼리를 A4 쪽 너비의 화면 기준으로 판정한다. 렌더러는 print 유형만 맞추고 조건({@code min-width} 등)과
+     * {@code not} 은 무시하기 때문이다. 맞으면 print, 아니면 맞지 않는 speech 로 바꾼다. 반응형 페이지는 모든 레이아웃이 겹치는 대신 쪽에 맞는
+     * 하나만 적용된다
+     */
+    static String swapMediaTypes(String media) {
+        var queries = new ArrayList<String>();
+        for (var query : media.split(",")) {
+            var q = query.trim();
+            var lower = q.toLowerCase(Locale.ROOT);
+            var negated = lower.startsWith("not ");
+            if (negated) {
+                q = q.substring(4).trim();
+            } else if (lower.startsWith("only ")) {
+                q = q.substring(5).trim();
+            }
+            String type;
+            String features;
+            if (q.startsWith("(")) {
+                type = "all";
+                features = q;
+            } else {
+                var parts = q.split("(?i)\\s+and\\s+", 2);
+                type = parts[0].trim().toLowerCase(Locale.ROOT);
+                features = parts.length > 1 ? parts[1].trim() : "";
+            }
+            var matches = (type.equals("screen") || type.equals("all") || type.isEmpty()) && featuresMatch(features);
+            queries.add(matches != negated ? "print" : "speech");
+        }
+        return String.join(", ", queries);
+    }
+
+    /** Media features joined by "and", for the A4-wide screen; unknown features count as matching | A4 너비 화면 기준 조건 판정 */
+    private static boolean featuresMatch(String features) {
+        var matcher = MEDIA_FEATURE.matcher(features);
+        while (matcher.find()) {
+            var name = matcher.group(1).toLowerCase(Locale.ROOT);
+            var value = matcher.group(2) == null ? "" : matcher.group(2).trim().toLowerCase(Locale.ROOT);
+            var matches = switch (name) {
+            case "min-width", "min-device-width" -> VIEWPORT_WIDTH >= pixels(value, Double.MAX_VALUE);
+            case "max-width", "max-device-width" -> VIEWPORT_WIDTH <= pixels(value, -1);
+            case "min-height", "min-device-height" -> VIEWPORT_HEIGHT >= pixels(value, Double.MAX_VALUE);
+            case "max-height", "max-device-height" -> VIEWPORT_HEIGHT <= pixels(value, -1);
+            case "orientation" -> !value.equals("landscape");
+            case "prefers-color-scheme" -> !value.equals("dark");
+            case "hover", "any-hover" -> !value.equals("none");
+            case "pointer", "any-pointer" -> !value.equals("none") && !value.equals("coarse");
+            default -> true;
+            };
+            if (!matches) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** A length in CSS pixels (px, em, rem); {@code otherwise} when it cannot be read | CSS 픽셀 길이 */
+    private static double pixels(String value, double otherwise) {
+        var matcher = Pattern.compile("^([\\d.]+)\\s*(px|em|rem)?$").matcher(value);
+        if (!matcher.find()) {
+            return otherwise;
+        }
+        var number = Double.parseDouble(matcher.group(1));
+        return matcher.group(2) == null || matcher.group(2).equals("px") ? number : number * 16;
+    }
+
     // --------------------------------------------------------------- images
+
+    /** Nested SVG images embedded inside an SVG image | SVG 이미지 안에 넣을 SVG 이미지의 최대 깊이 */
+    private static final int MAX_SVG_DEPTH = 2;
+
+    /**
+     * An SVG image made safe to embed: scripts and foreign content removed, images inside it embedded under the same
+     * rules or removed (one refused reference blanks the whole SVG), and {@code xlink} declared for the drawer (SVG 1.1)
+     * | 넣을 수 있게 정리한 SVG 이미지. 스크립트·외부 콘텐츠를 지우고, 안의 이미지는 같은 규칙으로 넣거나 지우며(거부된 참조 하나가 SVG 전체를
+     * 비움), 그리기 도구(SVG 1.1)를 위해 xlink 를 선언한다
+     */
+    private byte[] cleanSvg(Fetched fetched, URI svgUri, int depth) {
+        var markup = new String(fetched.data(), charset(fetched.contentType()));
+        var doc = Jsoup.parse(markup, "", org.jsoup.parser.Parser.xmlParser());
+        var svg = doc.selectFirst("svg");
+        if (svg == null) {
+            return fetched.data();
+        }
+        svg.select("script, foreignObject").remove();
+        var references = svg.select("image, feImage");
+        references.forEach(reference -> prefetch(resolve(svgUri, svgHref(reference))));
+        for (var reference : references) {
+            var href = svgHref(reference).trim();
+            if (href.isEmpty() || href.startsWith("#") || href.startsWith("data:")) {
+                continue;
+            }
+            var uri = resolve(svgUri, href);
+            var data = uri == null || depth >= MAX_SVG_DEPTH ? "" : dataUri(uri, depth + 1);
+            if (data.isEmpty()) {
+                reference.remove();
+            } else {
+                reference.removeAttr("href");
+                reference.attr("xlink:href", data);
+            }
+        }
+        svg.attr("xmlns:xlink", "http://www.w3.org/1999/xlink");
+        if (!svg.hasAttr("xmlns")) {
+            svg.attr("xmlns", "http://www.w3.org/2000/svg");
+        }
+        doc.outputSettings().prettyPrint(false);
+        return svg.outerHtml().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String svgHref(Element element) {
+        return element.hasAttr("href") ? element.attr("href") : element.attr("xlink:href");
+    }
+
+    /**
+     * Images inside an SVG become data URIs under the same rules; ones that cannot be fetched are removed, since one
+     * refused reference blanks the whole SVG | SVG 안의 이미지도 같은 규칙으로 data URI 로. 받지 못한 것은 지운다 (거부된 참조 하나가 SVG
+     * 전체를 비움)
+     */
+    private void embedSvgImages(Element svg, URI base) {
+        for (var reference : svg.select("image, feImage, feimage")) {
+            var href = svgHref(reference).trim();
+            if (href.isEmpty() || href.startsWith("#") || href.startsWith("data:")) {
+                continue;
+            }
+            var uri = resolve(base, href);
+            var data = uri == null ? "" : dataUri(uri, 1);
+            if (data.isEmpty()) {
+                reference.remove();
+            } else {
+                reference.removeAttr("href");
+                reference.attr("xlink:href", data);
+            }
+        }
+    }
 
     /** A data URI for a fetched image, or "" (dropped) | 받은 이미지의 data URI (실패 시 빈 값) */
     private String dataUri(URI uri) {
+        return dataUri(uri, 0);
+    }
+
+    private String dataUri(URI uri, int depth) {
         var fetched = await(uri);
         if (fetched == null) {
             return "";
@@ -430,7 +607,9 @@ final class S2HtmlResources {
             logger.warn("PDF 에 넣지 못한 이미지: {} (이미지가 아닌 응답: {})", uri, fetched.contentType());
             return "";
         }
-        return "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(fetched.data());
+        // The renderer draws SVG only from a base64 data URI | 렌더러는 SVG 를 base64 data URI 로만 그림
+        var data = mime.equals("image/svg+xml") ? cleanSvg(fetched, uri, depth) : fetched.data();
+        return "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(data);
     }
 
     /** The image type from the header, or from the leading bytes | 헤더 또는 앞부분 바이트로 본 이미지 형식 */

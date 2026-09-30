@@ -97,7 +97,8 @@ class S2PdfRemoteHtmlTest {
         }
         var type = path.endsWith(".css") ? "text/css; charset=UTF-8"
                 : path.endsWith(".html") ? "text/html; charset=UTF-8"
-                        : path.endsWith(".jpg") ? "image/jpeg" : "image/png";
+                        : path.endsWith(".jpg") ? "image/jpeg"
+                                : path.endsWith(".svg") ? "image/svg+xml" : "image/png";
         send(exchange, 200, type, body);
     }
 
@@ -161,6 +162,23 @@ class S2PdfRemoteHtmlTest {
             }
         }
         return List.copyOf(found);
+    }
+
+    /** Pixels of one palette color on the first page at 72 dpi (1pt = 1px) | 첫 쪽의 한 색 픽셀 수 */
+    private static int pixels(PDDocument doc, String color) throws IOException {
+        var p = PALETTE.get(color);
+        var page = new PDFRenderer(doc).renderImageWithDPI(0, 72);
+        var count = 0;
+        for (int y = 0; y < page.getHeight(); y++) {
+            for (int x = 0; x < page.getWidth(); x++) {
+                var c = new Color(page.getRGB(x, y));
+                if (Math.abs(c.getRed() - p.getRed()) < 40 && Math.abs(c.getGreen() - p.getGreen()) < 40
+                        && Math.abs(c.getBlue() - p.getBlue()) < 40) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     private void page(String html) {
@@ -260,6 +278,69 @@ class S2PdfRemoteHtmlTest {
     }
 
     @Test
+    void screenStylesApplyAndPrintStylesDoNot() throws IOException {
+        files.put("/print.css", ".c { display: none; }".getBytes(StandardCharsets.UTF_8));
+        page("""
+                <html><head>
+                <style>@media print { .a { display: none; } a[href]:after { content: " (" attr(href) ")"; } }
+                @media screen { .b { display: none; } } @media not print { .d { display: none; } }</style>
+                <link rel="stylesheet" media="print" href="/print.css">
+                </head><body><p class="a">SHOWN-A</p><p class="b">HIDDEN-B</p><p class="c">SHOWN-C</p>
+                <p class="d">HIDDEN-D</p><a href="/somewhere">LINK</a></body></html>
+                """);
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
+            var text = new PDFTextStripper().getText(doc);
+            assertTrue(text.contains("SHOWN-A") && text.contains("SHOWN-C") && text.contains("LINK"), text);
+            assertFalse(text.contains("HIDDEN") || text.contains("somewhere"), text);
+        }
+    }
+
+    @Test
+    void svgIsDrawnWithoutFetchingWhatItPointsAt() throws IOException {
+        assertTrue(S2PdfUtil.isSvgSupported(), "openhtmltopdf-svg-support is a test dependency");
+        files.put("/logo.svg", ("<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60'>"
+                + "<rect width='60' height='60' fill='#ff0000'/>"
+                + "<image href='" + otherBase + "/from-svg.png' width='10' height='10'/>"
+                + "<image href='inner.png' x='20' y='20' width='40' height='40'/></svg>").getBytes(StandardCharsets.UTF_8));
+        files.put("/inner.png", image("png", "yellow"));
+        page("<html><body><img src=\"logo.svg\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"60\">"
+                + "<rect width=\"60\" height=\"60\" fill=\"#00ff00\"/></svg></body></html>");
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
+            assertEquals(List.of("green", "red", "yellow"), colors(doc), "a refused reference does not blank the SVG");
+        }
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofSvg(
+                "<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><circle cx='40' cy='40' r='30' fill='#0000ff'/></svg>")))) {
+            assertEquals(List.of("blue"), colors(doc));
+        }
+        assertEquals(List.of(), otherRequests, "addresses inside an SVG are not fetched");
+    }
+
+    @Test
+    void pageCssSizesSvgImages() throws IOException {
+        files.put("/big.svg", "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='#ff0000'/></svg>"
+                .getBytes(StandardCharsets.UTF_8));
+        page("<html><head><style>.logo img { width: 40px; height: 40px; }</style></head><body>"
+                + "<div class=\"logo\"><img src=\"big.svg\"></div></body></html>");
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
+            var red = pixels(doc, "red"); // 40px = 30pt → about 900 | 40px = 30pt → 약 900
+            assertTrue(red > 700 && red < 1100, "sized by the page CSS: " + red);
+        }
+    }
+
+    @Test
+    void prefixedAttributesAndElementsDoNotBreakRendering() throws IOException {
+        var html = "<html><body><div id=\"app\" v-on:click=\"go\" x-on:click=\"go\" :class=\"c\" @click=\"go\">VUE TEXT</div>"
+                + "<p class=\"MsoNormal\">WORD TEXT<o:p></o:p></p><p><o:p>INSIDE PREFIXED</o:p></p>"
+                + "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"40\"><defs><rect id=\"r\" width=\"40\" "
+                + "height=\"40\" fill=\"#ff00ff\"/></defs><use xlink:href=\"#r\"/></svg></body></html>";
+        try (var doc = load(S2PdfUtil.merge(PdfSource.ofHtml(html)))) {
+            var text = new PDFTextStripper().getText(doc);
+            assertTrue(text.contains("VUE TEXT") && text.contains("WORD TEXT") && text.contains("INSIDE PREFIXED"), text);
+            assertEquals(List.of("magenta"), colors(doc));
+        }
+    }
+
+    @Test
     void pageFontsFallBackToTheDefaultFontForKorean() throws IOException {
         var hasFont = S2PdfUtil.SYSTEM_FONT_CANDIDATES.stream().anyMatch(p -> Files.isReadable(Path.of(p)));
         Assumptions.assumeTrue(hasFont, "no Korean font installed");
@@ -281,6 +362,21 @@ class S2PdfRemoteHtmlTest {
         assertEquals("font-size: 12px; font-weight: bold", S2PdfUtil.addFontFallback("font-size: 12px; font-weight: bold"));
         assertEquals("a.font:hover{color:red}", S2PdfUtil.addFontFallback("a.font:hover{color:red}"));
         assertEquals("font-family: monospace, ConvertPDF", S2PdfUtil.addFontFallback("font-family: monospace, ConvertPDF"));
+    }
+
+    @Test
+    void mediaQueriesAreDecidedForAnA4WideScreen() {
+        assertEquals("print", S2HtmlResources.swapMediaTypes("screen"));
+        assertEquals("speech", S2HtmlResources.swapMediaTypes("print"));
+        assertEquals("print", S2HtmlResources.swapMediaTypes("not print"));
+        assertEquals("print", S2HtmlResources.swapMediaTypes("screen and (min-width: 768px)"));
+        assertEquals("speech", S2HtmlResources.swapMediaTypes("screen and (min-width: 1200px)"));
+        assertEquals("speech", S2HtmlResources.swapMediaTypes("(max-width: 575.98px)"));
+        assertEquals("print", S2HtmlResources.swapMediaTypes("only screen and (max-width: 60em)"));
+        assertEquals("speech", S2HtmlResources.swapMediaTypes("(prefers-color-scheme: dark)"));
+        assertEquals("speech, print", S2HtmlResources.swapMediaTypes("print, (min-width: 40rem)"));
+        assertEquals("@media print{.a{}} @media speech{.b{}}",
+                S2HtmlResources.screenMedia("@media screen and (min-width: 700px){.a{}} @media (min-width: 1400px){.b{}}"));
     }
 
     @Test

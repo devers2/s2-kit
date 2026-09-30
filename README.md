@@ -180,7 +180,8 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
 }
 
 // An HTML page fetched by URL comes out as on screen: images and CSS of the same origin and images of public hosts (CDNs)
-// are embedded (internal addresses are refused). Headers (login cookies) go only to the same origin. JavaScript does not run
+// are embedded (internal addresses are refused). Headers (login cookies) go only to the same origin. JavaScript does not run,
+// and the layout is for an A4-wide screen. SVG (logos ...) needs io.github.openhtmltopdf:openhtmltopdf-svg-support
 S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
         Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
 

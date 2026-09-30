@@ -102,7 +102,14 @@ before upgrading.
   internal, loopback and link-local addresses are refused, through redirects too. Up to 300 resources, 20MB each and
   `maxBytes` in total are fetched concurrently; a resource that cannot be fetched is dropped with a warning (the PDF is
   still made). JavaScript does not run, and the default font stands in for web fonts. String HTML (`ofHtml`) still
-  never fetches remote addresses.
+  never fetches remote addresses. The renderer always matches the print medium, so media queries of URL pages are
+  decided for a screen as wide as the A4 page (794px): `@media screen` applies, `@media print` (link addresses after
+  links, hidden navigation) does not, and `min-width`/`max-width`, `not`, orientation and dark mode are decided so a
+  responsive page gets the one layout that fits the page.
+- SVG drawing: with `io.github.openhtmltopdf:openhtmltopdf-svg-support` (Batik) on the classpath, `ofSvg`, `<svg>` in
+  HTML and SVG images are drawn (`isSvgSupported()`). Scripts are off and only `data:` resources are allowed; external
+  references inside an SVG (`<image>`, `<use>`) are removed (one refused reference blanks the whole SVG). Images inside
+  the SVGs of a URL page are fetched and embedded under the same rules.
 
 ### Security
 
@@ -140,7 +147,10 @@ before upgrading.
 - HTML to PDF: content after side-by-side `<img>` elements no longer vanishes (the XML re-parse put it inside the
   unclosed `<img>`). Whole documents (`<html>`, `<head>`) keep their own `<head>` CSS (it used to land inside the template
   body). Every `font-family` falls back to the default font, so Korean set in a font the server lacks (Malgun Gothic)
-  no longer prints as `#`.
+  no longer prints as `#`. Undeclared XML prefixes (Vue `v-on:click`/`:class`, Alpine `x-on:click`, `<o:p>` in HTML
+  saved from Word) no longer fail the whole conversion (prefixed attributes are removed, prefixed elements unwrapped).
+- SVG was never drawn: no SVG drawer was attached to the renderer, so `ofSvg` produced a blank page. With the module
+  above it is drawn; without it `ofSvg` fails naming the dependency.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL

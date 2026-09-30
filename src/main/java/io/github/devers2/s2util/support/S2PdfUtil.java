@@ -535,6 +535,67 @@ public class S2PdfUtil {
         return combinedCssContent.toString();
     }
 
+    /**
+     * XML namespace prefixes that HTML never declares break the XHTML parse: prefixed attributes ({@code v-on:click},
+     * {@code :class}) are removed ({@code xlink:} inside {@code <svg>} is kept and declared), and prefixed elements
+     * ({@code <o:p>} in HTML saved from Word) are unwrapped, keeping their content | 선언되지 않은 XML 접두어는 XHTML 파싱을
+     * 깨뜨린다. 접두어 속성은 지우고(svg 안의 {@code xlink:} 는 선언하고 유지), 접두어 요소(워드에서 저장한 HTML 의 {@code <o:p>})는 내용을
+     * 남기고 벗긴다
+     */
+    private static void removeUnboundPrefixes(Document document) {
+        for (var element : document.getAllElements()) {
+            var prefixed = new ArrayList<String>();
+            for (var attribute : element.attributes()) {
+                var key = attribute.getKey();
+                if (key.indexOf(':') >= 0 && !key.startsWith("xml:") && !key.startsWith("xmlns")) {
+                    prefixed.add(key);
+                }
+            }
+            for (var key : prefixed) {
+                // SVG drawing (Batik, SVG 1.1) needs xlink:href, so inside <svg> it stays with its prefix declared
+                // | SVG 그리기(Batik, SVG 1.1)는 xlink:href 가 필요하므로 svg 안에서는 접두어를 선언하고 유지
+                var svg = element.tagName().equalsIgnoreCase("svg") ? element
+                        : element.parents().stream().filter(p -> p.tagName().equalsIgnoreCase("svg")).reduce((a, b) -> b)
+                                .orElse(null);
+                if (key.toLowerCase(Locale.ROOT).startsWith("xlink:") && svg != null) {
+                    svg.attr("xmlns:xlink", "http://www.w3.org/1999/xlink");
+                    continue;
+                }
+                element.removeAttr(key);
+            }
+        }
+        for (var element : document.getAllElements()) {
+            if (element.tagName().indexOf(':') > 0 && element.parent() != null) {
+                element.unwrap();
+            }
+        }
+        removeExternalSvgReferences(document);
+    }
+
+    /**
+     * SVG elements that point outside the document ({@code <image>}, {@code <use>}, {@code <feImage>} with an http: or
+     * file: address) are removed: the drawer refuses them, and one refused reference blanks the whole SVG. The rest get
+     * {@code xlink:href} | 문서 밖을 가리키는 SVG 요소를 지운다. 그리기 도구가 거부하며, 거부된 참조 하나가 SVG 전체를 비운다. 나머지는
+     * xlink:href 로 맞춘다
+     */
+    static void removeExternalSvgReferences(org.jsoup.nodes.Element root) {
+        for (var element : root.select("svg image, svg use, svg feImage, svg feimage")) {
+            var href = element.hasAttr("xlink:href") ? element.attr("xlink:href") : element.attr("href");
+            var trimmed = href.trim();
+            if (!trimmed.isEmpty() && !trimmed.startsWith("#") && !trimmed.startsWith("data:")) {
+                element.remove();
+                continue;
+            }
+            // The drawer (SVG 1.1) reads xlink:href only, not the SVG 2 href | 그리기 도구(SVG 1.1)는 SVG 2 의 href 가 아닌 xlink:href 만 읽음
+            if (element.hasAttr("href") && !element.hasAttr("xlink:href")) {
+                element.attr("xlink:href", href);
+                element.removeAttr("href");
+            }
+            element.parents().stream().filter(p -> p.tagName().equalsIgnoreCase("svg"))
+                    .forEach(svg -> svg.attr("xmlns:xlink", "http://www.w3.org/1999/xlink"));
+        }
+    }
+
     /** A whole page (not a fragment): it has its own html, head or body element | 조각이 아닌 전체 문서 */
     private static final Pattern FULL_DOCUMENT = Pattern.compile("(?i)<(html|head|body)[\\s>]");
 
@@ -620,6 +681,7 @@ public class S2PdfUtil {
      */
     private static String convertToXhtml(String html) {
         var document = Jsoup.parse(html);
+        removeUnboundPrefixes(document);
         document.outputSettings().syntax(Document.OutputSettings.Syntax.xml).escapeMode(Entities.EscapeMode.xhtml);
         return document.html();
     }
@@ -640,6 +702,14 @@ public class S2PdfUtil {
         // http:, file: or other URLs written in the HTML (SSRF, local file read) | data: URI 만 로드. 이미지·CSS 는 이미 인라인되어
         // 있으므로 렌더러가 HTML 의 http:, file: 등 URL 을 직접 가져오지 않음 (SSRF, 로컬 파일 읽기 방지)
         builder.useUriResolver((baseUri, uri) -> uri != null && uri.startsWith("data:") ? uri : null);
+        var svgDrawer = newSvgDrawer();
+        if (svgDrawer != null) {
+            builder.useSVGDrawer(svgDrawer);
+        } else if (htmlContent.contains("<svg") || htmlContent.contains("image/svg+xml")) {
+            if (SVG_WARNED.compareAndSet(false, true)) {
+                logger.warn("SVG 는 그리지 않고 비워 둡니다. " + SVG_SUPPORT_REQUIRED);
+            }
+        }
 
         var font = resolveFont(clazz, fontPath);
         requireFontFor(htmlContent, font != null);
@@ -650,6 +720,49 @@ public class S2PdfUtil {
 
         builder.toStream(outputStream);
         builder.run();
+    }
+
+    // ------------------------------------------------------------------------
+    // SVG (optional openhtmltopdf-svg-support) | SVG (선택 의존성 openhtmltopdf-svg-support)
+
+    private static final String SVG_DRAWER = "com.openhtmltopdf.svgsupport.BatikSVGDrawer";
+    private static final String SVG_SUPPORT_REQUIRED = "SVG 를 그리려면 io.github.openhtmltopdf:openhtmltopdf-svg-support 의존성이 필요합니다.";
+    private static final AtomicBoolean SVG_WARNED = new AtomicBoolean();
+
+    /**
+     * Whether SVG ({@code ofSvg}, inline {@code <svg>}, SVG images in HTML) can be drawn: openhtmltopdf-svg-support
+     * (Batik) is on the classpath. Without it the renderer leaves SVG blank, so {@code ofSvg} fails instead.
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * SVG({@code ofSvg}, HTML 의 {@code <svg>}·SVG 이미지)를 그릴 수 있는지. openhtmltopdf-svg-support(Batik)가 클래스패스에 있어야 한다.
+     * 없으면 렌더러가 SVG 를 비워 두므로 {@code ofSvg} 는 예외를 낸다.
+     *
+     * @return SVG 를 그릴 수 있으면 true
+     */
+    public static boolean isSvgSupported() {
+        return newSvgDrawer() != null;
+    }
+
+    /**
+     * A Batik drawer with scripts off and only data: resources (an SVG can point at http: or file: addresses), or null
+     * when the module is absent | 스크립트를 끄고 data: 리소스만 허용한 Batik 그리기 도구 (SVG 도 http:, file: 주소를 가리킬 수 있음). 없으면 null
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static com.openhtmltopdf.extend.SVGDrawer newSvgDrawer() {
+        try {
+            var loader = PdfRendererBuilder.class.getClassLoader();
+            var drawer = Class.forName(SVG_DRAWER, true, loader);
+            var scriptMode = (Class<Enum>) Class.forName(SVG_DRAWER + "$SvgScriptMode", true, loader);
+            // Only data: (images already embedded); http:, file: and the rest stay refused
+            // | data: 만 허용 (이미 넣은 이미지). http:, file: 등은 계속 거부
+            return (com.openhtmltopdf.extend.SVGDrawer) drawer.getConstructor(scriptMode, java.util.Set.class)
+                    .newInstance(Enum.valueOf(scriptMode, "SECURE"), java.util.Set.of("data"));
+        } catch (ClassNotFoundException | LinkageError e) {
+            return null;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("openhtmltopdf-svg-support 를 초기화할 수 없습니다: " + e.getMessage(), e);
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -2906,7 +3019,10 @@ public class S2PdfUtil {
                 + "</div>";
     }
 
-    private static String convertSvgToHtml(String svgContent) {
+    private static String convertSvgToHtml(String svgContent) throws IOException {
+        if (newSvgDrawer() == null) {
+            throw new IOException(SVG_SUPPORT_REQUIRED);
+        }
         if (S2Util.isEmpty(svgContent)) {
             return "<div></div>";
         }

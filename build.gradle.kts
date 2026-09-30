@@ -351,6 +351,7 @@ dependencies {
     testImplementation(libs.s2.core)
     testImplementation("org.jsoup:jsoup:1.23.2")
     testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85")
+    testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.85") // optional SVG drawing | 선택: SVG 그리기
     testImplementation(libs.jakarta.servlet.api) // S2PaginationTag 시험 (TagSupport)
     testImplementation(libs.jakarta.servlet.jsp)
     testImplementation(libs.spring6.context) // S2AnnotationResolver, S2RestApiUtil 시험
