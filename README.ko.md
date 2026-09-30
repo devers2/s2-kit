@@ -164,6 +164,22 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 }
 ```
 
+#### PDF 병합 (`S2PdfUtil`)
+
+```java
+// 한글은 한글 TrueType 폰트가 필요. 지정하지 않으면 설치된 폰트를 찾고(SYSTEM_FONT_CANDIDATES),
+// 폰트가 전혀 없으면 '#'으로 깨지는 대신 예외
+S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+
+var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("보고서");
+try (InputStream pdf = S2PdfUtil.merge(List.of(
+        S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
+        S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
+        S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
+    pdf.transferTo(response.getOutputStream());
+}
+```
+
 #### SFTP (`S2SftpFileManagerImpl`)
 
 ```java

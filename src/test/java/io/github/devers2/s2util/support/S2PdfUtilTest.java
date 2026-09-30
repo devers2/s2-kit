@@ -460,6 +460,10 @@ class S2PdfUtilTest {
 
             try (PDDocument doc = Loader.loadPDF(pdfBytes)) {
                 assertEquals(1, doc.getNumberOfPages());
+                // The original document, not its bytes rendered as HTML (which also gave one page and hid the bug)
+                // | 원본 문서여야 함 (바이트를 HTML 로 렌더링해도 1쪽이 나와 버그를 가렸음)
+                var text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+                assertTrue(text.contains("Server PDF Document"), text);
             }
         }
     }

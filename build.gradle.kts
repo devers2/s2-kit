@@ -357,4 +357,5 @@ dependencies {
     testImplementation(libs.spring6.web)
     testImplementation(libs.spring.integration.sftp) // SFTP 통합 시험 (SpringSftpConfig)
     testImplementation(libs.sshd.sftp) // SFTP 통합 시험용 내장 SSH 서버 (Apache MINA SSHD)
+    testImplementation(libs.imageio.webp) // S2PdfUtil WebP 시험 (사용자는 필요할 때 직접 추가)
 }

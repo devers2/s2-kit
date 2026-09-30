@@ -38,6 +38,8 @@ before upgrading.
     created, `false` when it already existed), `delete` (`true` when deleted, `false` when absent; a path that cannot be
     deleted throws after the rest is removed), `getSize`, `fileToReader`/`fileToInputStream` (blank paths). Cleanup in
     `finally` blocks and cleaners uses the new `deleteQuietly`, which logs instead of throwing.
+  - `S2PdfUtil`: Korean (CJK) text with no Korean font available throws instead of printing `#` (install a Korean
+    font or call `setDefaultFont`); a missing font resource throws; `addPageNumbers` throws instead of returning `null`.
   - `FileManager.downloadRemoteFile` without a file manager follows the `writeFile` rule and does not overwrite.
 - **New encryption and password hash formats** (`s2v2:` prefix). `S2EncryptionUtil` uses AES-256-GCM, so a wrong password
   or modified data always fails; `S2HashUtil.hash` uses 310,000 PBKDF2 iterations and stores the count. Values written by
@@ -82,6 +84,11 @@ before upgrading.
   rotation. The password-based API stays deliberately slow (PBKDF2, about 70 ms per value) for occasional
   use with a password typed by a person. The two formats cannot be mixed; decrypting with the other API throws a message
   naming the right one.
+- `S2PdfUtil.merge(sources, MergeOptions)`: a bookmark per source (a PDF's own bookmarks move under it;
+  `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata.
+- `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`; without a configured font an
+  installed Korean TrueType font is used (`SYSTEM_FONT_CANDIDATES`: Malgun Gothic, NanumGothic, Noto Sans KR, ...).
+- `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).
 
 ### Security
 
@@ -144,4 +151,17 @@ before upgrading.
 - `S2MarkupUtil.removeTagContent` removes an unclosed tag to the end (`"<script>alert(1)"` used to survive). It is not
   an HTML sanitizer.
 - `s2.util.js` `S2Util.options` put HTML-escaped text into option values and labels (`A&B` became `A&amp;B`).
+- `S2PdfUtil` detected a PDF served without a PDF Content-Type as HTML: the header check compared the fourth byte of
+  `%PDF-` with `-`, so it never matched, and the PDF bytes were rendered as HTML (a garbage page, or an XML error). This
+  was the intermittent CI failure of the magic-byte test, which only counted pages; it now also checks the text.
+- `S2PdfUtil` Korean text: text and SVG sources could not use a font, so Korean became `#`; `<pre>`/monospace text fell
+  back to Courier. Monospace text now falls back to the default font for Korean glyphs, a missing font file throws,
+  and Korean text without any font throws instead of printing `#`.
+- `S2PdfUtil` images: WebP was documented but unsupported; it works when `com.twelvemonkeys.imageio:imageio-webp` is on
+  the classpath, and the error says so otherwise. Images are decoded once (JPEG is embedded as is), and images over
+  100 megapixels are refused before decoding. HTML is rendered straight to a file instead of a byte array; HTML/text/SVG
+  streams, stream images and URL downloads are limited (URL: `Content-Length` checked first).
+- `S2PdfUtil.merge` names the failing source ("병합 소스 #2 (IMAGE) 처리 실패: ...").
+- `S2PdfUtil.addPageNumbers` returned `null` on errors and when the page count was too large; it now throws. The page
+  number is centered by its width.
 - `S2PdfUtil` no longer calls `deleteOnExit` for every temporary file (the JVM kept every path until shutdown).

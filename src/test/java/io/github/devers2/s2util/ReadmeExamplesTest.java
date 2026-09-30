@@ -82,6 +82,23 @@ class ReadmeExamplesTest {
         assertTrue(S2HashUtil.verify(input, stored));
     }
 
+    /** Compiled, not run: it needs a font file and a network | 컴파일만 확인 (폰트 파일과 네트워크 필요) */
+    @SuppressWarnings("unused")
+    private static void pdfMerge(java.io.OutputStream responseOutput) throws Exception {
+        io.github.devers2.s2util.support.S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+
+        var options = io.github.devers2.s2util.support.S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true)
+                .title("보고서");
+        try (InputStream pdf = io.github.devers2.s2util.support.S2PdfUtil.merge(List.of(
+                io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
+                io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
+                io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png")
+                        .maxBytes(10_000_000)),
+                options)) {
+            pdf.transferTo(responseOutput);
+        }
+    }
+
     /** Compiled, not run: it would connect to a server | 컴파일만 확인 (실행하면 서버에 접속함) */
     @SuppressWarnings("unused")
     private static void sftp(InputStream inputStream) {
@@ -109,6 +126,7 @@ class ReadmeExamplesTest {
             assertTrue(text.contains("S2HashUtil.needsRehash(stored)"), readme);
             assertTrue(text.contains("S2EncryptionUtil.keyFromBase64(System.getenv(\"APP_ENCRYPTION_KEY\"))"), readme);
             assertTrue(text.contains("keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted"), readme);
+            assertTrue(text.contains("S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true)"), readme);
             assertTrue(text.contains("\"/etc/ssh/known_hosts_sftp\", false)"), readme);
             assertTrue(text.contains("S2JsonUtil.fromJson(json, MyDto.class)"), readme);
             assertFalse(text.contains("getBean("), readme);

@@ -48,6 +48,9 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
+      - name: Install a Korean font for the PDF tests
+        # S2PdfUtil refuses Korean text without a Korean font; NanumGothic is one of the fonts it looks up | 한글 폰트가 없으면 한글 PDF 시험이 건너뛰어지므로 설치
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fonts-nanum
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Build and Test

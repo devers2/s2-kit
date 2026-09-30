@@ -164,6 +164,22 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 }
 ```
 
+#### PDF merge (`S2PdfUtil`)
+
+```java
+// Korean needs a Korean TrueType font; without one an installed font is looked up (SYSTEM_FONT_CANDIDATES),
+// and Korean text without any font fails instead of printing '#'
+S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+
+var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("Report");
+try (InputStream pdf = S2PdfUtil.merge(List.of(
+        S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("Cover"),
+        S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
+        S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
+    pdf.transferTo(response.getOutputStream());
+}
+```
+
 #### SFTP (`S2SftpFileManagerImpl`)
 
 ```java

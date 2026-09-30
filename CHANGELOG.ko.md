@@ -34,6 +34,8 @@
     (처리기를 `null`로 호출했음), `makeDirectory`(새로 만들면 `true`, 이미 있으면 `false`), `delete`(삭제하면 `true`, 없으면 `false`,
     지울 수 없는 항목이 있으면 나머지를 지운 뒤 예외), `getSize`, `fileToReader`/`fileToInputStream`(빈 경로). `finally`·Cleaner 의 정리는
     예외 대신 로그를 남기는 새 `deleteQuietly`를 씁니다.
+  - `S2PdfUtil`: 한글 폰트가 없는데 한글(CJK)을 쓰면 `#` 대신 예외(한글 폰트를 설치하거나 `setDefaultFont` 호출), 없는 폰트 리소스는 예외,
+    `addPageNumbers`는 `null` 대신 예외.
   - 파일 관리자 없이 부르는 `FileManager.downloadRemoteFile`도 `writeFile` 규칙을 따라 덮어쓰지 않습니다.
 - **암호화·비밀번호 해시 형식 변경**(`s2v2:` 접두사). `S2EncryptionUtil`은 AES-256-GCM 이라 틀린 비밀번호나 변조된 데이터는 반드시
   실패합니다. `S2HashUtil.hash`는 PBKDF2 310,000 회를 쓰며 반복 횟수를 함께 저장합니다. 1.x 로 만든 값(접두사 없음)도 계속 복호화·검증되며,
@@ -69,6 +71,11 @@
   옛 값을 주 키로 옮깁니다. 단일 키 API 는 키 이름 `default`를 기록하므로 교체 후에도 그대로 읽힙니다. 비밀번호 방식은 사람이 입력한 비밀번호로 가끔
   쓰도록 일부러 느리게(PBKDF2, 1건 약 70ms) 유지합니다. 두 형식은 섞어 쓸 수 없으며, 다른 API 로 복호화하면 맞는 API 를 알려 주는 예외가
   납니다.
+- `S2PdfUtil.merge(sources, MergeOptions)`: 소스별 책갈피(PDF 의 기존 책갈피는 그 아래로, `PdfSource.title`), 쪽 번호(`pageNumbers`,
+  `pageNumberStyle`), 제목·작성자 문서 정보.
+- `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`. 폰트를 지정하지 않으면 설치된 한글 TrueType 폰트를
+  씁니다(`SYSTEM_FONT_CANDIDATES`: 맑은 고딕, 나눔고딕, Noto Sans KR 등).
+- `PdfSource.maxBytes(long)` (다운로드·메모리 이미지 소스 기본 100MB).
 
 ### 보안
 
@@ -122,4 +129,13 @@
 - `S2CollectionUtil.listSort`가 `NaN`·무한대를 실패 없이 정렬합니다.
 - `S2MarkupUtil.removeTagContent`가 닫히지 않은 태그를 끝까지 제거합니다(`"<script>alert(1)"`이 남았음). HTML 정화기는 아닙니다.
 - `s2.util.js`의 `S2Util.options`가 option 값·라벨에 HTML 이스케이프된 텍스트를 넣던 문제(`A&B` → `A&amp;B`)를 고쳤습니다.
+- `S2PdfUtil`이 PDF Content-Type 없이 받은 PDF 를 HTML 로 판별하던 문제: 헤더 검사가 `%PDF-`의 네 번째 바이트를 `-`와 비교해 한 번도 맞지 않았고,
+  PDF 바이트를 HTML 로 렌더링했습니다(쓰레기 쪽 또는 XML 오류). 쪽 수만 세던 매직 바이트 시험의 CI 간헐 실패 원인이었으며, 이제 글자 내용도 확인합니다.
+- `S2PdfUtil` 한글: 텍스트·SVG 소스는 폰트를 쓸 수 없어 한글이 `#`이 되었고, `<pre>`/고정폭 글자는 Courier 로 표시되었습니다. 고정폭 글자도 한글은
+  기본 폰트로 대체하며, 없는 폰트 파일은 예외, 폰트 없이 한글을 쓰면 `#` 대신 예외입니다.
+- `S2PdfUtil` 이미지: WebP 는 문서에만 있고 지원되지 않았습니다. `com.twelvemonkeys.imageio:imageio-webp`가 있으면 동작하며 없으면 그렇게 알려 줍니다.
+  이미지는 한 번만 디코딩하고(JPEG 는 원본 그대로), 1억 픽셀을 넘으면 디코딩 전에 거부합니다. HTML 은 바이트 배열 대신 파일로 바로 렌더링하고,
+  HTML·텍스트·SVG 스트림, 스트림 이미지, URL 다운로드에 크기 한도를 둡니다(URL 은 `Content-Length`를 먼저 확인).
+- `S2PdfUtil.merge`가 실패한 소스를 알려 줍니다("병합 소스 #2 (IMAGE) 처리 실패: ...").
+- `S2PdfUtil.addPageNumbers`가 오류나 너무 큰 쪽 수에 `null`을 돌려주던 것을 예외로 바꿨습니다. 쪽 번호는 폭에 맞춰 가운데 정렬합니다.
 - `S2PdfUtil`이 임시 파일마다 `deleteOnExit`를 호출하지 않습니다(JVM 종료 때까지 모든 경로를 메모리에 보관했음).
