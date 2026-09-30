@@ -1,1 +1,0 @@
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=io.github.devers2.s2util.spring.S2AutoConfiguration

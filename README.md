@@ -23,7 +23,7 @@
 - **📑 PDF Engine & Multi-Format Merge** — High-fidelity HTML/image/text/SVG to PDF conversion, sequence-guaranteed multi-format merging, async distributed URL pre-fetch, zero-leak disk stream caching, and batch page numbering via `S2PdfUtil`
 - **📁 File Management** — Local and remote (SFTP/JSch) file operations via `FileManager`, `S2File`, `S2RemoteFile`
 - **📄 Pagination** — Ready-to-use `S2PaginationInfo`, `S2PaginationTag`, and `S2SearchVO` for list/search UIs
-- **🍃 Spring Utilities** — `S2ContextUtil`, `S2AutoConfiguration`, `S2AnnotationResolver`, `S2RestApiUtil` for Spring-based apps
+- **🍃 Spring Utilities** — `S2ContextUtil` (AOP join point parameters), `S2AnnotationResolver`, `S2RestApiUtil` for Spring-based apps
 - **🔧 General Helpers** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ Data Structures** — `S2LruMap` (LRU cache backed by `LinkedHashMap`)
 
@@ -120,23 +120,53 @@ dependencies {
 
 ### 2. Usage Examples
 
-#### Pagination (`S2PaginationInfo`)
+#### Pagination (`S2SearchVO`, `S2PaginationInfo`, `<s2:pagination>`)
 
 ```java
-S2PaginationInfo pagination = new S2PaginationInfo();
-pagination.setCurrentPageNo(1);
-pagination.setRecordCountPerPage(10);
-pagination.setPageSize(5);
-pagination.setTotalRecordCount(150);
+// S2SearchVO binds pageNo, pageUnit, orderBy, searchKeyword ... from the request
+List<Board> list = boardMapper.selectList(searchVO);   // LIMIT #{pageUnit} OFFSET #{firstIndex}
+long total = boardMapper.selectCount(searchVO);
+S2PaginationInfo<Board> page = new S2PaginationInfo<>(searchVO, list, total);
 
-int offset = pagination.getFirstRecordIndex(); // 0
+// Sort columns: only identifiers survive; pass the allowed columns for ORDER BY ${column}
+List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "TITLE"));
 ```
 
-#### Spring Context Access (`S2ContextUtil`)
+```jsp
+<%@ taglib prefix="s2" uri="http://ext.s2.kr/taglib/tags" %>
+<s2:pagination paginationInfo="${page}" jsFunction="fn_list" jsParam="${boardType}" />
+<%-- renders onclick="fn_list('notice', 2);" with jsParam escaped --%>
+```
+
+#### Encryption and password hashing (`S2EncryptionUtil`, `S2HashUtil`)
 
 ```java
-// Access Spring-managed beans statically anywhere in your application
-MyService service = S2ContextUtil.getBean(MyService.class);
+String encrypted = S2EncryptionUtil.encrypt("secret text", key);   // "s2v2:..." (AES-256-GCM)
+String plain = S2EncryptionUtil.decrypt(encrypted, key);           // wrong key → GeneralSecurityException
+
+String stored = S2HashUtil.hash(password);                          // PBKDF2, iteration count stored
+if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
+    stored = S2HashUtil.hash(input);                                // upgrade 1.x hashes after login
+}
+```
+
+#### SFTP (`S2SftpFileManagerImpl`)
+
+```java
+// The server host key is verified against known_hosts (~/.ssh/known_hosts when null)
+FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/keys/id_ed25519", null, null,
+        null, null, null, "/etc/ssh/known_hosts_sftp", false);
+sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as the name is rejected
+```
+
+#### AOP parameters (`S2ContextUtil`)
+
+```java
+@Before("@annotation(audited)")
+public void audit(JoinPoint joinPoint, Audited audited) {
+    // A parameter named userId, or a userId field of a VO/Map argument
+    Object userId = S2ContextUtil.getJoinPointParameter(joinPoint, "userId");
+}
 ```
 
 #### JSON Helpers (`S2JsonUtil`, s2-core)

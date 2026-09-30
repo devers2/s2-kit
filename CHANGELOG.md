@@ -37,6 +37,8 @@ before upgrading.
   or modified data always fails; `S2HashUtil.hash` uses 310,000 PBKDF2 iterations and stores the count. Values written by
   1.x (no prefix) are still decrypted and verified; `S2EncryptionUtil.isLegacyFormat` and `S2HashUtil.needsRehash` tell
   when to re-save them.
+- **`S2AutoConfiguration` was removed** with `META-INF/spring.factories` and the `AutoConfiguration.imports` entry. It only
+  created a logger; nothing needs to be configured.
 - **jsch** moved to the maintained fork `com.github.mwiede:jsch` (same `com.jcraft.jsch` package; supports rsa-sha2 and
   current OpenSSH servers).
 
@@ -74,4 +76,6 @@ before upgrading.
   right after the result is written instead of in a JVM shutdown hook added per call.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
+- README examples used APIs that do not exist (`S2ContextUtil.getBean`, `S2PaginationInfo` setters). They were replaced,
+  and a test compiles them.
 - `S2PdfUtil` no longer calls `deleteOnExit` for every temporary file (the JVM kept every path until shutdown).

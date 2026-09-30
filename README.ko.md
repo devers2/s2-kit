@@ -23,7 +23,7 @@
 - **📑 PDF 엔진 & 멀티 포맷 병합** — `S2PdfUtil`을 통한 HTML/이미지/텍스트/SVG → PDF 변환, 이종 포맷 순서 보장 병합, 원격 URL 비동기 분산 프리페치, 메모리 누수 방지 디스크 캐시 및 페이지 번호 각인
 - **📁 파일 관리** — `FileManager`, `S2File`, `S2RemoteFile`을 통한 로컬 및 원격(SFTP/JSch) 파일 처리
 - **📄 페이징** — 목록/검색 UI를 위한 `S2PaginationInfo`, `S2PaginationTag`, `S2SearchVO` 제공
-- **🍃 Spring 유틸리티** — Spring 기반 앱을 위한 `S2ContextUtil`, `S2AutoConfiguration`, `S2AnnotationResolver`, `S2RestApiUtil`
+- **🍃 Spring 유틸리티** — Spring 기반 앱을 위한 `S2ContextUtil`(AOP 조인포인트 파라미터), `S2AnnotationResolver`, `S2RestApiUtil`
 - **🔧 범용 헬퍼** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ 자료구조** — `S2LruMap` (`LinkedHashMap` 기반 LRU 캐시)
 
@@ -120,23 +120,53 @@ dependencies {
 
 ### 2. 주요 사용법 (Usage Examples)
 
-#### 페이징 (`S2PaginationInfo`)
+#### 페이징 (`S2SearchVO`, `S2PaginationInfo`, `<s2:pagination>`)
 
 ```java
-S2PaginationInfo pagination = new S2PaginationInfo();
-pagination.setCurrentPageNo(1);
-pagination.setRecordCountPerPage(10);
-pagination.setPageSize(5);
-pagination.setTotalRecordCount(150);
+// S2SearchVO 는 요청의 pageNo, pageUnit, orderBy, searchKeyword ... 를 바인딩
+List<Board> list = boardMapper.selectList(searchVO);   // LIMIT #{pageUnit} OFFSET #{firstIndex}
+long total = boardMapper.selectCount(searchVO);
+S2PaginationInfo<Board> page = new S2PaginationInfo<>(searchVO, list, total);
 
-int offset = pagination.getFirstRecordIndex(); // 0
+// 정렬 컬럼: 식별자만 남으며, ORDER BY ${column}에 쓸 때는 허용 컬럼을 지정
+List<Map<String, String>> orderBy = searchVO.getOrderByList(List.of("REG_DT", "TITLE"));
 ```
 
-#### Spring 컨텍스트 접근 (`S2ContextUtil`)
+```jsp
+<%@ taglib prefix="s2" uri="http://ext.s2.kr/taglib/tags" %>
+<s2:pagination paginationInfo="${page}" jsFunction="fn_list" jsParam="${boardType}" />
+<%-- onclick="fn_list('notice', 2);" 로 렌더링되며 jsParam 은 이스케이프됨 --%>
+```
+
+#### 암호화·비밀번호 해시 (`S2EncryptionUtil`, `S2HashUtil`)
 
 ```java
-// 애플리케이션 어디서나 Spring 빈을 정적으로 조회
-MyService service = S2ContextUtil.getBean(MyService.class);
+String encrypted = S2EncryptionUtil.encrypt("비밀 문자열", key);    // "s2v2:..." (AES-256-GCM)
+String plain = S2EncryptionUtil.decrypt(encrypted, key);           // 틀린 키 → GeneralSecurityException
+
+String stored = S2HashUtil.hash(password);                          // PBKDF2, 반복 횟수 함께 저장
+if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
+    stored = S2HashUtil.hash(input);                                // 로그인 성공 시 1.x 해시 갱신
+}
+```
+
+#### SFTP (`S2SftpFileManagerImpl`)
+
+```java
+// 서버 호스트 키를 known_hosts 로 검증 (null 이면 ~/.ssh/known_hosts)
+FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/keys/id_ed25519", null, null,
+        null, null, null, "/etc/ssh/known_hosts_sftp", false);
+sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에 "../x" 는 거부됨
+```
+
+#### AOP 파라미터 (`S2ContextUtil`)
+
+```java
+@Before("@annotation(audited)")
+public void audit(JoinPoint joinPoint, Audited audited) {
+    // userId 라는 파라미터, 또는 VO/Map 인자의 userId 필드
+    Object userId = S2ContextUtil.getJoinPointParameter(joinPoint, "userId");
+}
 ```
 
 #### JSON 헬퍼 (`S2JsonUtil`, s2-core)
