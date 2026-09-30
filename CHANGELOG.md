@@ -85,7 +85,8 @@ before upgrading.
   use with a password typed by a person. The two formats cannot be mixed; decrypting with the other API throws a message
   naming the right one.
 - `S2PdfUtil.merge(sources, MergeOptions)`: a bookmark per source (a PDF's own bookmarks move under it;
-  `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata.
+  `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata. `pageNumbers(skipFirst, skipLast)` leaves out leading and trailing
+  pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`).
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`; without a configured font an
   installed Korean TrueType font is used (`SYSTEM_FONT_CANDIDATES`: Malgun Gothic, NanumGothic, Noto Sans KR, ...).
 - `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).

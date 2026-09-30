@@ -1696,6 +1696,8 @@ public class S2PdfUtil {
     public static final class MergeOptions {
         private boolean bookmarks;
         private boolean pageNumbers;
+        private int pageNumberSkipFirst;
+        private int pageNumberSkipLast;
         private float pageNumberFontSize = 10f;
         private String pageNumberFormat = "%d / %d";
         private String title;
@@ -1731,6 +1733,25 @@ public class S2PdfUtil {
          */
         public MergeOptions pageNumbers(boolean pageNumbers) {
             this.pageNumbers = pageNumbers;
+            return this;
+        }
+
+        /**
+         * 앞쪽 {@code skipFirst} 쪽(표지, 목차 등)과 뒤쪽 {@code skipLast} 쪽(부록, 뒤표지 등)을 빼고 나머지 쪽에만 번호를 넣는다. 번호는 나머지 쪽 기준이다
+         * (전체 10쪽에서 앞 1쪽, 뒤 2쪽을 빼면 2~8번째 쪽에 {@code "1 / 7"} ~ {@code "7 / 7"}). 쪽 번호를 켠다.
+         *
+         * @param skipFirst 번호를 넣지 않을 앞쪽 수 (0 이상)
+         * @param skipLast  번호를 넣지 않을 뒤쪽 수 (0 이상)
+         * @return 이 옵션
+         * @throws IllegalArgumentException 음수일 때. 병합 결과에 번호를 넣을 쪽이 남지 않으면 병합이 예외로 끝난다
+         */
+        public MergeOptions pageNumbers(int skipFirst, int skipLast) {
+            if (skipFirst < 0 || skipLast < 0) {
+                throw new IllegalArgumentException("제외할 쪽 수는 0 이상이어야 합니다: 앞 " + skipFirst + ", 뒤 " + skipLast);
+            }
+            this.pageNumberSkipFirst = skipFirst;
+            this.pageNumberSkipLast = skipLast;
+            this.pageNumbers = true;
             return this;
         }
 
@@ -2454,7 +2475,13 @@ public class S2PdfUtil {
             if (options.pageNumbers) {
                 var numbered = createTrackedTempFile("numbered", ".pdf", intermediateTempFiles);
                 try (var doc = Loader.loadPDF(finalMergedTempFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
-                    stampPageNumbers(doc, 0, doc.getNumberOfPages(), options.pageNumberFontSize,
+                    var total = doc.getNumberOfPages();
+                    var numberedPages = total - options.pageNumberSkipFirst - options.pageNumberSkipLast;
+                    if (numberedPages < 1) {
+                        throw new IllegalArgumentException("쪽 번호를 넣을 쪽이 없습니다: 전체 " + total + "쪽에서 앞 "
+                                + options.pageNumberSkipFirst + "쪽, 뒤 " + options.pageNumberSkipLast + "쪽 제외");
+                    }
+                    stampPageNumbers(doc, options.pageNumberSkipFirst, numberedPages, options.pageNumberFontSize,
                             new PDType1Font(Standard14Fonts.FontName.HELVETICA), options.pageNumberFormat);
                     doc.save(numbered.toFile());
                 }

@@ -172,6 +172,7 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
 
 var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("보고서");
+// 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
 try (InputStream pdf = S2PdfUtil.merge(List.of(
         S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
         S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),

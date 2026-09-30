@@ -172,6 +172,8 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
 
 var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("Report");
+// Skip the cover and contents (first 2 pages) and the appendix (last page), numbering the rest "1 / N":
+// MergeOptions.create().pageNumbers(2, 1)
 try (InputStream pdf = S2PdfUtil.merge(List.of(
         S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("Cover"),
         S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),

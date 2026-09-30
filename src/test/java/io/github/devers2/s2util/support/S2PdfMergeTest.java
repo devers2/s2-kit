@@ -245,6 +245,35 @@ class S2PdfMergeTest {
         assertThrows(java.util.IllegalFormatException.class, () -> MergeOptions.create().pageNumberStyle("%d %s %q", 10));
     }
 
+    private static String pageText(PDDocument doc, int page) throws IOException {
+        var stripper = new PDFTextStripper();
+        stripper.setStartPage(page);
+        stripper.setEndPage(page);
+        return stripper.getText(doc);
+    }
+
+    @Test
+    void pageNumbersCanSkipFirstAndLastPages() throws IOException {
+        // cover (1) + chapters (2) + body (1) + back cover (1) = 5 pages | 표지 1 + 본문 2 + 본문 1 + 뒤표지 1 = 5쪽
+        var sources = List.of(PdfSource.ofText("cover"), PdfSource.ofPdf(chapterPdf()), PdfSource.ofText("body"),
+                PdfSource.ofText("back"));
+        try (var doc = load(S2PdfUtil.merge(sources, MergeOptions.create().pageNumbers(1, 1)))) {
+            assertEquals(5, doc.getNumberOfPages());
+            assertFalse(pageText(doc, 1).contains(" / "), "cover has no number");
+            assertTrue(pageText(doc, 2).contains("1 / 3"), pageText(doc, 2));
+            assertTrue(pageText(doc, 3).contains("2 / 3"));
+            assertTrue(pageText(doc, 4).contains("3 / 3"));
+            assertFalse(pageText(doc, 5).contains(" / "), "back cover has no number");
+        }
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("a"), PdfSource.ofText("b")),
+                MergeOptions.create().pageNumbers(1, 0).pageNumberStyle("- %d -", 10)))) {
+            assertTrue(pageText(doc, 2).contains("- 1 -"), "style keeps the skipped pages");
+        }
+        assertThrows(IllegalArgumentException.class, () -> MergeOptions.create().pageNumbers(-1, 0));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.merge(
+                List.of(PdfSource.ofText("only")), MergeOptions.create().pageNumbers(1, 0)));
+    }
+
     @Test
     void addPageNumbersFailsLoudly() throws IOException {
         var pdf = chapterPdf();

@@ -72,7 +72,8 @@
   쓰도록 일부러 느리게(PBKDF2, 1건 약 70ms) 유지합니다. 두 형식은 섞어 쓸 수 없으며, 다른 API 로 복호화하면 맞는 API 를 알려 주는 예외가
   납니다.
 - `S2PdfUtil.merge(sources, MergeOptions)`: 소스별 책갈피(PDF 의 기존 책갈피는 그 아래로, `PdfSource.title`), 쪽 번호(`pageNumbers`,
-  `pageNumberStyle`), 제목·작성자 문서 정보.
+  `pageNumberStyle`), 제목·작성자 문서 정보. `pageNumbers(skipFirst, skipLast)`는 앞·뒤 쪽(표지, 목차, 부록 등)을 빼고 나머지 쪽에만 그
+  쪽들 기준 번호(`1 / N`)를 넣습니다.
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`. 폰트를 지정하지 않으면 설치된 한글 TrueType 폰트를
   씁니다(`SYSTEM_FONT_CANDIDATES`: 맑은 고딕, 나눔고딕, Noto Sans KR 등).
 - `PdfSource.maxBytes(long)` (다운로드·메모리 이미지 소스 기본 100MB).
