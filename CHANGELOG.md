@@ -107,6 +107,14 @@ before upgrading.
   The order and the error message (the first failing source in order) stay the same; the first request for 4
   documents went from 9.8 s to 4.8 s (the slowest one). Conversions run on a pool made for each merge, so they never
   block the shared pool the URL downloads use.
+- Image resolution: `MergeOptions.imageDpi(dpi)` (default 0 = keep) shrinks image sources and **images inside PDF
+  sources** to the dpi for their page size. Only images at least 1.2 times larger than needed are shrunk, read
+  subsampled so even 50-megapixel photos use little memory; JPEG is written as JPEG (quality 0.9), the rest
+  losslessly, and an image that would not get smaller is kept. 1-bit scans, JBIG2/CCITT/JPEG 2000 and images with
+  transparency masks inside PDFs are left alone. With the cache on, shrunk results are stored (48 scanned pages and
+  6 photos: 5.1 s first, then 0.29 s).
+- `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
+  same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
 - Watermarks: `MergeOptions.watermark(Watermark.of(image)...)` stamps an image on every page. Size both sides (`size`),
   the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
   one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered
@@ -186,6 +194,9 @@ before upgrading.
   saved from Word) no longer fail the whole conversion (prefixed attributes are removed, prefixed elements unwrapped).
 - SVG was never drawn: no SVG drawer was attached to the renderer, so `ofSvg` produced a blank page. With the module
   above it is drawn; without it `ofSvg` fails naming the dependency.
+- Photo orientation: portrait phone photos (EXIF orientation) came out lying on their side in PDFs and in
+  `S2ImageUtil` resize results. They are now upright; a JPEG kept at its size is not re-encoded but turned when drawn.
+  `S2ImageUtil` writes JPEG at quality 0.9 instead of ImageIO's default 0.75.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL

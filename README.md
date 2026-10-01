@@ -176,6 +176,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // MergeOptions.create().pageNumbers(2, 1)
 // Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
 //   MergeOptions.create().cache(true)
+// Shrink photos and scans to a resolution for their page (images inside PDF sources too; default 0 = keep)
+//   MergeOptions.create().imageDpi(200).cache(true)
 // Watermark (points, A4 = 595 x 842): 200 wide with the height in ratio, centered, 20% opaque
 //   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
 // A 60 x 60 seal 40 and 30 in from the bottom-right corner

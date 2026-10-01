@@ -22,7 +22,9 @@ package io.github.devers2.s2util.support;
 
 import java.awt.Color;
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,7 +35,9 @@ import java.util.Base64;
 import java.util.Locale;
 import java.util.Objects;
 
+import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2util.file.S2File;
@@ -145,7 +149,9 @@ public class S2ImageUtil {
             boolean isFixedRate) {
         Objects.requireNonNull(imageInputStream, "imageInputStream");
         try {
-            return resize(readImage(imageInputStream), maxWidth, maxHeight, isFixedRate);
+            var bytes = S2StreamUtil.streamToByteArray(imageInputStream, false);
+            var image = applyOrientation(readImage(new ByteArrayInputStream(bytes)), exifOrientation(bytes));
+            return resize(image, maxWidth, maxHeight, isFixedRate);
         } catch (IOException e) {
             throw new S2RuntimeException("이미지 크기 변경 실패", e);
         }
@@ -216,6 +222,200 @@ public class S2ImageUtil {
         return Base64.getEncoder().encodeToString(S2StreamUtil.streamToByteArray(inputStream, shouldCloseStream));
     }
 
+    /** JPEG quality used when this class writes JPEG | 이 클래스가 JPEG 를 쓸 때의 품질 */
+    public static final float JPEG_QUALITY = 0.9f;
+
+    /**
+     * Fits an image within {@code maxWidth} x {@code maxHeight} (keeping the ratio), upright per its EXIF orientation.
+     * Large images are read subsampled, so a 50-megapixel photo never needs its full size in memory. Returns the
+     * same array when nothing changes (already small enough and upright).
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 이미지를 비율을 지켜 {@code maxWidth} x {@code maxHeight} 안에 맞추고, EXIF 방향대로 바로 세운다. 큰 이미지는 처음부터 줄여 읽어(서브샘플링)
+     * 5천만 화소 사진도 원래 크기만큼 메모리를 쓰지 않는다. 바꿀 것이 없으면(이미 작고 바로 서 있으면) 같은 배열을 돌려준다.
+     * <ul>
+     * <li>형식: JPEG 는 JPEG(품질 {@link #JPEG_QUALITY}), 그 외는 PNG(투명도 유지, 무손실)로 쓴다.</li>
+     * <li>크기 비교는 바로 세운 뒤 기준이다 (세로 사진은 가로·세로가 바뀜).</li>
+     * </ul>
+     *
+     * @param image     이미지 바이트
+     * @param maxWidth  최대 너비 (픽셀)
+     * @param maxHeight 최대 높이 (픽셀)
+     * @return 맞춘 이미지 바이트, 바꿀 것이 없으면 {@code image} 그대로
+     * @throws S2RuntimeException 이미지가 아니거나 {@link #MAX_PIXELS}를 넘을 때
+     */
+    public static byte[] resizeToFit(byte[] image, int maxWidth, int maxHeight) {
+        Objects.requireNonNull(image, "image");
+        if (maxWidth < 1 || maxHeight < 1) {
+            throw new IllegalArgumentException("최대 크기는 1 이상이어야 합니다: " + maxWidth + "x" + maxHeight);
+        }
+        var orientation = exifOrientation(image);
+        var quarter = orientation >= 5;
+        try (var imageInput = ImageIO.createImageInputStream(new ByteArrayInputStream(image))) {
+            var readers = imageInput == null ? null : ImageIO.getImageReaders(imageInput);
+            if (readers == null || !readers.hasNext()) {
+                throw new IOException("이미지를 읽을 수 없습니다 (지원하지 않는 형식이거나 손상된 파일)");
+            }
+            var reader = readers.next();
+            BufferedImage decoded;
+            String format;
+            try {
+                reader.setInput(imageInput, true, true);
+                format = reader.getFormatName().toLowerCase(Locale.ROOT);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if ((long) width * height > MAX_PIXELS) {
+                    throw new IOException("이미지 해상도가 너무 큽니다: " + width + "x" + height);
+                }
+                // Limits in stored orientation | 저장된 방향 기준 한도
+                int limitW = quarter ? maxHeight : maxWidth;
+                int limitH = quarter ? maxWidth : maxHeight;
+                var scale = Math.min(1.0, Math.min((double) limitW / width, (double) limitH / height));
+                if (scale >= 1.0 && orientation <= 1) {
+                    return image;
+                }
+                var param = reader.getDefaultReadParam();
+                // Read at 1/2, 1/4 ... while still at least the target size | 목표 크기 이상인 범위에서 1/2, 1/4 ... 로 읽음
+                var step = Integer.highestOneBit(Math.max(1, (int) Math.floor(1 / scale)));
+                if (step > 1) {
+                    param.setSourceSubsampling(step, step, 0, 0);
+                }
+                decoded = reader.read(0, param);
+                decoded = resize(decoded, (int) Math.round(width * scale), (int) Math.round(height * scale), true);
+            } finally {
+                reader.dispose();
+            }
+            decoded = applyOrientation(decoded, orientation);
+            var jpeg = format.equals("jpeg") || format.equals("jpg");
+            return encode(decoded, jpeg ? "jpg" : "png");
+        } catch (IOException e) {
+            throw new S2RuntimeException("이미지 크기 맞추기 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Scales a decoded image to fit within the size, keeping the ratio (never enlarges) | 디코딩한 이미지를 비율을 지켜 크기 안에
+     * 맞춤 (키우지 않음)
+     *
+     * @param image     이미지
+     * @param maxWidth  최대 너비
+     * @param maxHeight 최대 높이
+     * @return 맞춘 이미지 (이미 작으면 같은 이미지)
+     */
+    public static BufferedImage scaleToFit(BufferedImage image, int maxWidth, int maxHeight) {
+        return resize(Objects.requireNonNull(image, "image"), maxWidth, maxHeight, true);
+    }
+
+    /**
+     * The EXIF orientation of a JPEG (1 = upright, 6 = turn 90 degrees clockwise, 3 = 180, 8 = 90 counter-clockwise,
+     * 2/4/5/7 mirrored); 1 when absent or not a JPEG. Phones store portrait photos sideways with this tag.
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * JPEG 의 EXIF 방향 (1 = 바로, 6 = 시계 방향 90도, 3 = 180도, 8 = 반시계 90도, 2/4/5/7 = 좌우 반전 포함). 없거나 JPEG 가 아니면 1. 휴대폰은 세로
+     * 사진을 옆으로 눕혀 저장하고 이 값을 붙인다.
+     *
+     * @param image 이미지 바이트
+     * @return 1 ~ 8
+     */
+    public static int exifOrientation(byte[] image) {
+        if (image == null || image.length < 4 || (image[0] & 0xFF) != 0xFF || (image[1] & 0xFF) != 0xD8) {
+            return 1;
+        }
+        var pos = 2;
+        while (pos + 4 <= image.length && (image[pos] & 0xFF) == 0xFF) {
+            var marker = image[pos + 1] & 0xFF;
+            var length = ((image[pos + 2] & 0xFF) << 8) | (image[pos + 3] & 0xFF);
+            if (marker == 0xDA || marker == 0xD9 || length < 2) {
+                break; // Image data starts; no more metadata | 이미지 데이터 시작
+            }
+            var start = pos + 4;
+            if (marker == 0xE1 && start + 14 <= image.length && image[start] == 'E' && image[start + 1] == 'x'
+                    && image[start + 2] == 'i' && image[start + 3] == 'f') {
+                var orientation = tiffOrientation(image, start + 6, Math.min(image.length, pos + 2 + length));
+                if (orientation > 0) {
+                    return orientation;
+                }
+            }
+            pos += 2 + length;
+        }
+        return 1;
+    }
+
+    private static int tiffOrientation(byte[] b, int tiff, int end) {
+        if (tiff + 8 > end) {
+            return 0;
+        }
+        var little = b[tiff] == 'I' && b[tiff + 1] == 'I';
+        if (!little && !(b[tiff] == 'M' && b[tiff + 1] == 'M')) {
+            return 0;
+        }
+        var ifd = tiff + (int) readInt(b, tiff + 4, 4, little);
+        if (ifd < tiff || ifd + 2 > end) {
+            return 0;
+        }
+        var count = (int) readInt(b, ifd, 2, little);
+        for (int i = 0; i < count; i++) {
+            var entry = ifd + 2 + i * 12;
+            if (entry + 12 > end) {
+                return 0;
+            }
+            if (readInt(b, entry, 2, little) == 0x0112) {
+                var value = (int) readInt(b, entry + 8, 2, little);
+                return value >= 1 && value <= 8 ? value : 0;
+            }
+        }
+        return 0;
+    }
+
+    private static long readInt(byte[] b, int at, int size, boolean little) {
+        long value = 0;
+        for (int i = 0; i < size; i++) {
+            var octet = b[at + (little ? size - 1 - i : i)] & 0xFF;
+            value = (value << 8) | octet;
+        }
+        return value;
+    }
+
+    /**
+     * Turns an image upright for its EXIF orientation | EXIF 방향대로 이미지를 바로 세움
+     *
+     * @param image       이미지
+     * @param orientation EXIF 방향 (1 ~ 8)
+     * @return 바로 세운 이미지 (1 이면 같은 이미지)
+     */
+    public static BufferedImage applyOrientation(BufferedImage image, int orientation) {
+        if (orientation <= 1 || orientation > 8) {
+            return image;
+        }
+        int w = image.getWidth();
+        int h = image.getHeight();
+        var quarter = orientation >= 5;
+        var transform = new AffineTransform();
+        switch (orientation) {
+        case 2 -> transform.setTransform(-1, 0, 0, 1, w, 0);
+        case 3 -> transform.setTransform(-1, 0, 0, -1, w, h);
+        case 4 -> transform.setTransform(1, 0, 0, -1, 0, h);
+        case 5 -> transform.setTransform(0, 1, 1, 0, 0, 0);
+        case 6 -> transform.setTransform(0, 1, -1, 0, h, 0);
+        case 7 -> transform.setTransform(0, -1, -1, 0, h, w);
+        case 8 -> transform.setTransform(0, -1, 1, 0, 0, w);
+        default -> {
+            return image;
+        }
+        }
+        var type = image.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+        var output = new BufferedImage(quarter ? h : w, quarter ? w : h, type);
+        var graphics = output.createGraphics();
+        try {
+            graphics.drawImage(image, transform, null);
+        } finally {
+            graphics.dispose();
+        }
+        return output;
+    }
+
     // ------------------------------------------------------------------------
 
     private static void requireFile(Path sourceFile) {
@@ -257,10 +457,10 @@ public class S2ImageUtil {
         }
     }
 
+    /** Reads and turns upright per EXIF, since re-encoding drops the tag | 읽고 EXIF 대로 바로 세움 (다시 쓰면 태그가 사라지므로) */
     private static BufferedImage readImage(Path file) throws IOException {
-        try (var in = S2StreamUtil.getBufferedInputStream(Files.newInputStream(file))) {
-            return readImage(in);
-        }
+        var bytes = Files.readAllBytes(file);
+        return applyOrientation(readImage(new ByteArrayInputStream(bytes)), exifOrientation(bytes));
     }
 
     /** Reads the declared size first and refuses huge images before decoding | 선언된 크기를 먼저 읽어 거대한 이미지는 디코딩 전에 거부 */
@@ -342,6 +542,20 @@ public class S2ImageUtil {
             }
         }
         var out = new ByteArrayOutputStream();
+        if (format.equals("jpg") || format.equals("jpeg")) {
+            // An explicit quality: ImageIO's default (0.75) visibly blurs photos | 품질 지정: ImageIO 기본값(0.75)은 사진이 눈에 띄게 뭉개짐
+            var writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+            try (var output = ImageIO.createImageOutputStream(out)) {
+                var param = writer.getDefaultWriteParam();
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(JPEG_QUALITY);
+                writer.setOutput(output);
+                writer.write(null, new IIOImage(target, null, null), param);
+            } finally {
+                writer.dispose();
+            }
+            return out.toByteArray();
+        }
         if (!ImageIO.write(target, format, out)) {
             throw new IOException("이미지를 이 형식으로 쓸 수 없습니다: " + format);
         }

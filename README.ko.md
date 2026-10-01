@@ -175,6 +175,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
 // 변환 결과 캐시: 같은 문서·HTML 을 다시 병합하면 변환 없이 재사용 (요청마다 선택, 기본 꺼짐)
 //   MergeOptions.create().cache(true)
+// 사진·스캔 이미지를 쪽 기준 해상도로 줄이기 (PDF 소스 안의 이미지 포함, 기본 0 = 원본 유지)
+//   MergeOptions.create().imageDpi(200).cache(true)
 // 워터마크 (단위 pt, A4 = 595 x 842): 가로 200 에 세로는 비율대로, 가운데, 20% 불투명
 //   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
 // 오른쪽 아래에서 안쪽으로 40, 30 떨어진 60 x 60 직인

@@ -90,6 +90,12 @@
   변환하고 나머지는 기다림). 순서와 오류 메시지(순서상 첫 실패 소스)는 그대로이며,
   문서 4건 병합의 첫 요청이 9.8초에서 4.8초(가장 느린 한 건의 시간)로 줄었습니다. 변환은 병합마다 만드는 전용 풀에서 실행해 URL 다운로드가
   쓰는 공용 풀을 막지 않습니다.
+- 이미지 해상도 맞추기: `MergeOptions.imageDpi(dpi)`(기본 0 = 원본 유지)는 이미지 소스와 **PDF 소스 안의 이미지**를 쪽 크기 기준 dpi 에
+  맞게 줄입니다. 목표보다 1.2 배 이상 클 때만 줄이고, 처음부터 줄여 읽어(서브샘플링) 5천만 화소 사진도 메모리를 적게 씁니다. JPEG 는 JPEG(품질
+  0.9)로, 그 외는 무손실로 다시 넣고, 다시 넣어도 작아지지 않으면 원본을 둡니다. 1비트(흑백 스캔), JBIG2·CCITT·JPEG2000, 투명 마스크가 있는 PDF
+  이미지는 건드리지 않습니다. 캐시를 켜면 줄인 결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
+- `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
+  `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만
   (`width`, 세로는 비율대로), 세로만(`height`, 가로는 비율대로) 정할 수 있고, 위치는 가운데와 8방향(`Position`), 간격은 `offset(x, y)`
   (가장자리 기준이면 안쪽으로, 가운데 기준인 축은 x 오른쪽·y 아래로), 불투명도는 `opacity`. 단위는 pt. 이미지는 한 번만 넣어 모든 쪽이
@@ -157,6 +163,8 @@
   지우고 접두어 요소는 내용을 남기고 벗김).
 - SVG 가 그려지지 않던 문제: 렌더러에 SVG 그리기 도구가 연결되지 않아 `ofSvg`가 빈 쪽을 냈습니다. 이제 위 모듈이 있으면 그리고, 없으면
   `ofSvg`는 필요한 의존성을 알려 주는 예외를 냅니다.
+- 사진 방향: 휴대폰으로 세로로 찍은 사진(EXIF 방향)이 PDF 와 `S2ImageUtil` 크기 변경 결과에서 옆으로 누워 나왔습니다. 이제 바로 세우며,
+  크기를 바꾸지 않는 JPEG 는 다시 압축하지 않고 PDF 에서 돌려 그립니다. `S2ImageUtil`이 JPEG 를 쓸 때 ImageIO 기본 품질(0.75) 대신 0.9 를 씁니다.
 - `S2FileUtil.deleteFilesOlderThan`은 접두사가 있으면 디렉토리를 지우지 않으며, 시작 디렉토리는 지우지 않습니다.
 - `licenses/NOTICE`가 OpenHTMLtoPDF 를 "LGPL 2.1 / MPL 2.0"으로 적고 있었습니다. 실제로는 LGPL 2.1 이상이며 MPL 2.0 을 쓰는 의존성이 없어
   `LICENSE-MPL-2.0`을 삭제했습니다. NOTICE 에 Spring Web, Spring Integration SFTP, JSR-305 를 추가하고, 컴파일 전용·선택 의존성을 표시하며,

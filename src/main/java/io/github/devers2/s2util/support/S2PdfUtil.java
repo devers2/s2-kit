@@ -1710,6 +1710,7 @@ public class S2PdfUtil {
         private String author;
         private Watermark watermark;
         private boolean cache;
+        private int imageDpi;
 
         private MergeOptions() {
         }
@@ -1823,6 +1824,25 @@ public class S2PdfUtil {
          */
         public MergeOptions cache(boolean cache) {
             this.cache = cache;
+            return this;
+        }
+
+        /**
+         * 이미지 소스와 PDF 소스 안의 이미지를 이 해상도(쪽 크기 기준 dpi)에 맞게 줄인다 (기본 0 = 원본 유지). 사진이 많은 문서의 결과 크기와 다운로드 시간이
+         * 크게 준다. 목표보다 충분히 클 때(1.2 배 이상)만 줄이고, JPEG 는 JPEG(품질 0.9)로, 그 외는 무손실로 다시 넣는다.
+         * <p>
+         * 기록물·증빙처럼 확대해서 세부를 봐야 하는 이미지가 있으면 쓰지 않거나 높게 둔다. 화면용은 150, 화면·인쇄 겸용은 200, 인쇄용은 300 정도가 알맞다.
+         * 1비트(흑백 스캔), JBIG2·CCITT·JPEG2000, 투명 마스크가 있는 PDF 이미지는 건드리지 않는다. 캐시를 켜면 줄인 결과를 저장한다.
+         * </p>
+         *
+         * @param dpi 72 이상, 0 이면 줄이지 않음
+         * @return 이 옵션
+         */
+        public MergeOptions imageDpi(int dpi) {
+            if (dpi != 0 && dpi < 72) {
+                throw new IllegalArgumentException("이미지 해상도는 72 dpi 이상이어야 합니다 (0 은 원본 유지): " + dpi);
+            }
+            this.imageDpi = dpi;
             return this;
         }
     }
@@ -2652,6 +2672,9 @@ public class S2PdfUtil {
                     Files.copy(source.inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
                     pdfFileToMerge = tempFile.toFile();
                 }
+                if (pdfFileToMerge != null && options.imageDpi > 0) {
+                    pdfFileToMerge = withSmallerImages(pdfFileToMerge.toPath(), options, intermediateTempFiles);
+                }
             }
             case HTML -> {
                 var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
@@ -2666,7 +2689,7 @@ public class S2PdfUtil {
             case IMAGE -> {
                 if (source.imageObj != null) {
                     var tempFile = createTrackedTempFile("img", ".pdf", intermediateTempFiles);
-                    renderImageToPdfFile(source.imageObj, null, tempFile);
+                    renderImageToPdfFile(source.imageObj, null, tempFile, options.imageDpi);
                     pdfFileToMerge = tempFile.toFile();
                 } else {
                     byte[] imageBytes;
@@ -2679,11 +2702,12 @@ public class S2PdfUtil {
                     } else {
                         imageBytes = S2StreamUtil.streamToByteArray(source.inputStream, false, source.maxBytes);
                     }
-                    // JPEG is embedded as is in milliseconds; caching it would only take space
-                    // | JPEG 는 그대로 넣어 몇 ms 면 끝나므로 캐시하면 공간만 차지함
-                    var key = options.cache && !isJpeg(imageBytes) ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
+                    // JPEG kept as is is embedded in milliseconds, so caching it would only take space; a shrunk one is worth keeping
+                    // | 그대로 넣는 JPEG 는 몇 ms 면 끝나 캐시하면 공간만 차지함. 줄이는 경우는 저장할 가치가 있음
+                    var key = options.cache && (!isJpeg(imageBytes) || options.imageDpi > 0)
+                            ? S2PdfCache.key("IMAGE").add(String.valueOf(options.imageDpi)).add(imageBytes) : null;
                     pdfFileToMerge = converted("img", intermediateTempFiles, key, target -> {
-                        renderImageToPdfFile(null, imageBytes, target);
+                        renderImageToPdfFile(null, imageBytes, target, options.imageDpi);
                         return true;
                     });
                 }
@@ -2749,7 +2773,8 @@ public class S2PdfUtil {
                     case PDF -> {
                         var tempFile = createTrackedTempFile("url_pdf", ".pdf", intermediateTempFiles);
                         Files.write(tempFile, fetched.data);
-                        pdfFileToMerge = tempFile.toFile();
+                        pdfFileToMerge = options.imageDpi > 0 ? withSmallerImages(tempFile, options, intermediateTempFiles)
+                                : tempFile.toFile();
                     }
                     case HTML -> {
                         // Images and stylesheets of the page are fetched and embedded (same origin, or
@@ -2769,9 +2794,10 @@ public class S2PdfUtil {
                                         source.cssPath, source.fontPath, clazz, source.cssSelectors));
                     }
                     case IMAGE -> {
-                        var key = options.cache && !isJpeg(fetched.data) ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
+                        var key = options.cache && (!isJpeg(fetched.data) || options.imageDpi > 0)
+                                ? S2PdfCache.key("IMAGE").add(String.valueOf(options.imageDpi)).add(fetched.data) : null;
                         pdfFileToMerge = converted("url_img", intermediateTempFiles, key, target -> {
-                            renderImageToPdfFile(null, fetched.data, target);
+                            renderImageToPdfFile(null, fetched.data, target, options.imageDpi);
                             return true;
                         });
                     }
@@ -3543,33 +3569,69 @@ public class S2PdfUtil {
     /** Largest image placed on a page (width × height), as in S2ImageUtil | 페이지에 넣을 최대 이미지 크기 (S2ImageUtil 과 동일) */
     private static final long MAX_IMAGE_PIXELS = S2ImageUtil.MAX_PIXELS;
 
+    private static void renderImageToPdfFile(BufferedImage bimg, byte[] rawBytes, Path targetPdfFile)
+            throws IOException {
+        renderImageToPdfFile(bimg, rawBytes, targetPdfFile, 0);
+    }
+
+    /** Content box of an A4 page with a 20pt margin, long and short side | 20pt 여백을 둔 A4 본문 영역 (긴 변, 짧은 변) */
+    private static final float IMAGE_BOX_LONG = PDRectangle.A4.getHeight() - 40;
+    private static final float IMAGE_BOX_SHORT = PDRectangle.A4.getWidth() - 40;
+    /** Shrinks only when the image is clearly larger than needed | 필요보다 확실히 클 때만 줄임 */
+    private static final double SHRINK_MARGIN = 1.2;
+
     /**
-     * Places an image on an A4 page (landscape for wide images, 20pt margin, centered). JPEG bytes are embedded as is
-     * without decoding; other formats are decoded once and stored losslessly.
+     * Places an image on an A4 page (landscape for wide images, 20pt margin, centered), upright per its EXIF
+     * orientation. A JPEG kept at its size is embedded as is (no re-encoding; turned by the page transform); with
+     * {@code dpi} > 0 an image clearly larger than the page needs is shrunk first.
      * <p>
      * <b>[한국어 설명]</b>
      * </p>
-     * 이미지를 A4 한 쪽에 넣는다(가로가 길면 가로 방향, 20pt 여백, 가운데). JPEG 는 디코딩 없이 원본 그대로 넣고, 그 외 형식은 한 번만 디코딩해 무손실로
-     * 넣는다. 해상도가 {@link S2ImageUtil#MAX_PIXELS}를 넘으면 디코딩 전에 거부한다.
+     * 이미지를 A4 한 쪽에 넣는다(가로가 길면 가로 방향, 20pt 여백, 가운데). EXIF 방향대로 바로 세운다. 크기를 유지하는 JPEG 는 다시 압축하지 않고 그대로
+     * 넣고 쪽 변환으로 돌린다. {@code dpi} 가 0 보다 크면 쪽에 필요한 것보다 확실히 큰 이미지는 먼저 줄인다. 해상도가 {@link S2ImageUtil#MAX_PIXELS}를
+     * 넘으면 디코딩 전에 거부한다.
      */
-    private static void renderImageToPdfFile(BufferedImage bimg, byte[] rawBytes, Path targetPdfFile)
+    private static void renderImageToPdfFile(BufferedImage bimg, byte[] rawBytes, Path targetPdfFile, int dpi)
             throws IOException {
         if (bimg == null && (rawBytes == null || rawBytes.length == 0)) {
             throw new IllegalArgumentException("[renderImageToPdfFile] image must not be null or empty.");
         }
         try (var doc = new PDDocument()) {
             PDImageXObject pdImage;
+            var orientation = 1;
             if (bimg != null) {
+                if (dpi > 0) {
+                    var limit = pixelLimit(bimg.getWidth(), bimg.getHeight(), dpi);
+                    if (needsShrinking(bimg.getWidth(), bimg.getHeight(), limit)) {
+                        bimg = S2ImageUtil.scaleToFit(bimg, limit[0], limit[1]);
+                    }
+                }
                 pdImage = LosslessFactory.createFromImage(doc, bimg);
-            } else if (isJpeg(rawBytes)) {
-                checkImageSize(rawBytes);
-                pdImage = JPEGFactory.createFromByteArray(doc, rawBytes);
             } else {
-                pdImage = LosslessFactory.createFromImage(doc, decodeImage(rawBytes));
+                var bytes = rawBytes;
+                if (isJpeg(bytes)) {
+                    checkImageSize(bytes);
+                    orientation = S2ImageUtil.exifOrientation(bytes);
+                }
+                if (dpi > 0) {
+                    var size = imageSize(bytes);
+                    var quarter = orientation >= 5;
+                    int shownWidth = quarter ? size[1] : size[0];
+                    int shownHeight = quarter ? size[0] : size[1];
+                    var limit = pixelLimit(shownWidth, shownHeight, dpi);
+                    if (needsShrinking(shownWidth, shownHeight, limit)) {
+                        // Returned upright, so no orientation is left to apply | 바로 세워서 돌려주므로 더 돌릴 것이 없음
+                        bytes = S2ImageUtil.resizeToFit(bytes, limit[0], limit[1]);
+                        orientation = 1;
+                    }
+                }
+                pdImage = isJpeg(bytes) ? JPEGFactory.createFromByteArray(doc, bytes)
+                        : LosslessFactory.createFromImage(doc, decodeImage(bytes));
             }
 
-            float imgWidth = pdImage.getWidth();
-            float imgHeight = pdImage.getHeight();
+            var quarter = orientation >= 5;
+            float imgWidth = quarter ? pdImage.getHeight() : pdImage.getWidth();
+            float imgHeight = quarter ? pdImage.getWidth() : pdImage.getHeight();
             var pageSize = imgWidth > imgHeight
                     ? new PDRectangle(PDRectangle.A4.getHeight(), PDRectangle.A4.getWidth())
                     : PDRectangle.A4;
@@ -3585,9 +3647,147 @@ public class S2PdfUtil {
             var page = new PDPage(pageSize);
             doc.addPage(page);
             try (var contentStream = new PDPageContentStream(doc, page)) {
-                contentStream.drawImage(pdImage, x, y, drawWidth, drawHeight);
+                contentStream.drawImage(pdImage, orientedImageMatrix(orientation, x, y, drawWidth, drawHeight));
             }
             doc.save(targetPdfFile.toFile());
+        }
+    }
+
+    /** Pixel limit {width, height} for an image shown at this size on the A4 content box | A4 본문 영역에 맞춘 픽셀 한도 */
+    private static int[] pixelLimit(int shownWidth, int shownHeight, int dpi) {
+        var landscape = shownWidth > shownHeight;
+        var boxWidth = landscape ? IMAGE_BOX_LONG : IMAGE_BOX_SHORT;
+        var boxHeight = landscape ? IMAGE_BOX_SHORT : IMAGE_BOX_LONG;
+        return new int[] { Math.max(1, Math.round(boxWidth / 72f * dpi)), Math.max(1, Math.round(boxHeight / 72f * dpi)) };
+    }
+
+    private static boolean needsShrinking(int width, int height, int[] limit) {
+        return Math.min((double) limit[0] / width, (double) limit[1] / height) < 1 / SHRINK_MARGIN;
+    }
+
+    private static int[] imageSize(byte[] bytes) throws IOException {
+        return withImageReader(bytes, reader -> new int[] { reader.getWidth(0), reader.getHeight(0) });
+    }
+
+    /**
+     * Maps the image's unit square to the box (x, y, w, h) on the page so the stored image appears upright for its EXIF
+     * orientation | 이미지 단위 사각형을 쪽의 (x, y, w, h) 로 옮기며 EXIF 방향대로 바로 보이게 함
+     */
+    private static org.apache.pdfbox.util.Matrix orientedImageMatrix(int orientation, float x, float y, float w, float h) {
+        return switch (orientation) {
+        case 2 -> new org.apache.pdfbox.util.Matrix(-w, 0, 0, h, x + w, y);
+        case 3 -> new org.apache.pdfbox.util.Matrix(-w, 0, 0, -h, x + w, y + h);
+        case 4 -> new org.apache.pdfbox.util.Matrix(w, 0, 0, -h, x, y + h);
+        case 5 -> new org.apache.pdfbox.util.Matrix(0, -h, -w, 0, x + w, y + h);
+        case 6 -> new org.apache.pdfbox.util.Matrix(0, -h, w, 0, x, y + h);
+        case 7 -> new org.apache.pdfbox.util.Matrix(0, h, w, 0, x, y);
+        case 8 -> new org.apache.pdfbox.util.Matrix(0, h, -w, 0, x + w, y);
+        default -> new org.apache.pdfbox.util.Matrix(w, 0, 0, h, x, y);
+        };
+    }
+
+    /**
+     * A PDF source with its images shrunk to the requested dpi, through the conversion cache; the original when
+     * nothing needed shrinking | 이미지를 요청한 dpi 에 맞게 줄인 PDF 소스 (변환 결과 캐시 거침). 줄일 것이 없으면 원본
+     */
+    private static File withSmallerImages(Path pdf, MergeOptions options, List<Path> intermediateTempFiles)
+            throws IOException {
+        var key = options.cache ? S2PdfCache.key("PDF-IMAGES").add(String.valueOf(options.imageDpi)).addFile(pdf).hex() : null;
+        var target = createTrackedTempFile("pdf_img", ".pdf", intermediateTempFiles);
+        if (key != null && S2PdfCache.restore(key, target)) {
+            return target.toFile();
+        }
+        if (!shrinkPdfImages(pdf, target, options.imageDpi)) {
+            return pdf.toFile();
+        }
+        if (key != null) {
+            S2PdfCache.store(key, target);
+        }
+        return target.toFile();
+    }
+
+    /**
+     * Shrinks images inside a PDF that are clearly larger than their page needs at {@code dpi} (an image never needs
+     * more than its whole page). Returns false, writing nothing, when no image changed | PDF 안의 이미지 중 쪽에 dpi 로 필요한 것보다 확실히
+     * 큰 것을 줄인다 (이미지는 쪽 전체보다 클 필요가 없음). 바뀐 것이 없으면 아무것도 쓰지 않고 false
+     */
+    static boolean shrinkPdfImages(Path source, Path target, int dpi) throws IOException {
+        try (var doc = Loader.loadPDF(source.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+            var done = new java.util.IdentityHashMap<org.apache.pdfbox.cos.COSBase, PDImageXObject>();
+            var changed = false;
+            for (var page : doc.getPages()) {
+                var box = page.getMediaBox();
+                var longSide = Math.round(Math.max(box.getWidth(), box.getHeight()) / 72f * dpi);
+                var shortSide = Math.round(Math.min(box.getWidth(), box.getHeight()) / 72f * dpi);
+                changed |= shrinkImages(doc, page.getResources(), longSide, shortSide, done, 0);
+            }
+            if (changed) {
+                doc.save(target.toFile());
+            }
+            return changed;
+        }
+    }
+
+    private static boolean shrinkImages(PDDocument doc, org.apache.pdfbox.pdmodel.PDResources resources, int longSide,
+            int shortSide, java.util.Map<org.apache.pdfbox.cos.COSBase, PDImageXObject> done, int depth)
+            throws IOException {
+        if (resources == null || depth > 8) {
+            return false;
+        }
+        var changed = false;
+        for (var name : resources.getXObjectNames()) {
+            var xobject = resources.getXObject(name);
+            if (xobject instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject form) {
+                changed |= shrinkImages(doc, form.getResources(), longSide, shortSide, done, depth + 1);
+            } else if (xobject instanceof PDImageXObject image) {
+                // Shared images are shrunk once | 함께 쓰는 이미지는 한 번만 줄임
+                var replacement = done.get(image.getCOSObject());
+                if (replacement == null) {
+                    var shrunk = shrinkPdfImage(doc, image, longSide, shortSide);
+                    replacement = shrunk != null ? shrunk : image;
+                    done.put(image.getCOSObject(), replacement);
+                }
+                if (replacement != image) {
+                    resources.put(name, replacement);
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static PDImageXObject shrinkPdfImage(PDDocument doc, PDImageXObject image, int longSide, int shortSide) {
+        try {
+            var cos = image.getCOSObject();
+            // Left alone: masks and transparency, 1-bit scans, and codecs already compact or not decodable here
+            // | 그대로 둠: 마스크·투명도, 1비트 스캔, 이미 작거나 여기서 풀 수 없는 코덱
+            if (image.isStencil() || image.getBitsPerComponent() == 1 || cos.getItem(COSName.SMASK) != null
+                    || cos.getItem(COSName.MASK) != null) {
+                return null;
+            }
+            var filters = image.getStream().getFilters();
+            if (filters.contains(COSName.JBIG2_DECODE) || filters.contains(COSName.CCITTFAX_DECODE)
+                    || filters.contains(COSName.JPX_DECODE)) {
+                return null;
+            }
+            int width = image.getWidth();
+            int height = image.getHeight();
+            var scale = Math.min((double) longSide / Math.max(width, height), (double) shortSide / Math.min(width, height));
+            if (scale >= 1 / SHRINK_MARGIN) {
+                return null;
+            }
+            var step = Integer.highestOneBit(Math.max(1, (int) Math.floor(1 / scale)));
+            var decoded = image.getImage(null, step);
+            decoded = S2ImageUtil.scaleToFit(decoded, (int) Math.max(1, Math.round(width * scale)),
+                    (int) Math.max(1, Math.round(height * scale)));
+            var shrunk = filters.contains(COSName.DCT_DECODE)
+                    ? JPEGFactory.createFromImage(doc, decoded, S2ImageUtil.JPEG_QUALITY)
+                    : LosslessFactory.createFromImage(doc, decoded);
+            // Keep the original when re-encoding did not make it smaller | 다시 넣어도 작아지지 않으면 원본 유지
+            return shrunk.getCOSObject().getLength() < cos.getLength() ? shrunk : null;
+        } catch (IOException | RuntimeException e) {
+            logger.warn("PDF 안의 이미지를 줄이지 못해 그대로 둡니다: {}", e.getMessage());
+            return null;
         }
     }
 
