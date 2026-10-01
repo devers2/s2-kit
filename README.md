@@ -176,6 +176,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // MergeOptions.create().pageNumbers(2, 1)
 // Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
 //   MergeOptions.create().cache(true)
+// Mixed attachment lists (database): kind from an original name, extension or MIME hint, then the name, then the content
+//   S2PdfUtil.PdfSource.of(Path.of(storedPath), originalName)   // filter first: S2PdfUtil.isMergeable(originalName)
 // Markdown (needs the optional org.commonmark:commonmark and extensions): images from the same folder, no remote ones
 //   S2PdfUtil.PdfSource.ofMarkdown(Path.of("note.md"))
 //   HTML for a web page: S2MarkdownUtil.toHtml(markdown) (HTML in the Markdown is shown as text, safe from XSS)

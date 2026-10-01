@@ -122,6 +122,13 @@ before upgrading.
   6 photos: 5.1 s first, then 0.29 s).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
   same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- Source kind detection: `PdfSource.of(Path | File | byte[] | InputStream [, hint])` tells the kind from a hint
+  (original file name, extension or MIME type), then the file name, then the content, and makes the matching source.
+  Mixed attachment lists from a database, stored under names without an extension (UUIDs), merge without branching.
+  Content detection reads the first bytes for PDF, images, SVG, HTML and RTF, zip entries for docx, xlsx, pptx, hwpx,
+  odt, ods and odp, and stream names for doc, xls, ppt and hwp; non-standard Hangul MIME types
+  (`application/x-hwp`, `application/haansofthwp`) are accepted. A file-name hint becomes the bookmark title.
+  `S2PdfUtil.isMergeable(name or MIME type)` filters a list beforehand.
 - Markdown: `S2MarkdownUtil.toHtml(markdown)` (CommonMark with GitHub-style tables, strikethrough, autolinks, task
   lists and heading anchors) and `PdfSource.ofMarkdown(...)`. Safe on a web page by default (HTML in the Markdown is
   shown as text, links only http, https, mailto and relative, `rel="nofollow"` on links). PDFs look like GitHub; a

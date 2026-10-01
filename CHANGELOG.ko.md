@@ -101,6 +101,11 @@
   결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
   `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- 소스 종류 자동 판별: `PdfSource.of(Path | File | byte[] | InputStream [, 힌트])`는 힌트(원래 파일명, 확장자, MIME 타입), 파일명, 내용 순으로
+  종류를 판별해 알맞은 소스를 만듭니다. DB 의 첨부 목록처럼 종류가 섞이고 저장 파일명에 확장자가 없는(UUID) 파일도 분기 없이 병합합니다. 내용
+  판별은 PDF·이미지·SVG·HTML·RTF 는 앞부분, docx·xlsx·pptx·hwpx·odt·ods·odp 는 압축 항목, doc·xls·ppt·hwp 는 내부 스트림 이름으로 하며, 한글
+  MIME 타입의 비표준 이름(`application/x-hwp`, `application/haansofthwp` 등)도 받습니다. 힌트가 파일명이면 책갈피 제목이 됩니다.
+  `S2PdfUtil.isMergeable(파일명 또는 MIME)`로 미리 거를 수 있습니다.
 - 마크다운: `S2MarkdownUtil.toHtml(markdown)`(CommonMark + GitHub 식 표·취소선·자동 링크·체크박스·제목 앵커)과 `PdfSource.ofMarkdown(...)`.
   기본값으로 웹 화면에 바로 넣어도 안전합니다(마크다운 안의 HTML 은 글자로, 링크는 http·https·mailto·상대 경로만, 링크에 `rel="nofollow"`).
   PDF 는 GitHub 와 비슷한 모양으로 렌더링하며, 파일로 준 마크다운은 같은 폴더(와 하위)의 이미지만 넣고(`../`·심볼릭 링크로 밖을 가리키면 제외)

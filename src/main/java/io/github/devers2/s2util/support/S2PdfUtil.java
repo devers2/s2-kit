@@ -2466,8 +2466,8 @@ public class S2PdfUtil {
         }
 
         /**
-         * 마크다운 소스를 만든다. {@link S2MarkdownUtil}로 HTML 로 바꿔(제목, 표, 코드 블록, 인용, 목록, 체크박스, 취소선) GitHub 와 비슷한 모양으로
-         * 렌더링한다. 마크다운 안의 HTML 태그는 글자로 보이고, 원격 이미지는 가져오지 않는다. CommonMark 의존성이 필요하다 ({@link S2MarkdownUtil} 참고).
+         * 마크다운 소스를 만든다. {@code S2MarkdownUtil}로 HTML 로 바꿔(제목, 표, 코드 블록, 인용, 목록, 체크박스, 취소선) GitHub 와 비슷한 모양으로
+         * 렌더링한다. 마크다운 안의 HTML 태그는 글자로 보이고, 원격 이미지는 가져오지 않는다. CommonMark 의존성이 필요하다 ({@code S2MarkdownUtil} 참고).
          *
          * @param markdown 마크다운
          * @return 마크다운 소스 (이미지 없음)
@@ -2532,6 +2532,171 @@ public class S2PdfUtil {
             } finally {
                 S2StreamUtil.closeStream(markdownStream);
             }
+        }
+
+        /**
+         * 파일의 종류를 판별해 알맞은 소스를 만든다 ({@link #of(Path, String)} 참고). 파일 이름의 확장자, 없으면 내용으로 판별한다.
+         *
+         * @param file 파일
+         * @return 판별한 종류의 소스
+         * @throws IOException              내용을 읽을 수 없을 때
+         * @throws IllegalArgumentException 지원하지 않거나 알 수 없는 형식일 때
+         */
+        public static PdfSource of(Path file) throws IOException {
+            return of(file, null);
+        }
+
+        /**
+         * 파일의 종류를 판별해 알맞은 소스({@code ofPdf}, {@code ofImage}, {@code ofDocument} 등)를 만든다. DB 에 저장된 첨부 목록처럼 종류가 섞인
+         * 파일들을 분기 없이 병합할 때 쓴다.
+         * <ol>
+         * <li>{@code hint}: 원래 파일명({@code 보고서.hwp}), 확장자({@code hwp}), MIME 타입({@code application/pdf}) 중 아무거나. 저장 파일명에
+         * 확장자가 없을 때(UUID 등) 넘긴다. {@code application/octet-stream} 같은 일반 타입은 건너뛴다.</li>
+         * <li>파일 이름의 확장자</li>
+         * <li>파일 내용: PDF, 이미지, SVG, HTML, RTF 는 앞부분으로, docx·xlsx·pptx·hwpx·odt·ods·odp 는 압축 항목으로, doc·xls·ppt·hwp 는 내부 스트림
+         * 이름으로 판별한다.</li>
+         * </ol>
+         * 힌트가 파일명이면 책갈피 제목과 오류 메시지에 그 이름을 쓴다. 판별 뒤의 처리(변환, 보안 규칙)는 해당 {@code ofXxx} 와 같다.
+         *
+         * <pre>{@code
+         * var sources = attachments.stream()
+         *         .map(a -> PdfSource.of(Path.of(a.storedPath()), a.originalName()))   // 또는 a.mimeType()
+         *         .toList();
+         * }</pre>
+         *
+         * @param file 파일
+         * @param hint 원래 파일명, 확장자 또는 MIME 타입 (null 가능)
+         * @return 판별한 종류의 소스
+         * @throws IOException              내용을 읽을 수 없을 때
+         * @throws IllegalArgumentException 지원하지 않거나 알 수 없는 형식일 때
+         */
+        public static PdfSource of(Path file, String hint) throws IOException {
+            Objects.requireNonNull(file, "[PdfSource] file must not be null");
+            var detected = S2FileKind.fromHint(hint);
+            if (detected == null) {
+                detected = S2FileKind.fromHint(String.valueOf(file.getFileName()));
+            }
+            if (detected == null) {
+                detected = S2FileKind.fromContent(file);
+            }
+            if (detected == null) {
+                throw unknownKind(hint != null ? hint : String.valueOf(file.getFileName()));
+            }
+            var name = isFileName(hint) ? hint.trim() : String.valueOf(file.getFileName());
+            var src = switch (detected.kind()) {
+            case PDF -> ofPdf(file);
+            case IMAGE -> ofImage(file);
+            case SVG -> ofSvg(file);
+            case HTML -> ofHtml(file);
+            case TEXT -> ofText(file);
+            case MARKDOWN -> ofMarkdown(file);
+            case DOCUMENT -> {
+                var doc = new PdfSource(SourceType.DOCUMENT);
+                doc.pathData = file;
+                doc.documentName = documentName(name, detected.extension());
+                yield doc;
+            }
+            };
+            return named(src, hint);
+        }
+
+        /**
+         * @param file 파일
+         * @return 판별한 종류의 소스
+         * @throws IOException 내용을 읽을 수 없을 때
+         * @see #of(Path, String)
+         */
+        public static PdfSource of(File file) throws IOException {
+            return of(Objects.requireNonNull(file, "[PdfSource] file must not be null").toPath(), null);
+        }
+
+        /**
+         * @param file 파일
+         * @param hint 원래 파일명, 확장자 또는 MIME 타입 (null 가능)
+         * @return 판별한 종류의 소스
+         * @throws IOException 내용을 읽을 수 없을 때
+         * @see #of(Path, String)
+         */
+        public static PdfSource of(File file, String hint) throws IOException {
+            return of(Objects.requireNonNull(file, "[PdfSource] file must not be null").toPath(), hint);
+        }
+
+        /**
+         * 메모리의 내용(DB BLOB 등)으로 종류를 판별해 소스를 만든다 ({@link #of(Path, String)} 참고). 힌트, 없으면 내용으로 판별한다.
+         *
+         * @param bytes 파일 내용
+         * @param hint  원래 파일명, 확장자 또는 MIME 타입 (null 가능)
+         * @return 판별한 종류의 소스
+         * @throws IOException              내용을 읽을 수 없을 때
+         * @throws IllegalArgumentException 지원하지 않거나 알 수 없는 형식일 때
+         */
+        public static PdfSource of(byte[] bytes, String hint) throws IOException {
+            Objects.requireNonNull(bytes, "[PdfSource] bytes must not be null");
+            var detected = S2FileKind.fromHint(hint);
+            if (detected == null) {
+                detected = S2FileKind.fromContent(bytes);
+            }
+            if (detected == null) {
+                throw unknownKind(hint != null ? hint : "(이름 없음)");
+            }
+            var text = detected.kind() == S2FileKind.Kind.SVG || detected.kind() == S2FileKind.Kind.HTML
+                    || detected.kind() == S2FileKind.Kind.TEXT || detected.kind() == S2FileKind.Kind.MARKDOWN
+                            ? new String(bytes, StandardCharsets.UTF_8)
+                            : null;
+            var src = switch (detected.kind()) {
+            case PDF -> ofPdf(bytes);
+            case IMAGE -> ofImage(bytes);
+            case SVG -> ofSvg(text);
+            case HTML -> ofHtml(text);
+            case TEXT -> ofText(text);
+            case MARKDOWN -> ofMarkdown(text);
+            case DOCUMENT -> ofDocument(bytes, documentName(isFileName(hint) ? hint.trim() : "document", detected.extension()));
+            };
+            return named(src, hint);
+        }
+
+        /**
+         * 스트림(스토리지 등)으로 종류를 판별해 소스를 만든다. 최대 {@link S2PdfUtil#DEFAULT_MAX_SOURCE_BYTES}바이트를 읽고 닫는다.
+         *
+         * @param stream 파일 내용
+         * @param hint   원래 파일명, 확장자 또는 MIME 타입 (null 가능)
+         * @return 판별한 종류의 소스
+         * @throws IOException 읽을 수 없거나 너무 클 때
+         * @see #of(byte[], String)
+         */
+        public static PdfSource of(InputStream stream, String hint) throws IOException {
+            Objects.requireNonNull(stream, "[PdfSource] stream must not be null");
+            try {
+                return of(S2StreamUtil.streamToByteArray(stream, false, DEFAULT_MAX_SOURCE_BYTES), hint);
+            } catch (S2RuntimeException e) {
+                throw new IOException("파일을 읽을 수 없습니다: " + (hint != null ? hint : "") + " " + e.getMessage(), e);
+            } finally {
+                S2StreamUtil.closeStream(stream);
+            }
+        }
+
+        /** A hint that names a file (has an extension, not a MIME type) | 파일명인 힌트 (확장자가 있고 MIME 타입이 아님) */
+        private static boolean isFileName(String hint) {
+            if (hint == null || hint.isBlank() || hint.contains("/") && !hint.contains(".")) {
+                return false;
+            }
+            var value = hint.trim();
+            return value.lastIndexOf('.') > 0 && !value.matches("^[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+(\\s*;.*)?$");
+        }
+
+        /** A document name with the extension the converter needs | 변환기에 필요한 확장자를 가진 문서 이름 */
+        private static String documentName(String name, String extension) {
+            return S2FileUtil.getExtension(name, true).equals(extension) ? name : name + "." + extension;
+        }
+
+        /** The original file name becomes the bookmark title | 원래 파일명을 책갈피 제목으로 */
+        private static PdfSource named(PdfSource src, String hint) {
+            return isFileName(hint) && src.title == null ? src.title(hint.trim()) : src;
+        }
+
+        private static IllegalArgumentException unknownKind(String name) {
+            return new IllegalArgumentException("[PdfSource] 지원하지 않거나 알 수 없는 형식입니다: " + name
+                    + " (원래 파일명, 확장자 또는 MIME 타입을 힌트로 넘기십시오. 지원: " + S2FileKind.supported() + ")");
         }
 
         /**
@@ -3057,6 +3222,18 @@ public class S2PdfUtil {
             }
         }
         return pdfFileToMerge;
+    }
+
+    /**
+     * 파일명, 확장자 또는 MIME 타입으로 병합할 수 있는 형식인지 확인한다 (내용은 보지 않음). 병합 목록을 미리 거르거나 화면에 병합 가능 여부를 표시할 때 쓴다.
+     * 형식만 보며, 문서 변환기({@link #isOfficeConversionAvailable()})나 마크다운 의존성({@code S2MarkdownUtil.isAvailable()}) 설치 여부는 따로
+     * 확인한다.
+     *
+     * @param nameOrMimeType 파일명({@code 보고서.hwp}), 확장자({@code hwp}) 또는 MIME 타입({@code application/x-hwp})
+     * @return 병합할 수 있는 형식이면 true
+     */
+    public static boolean isMergeable(String nameOrMimeType) {
+        return S2FileKind.fromHint(nameOrMimeType) != null;
     }
 
     /**

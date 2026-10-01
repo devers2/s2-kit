@@ -175,6 +175,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
 // 변환 결과 캐시: 같은 문서·HTML 을 다시 병합하면 변환 없이 재사용 (요청마다 선택, 기본 꺼짐)
 //   MergeOptions.create().cache(true)
+// 종류가 섞인 첨부 목록(DB): 원래 파일명·확장자·MIME 힌트 → 파일명 → 내용 순으로 자동 판별
+//   S2PdfUtil.PdfSource.of(Path.of(storedPath), originalName)   // 미리 거르기: S2PdfUtil.isMergeable(originalName)
 // 마크다운 (선택 의존성 org.commonmark:commonmark 와 확장 필요): 같은 폴더의 이미지 포함, 원격 이미지는 가져오지 않음
 //   S2PdfUtil.PdfSource.ofMarkdown(Path.of("연구노트.md"))
 //   웹 화면용 HTML: S2MarkdownUtil.toHtml(markdown) (마크다운 안의 HTML 은 글자로 보여 XSS 안전)
