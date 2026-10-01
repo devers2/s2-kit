@@ -618,28 +618,9 @@ final class S2HtmlResources {
         if (type.startsWith("image/")) {
             return type;
         }
-        var d = fetched.data();
-        if (d.length >= 4 && (d[0] & 0xFF) == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G') {
-            return "image/png";
-        }
-        if (d.length >= 3 && (d[0] & 0xFF) == 0xFF && (d[1] & 0xFF) == 0xD8 && (d[2] & 0xFF) == 0xFF) {
-            return "image/jpeg";
-        }
-        if (d.length >= 4 && d[0] == 'G' && d[1] == 'I' && d[2] == 'F' && d[3] == '8') {
-            return "image/gif";
-        }
-        if (d.length >= 12 && d[0] == 'R' && d[1] == 'I' && d[2] == 'F' && d[3] == 'F' && d[8] == 'W' && d[9] == 'E'
-                && d[10] == 'B' && d[11] == 'P') {
-            return "image/webp";
-        }
-        if (d.length >= 2 && d[0] == 'B' && d[1] == 'M') {
-            return "image/bmp";
-        }
-        var head = new String(d, 0, Math.min(d.length, 512), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
-        if (head.contains("<svg")) {
-            return "image/svg+xml";
-        }
-        return null;
+        // No usable Content-Type: tell by the content | 쓸 만한 Content-Type 이 없으면 내용으로
+        var mime = S2FileUtil.getMimeTypeByExtension(S2FileUtil.detectExtension(fetched.data()));
+        return mime.startsWith("image/") ? mime : null;
     }
 
     // ------------------------------------------------------------- fetching

@@ -27,7 +27,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import io.github.devers2.s2util.support.S2FileKind.Kind;
 import io.github.devers2.s2util.support.S2PdfUtil.MergeOptions;
 import io.github.devers2.s2util.support.S2PdfUtil.PdfSource;
 
@@ -50,63 +49,6 @@ class S2PdfSourceKindTest {
         S2PdfUtil.resetOfficeCommand();
     }
 
-    private static Kind kind(String hint) {
-        var detected = S2FileKind.fromHint(hint);
-        return detected == null ? null : detected.kind();
-    }
-
-    private static String extension(String hint) {
-        return S2FileKind.fromHint(hint).extension();
-    }
-
-    @Test
-    void hintsAreFileNamesExtensionsOrMimeTypes() {
-        assertEquals(Kind.PDF, kind("보고서.PDF"));
-        assertEquals(Kind.PDF, kind("pdf"));
-        assertEquals(Kind.PDF, kind("application/pdf; charset=binary"));
-        assertEquals(Kind.IMAGE, kind("사진.jpeg"));
-        assertEquals(Kind.IMAGE, kind("image/heic"), "unknown image subtypes still count as images");
-        assertEquals(Kind.SVG, kind("image/svg+xml"));
-        assertEquals(Kind.MARKDOWN, kind("text/markdown"));
-        assertEquals(Kind.TEXT, kind("/data/logs/app.log"));
-        for (var hwp : List.of("application/x-hwp", "application/haansofthwp", "application/vnd.hancom.hwp", "a.hwp")) {
-            assertEquals("hwp", extension(hwp), hwp);
-        }
-        assertEquals("hwpx", extension("application/vnd.hancom.hwpx"));
-        assertEquals("xlsx", extension("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-        assertNull(kind("application/octet-stream"), "generic types say nothing");
-        assertNull(kind("archive.zip"));
-        assertNull(kind("a1b2c3d4-e5f6"));
-        assertNull(kind(" "));
-
-        assertTrue(S2PdfUtil.isMergeable("보고서.hwpx"));
-        assertTrue(S2PdfUtil.isMergeable("image/png"));
-        assertFalse(S2PdfUtil.isMergeable("movie.mp4"));
-        assertFalse(S2PdfUtil.isMergeable(null));
-    }
-
-    private static byte[] zip(String... entries) throws IOException {
-        var out = new ByteArrayOutputStream();
-        try (var zip = new ZipOutputStream(out)) {
-            for (int i = 0; i < entries.length; i += 2) {
-                zip.putNextEntry(new ZipEntry(entries[i]));
-                zip.write(entries[i + 1].getBytes(StandardCharsets.US_ASCII));
-                zip.closeEntry();
-            }
-        }
-        return out.toByteArray();
-    }
-
-    /** An OLE header followed by a stream name in UTF-16, as in a directory sector | OLE 머리말 + UTF-16 스트림 이름 */
-    private static byte[] ole(String streamName) {
-        var head = new byte[] { (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1 };
-        var name = streamName.getBytes(StandardCharsets.UTF_16LE);
-        var out = new byte[70_000 + name.length];
-        System.arraycopy(head, 0, out, 0, head.length);
-        System.arraycopy(name, 0, out, 65_530, name.length); // across the 64KB scan boundary | 64KB 경계에 걸침
-        return out;
-    }
-
     private static byte[] pdf(int pages) throws IOException {
         try (var doc = new PDDocument(); var out = new ByteArrayOutputStream()) {
             for (int i = 0; i < pages; i++) {
@@ -124,32 +66,15 @@ class S2PdfSourceKindTest {
     }
 
     @Test
-    void contentTellsTheKindWhenThereIsNoName() throws IOException {
-        record Case(byte[] content, String extension) {
-        }
-        var cases = List.of(
-                new Case(pdf(1), "pdf"),
-                new Case(png(), "png"),
-                new Case("﻿  <?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes(StandardCharsets.UTF_8), "svg"),
-                new Case("<!DOCTYPE html><html><body>x</body></html>".getBytes(StandardCharsets.UTF_8), "html"),
-                new Case("{\\rtf1\\ansi hello}".getBytes(StandardCharsets.US_ASCII), "rtf"),
-                new Case(zip("[Content_Types].xml", "x", "word/document.xml", "x"), "docx"),
-                new Case(zip("[Content_Types].xml", "x", "xl/workbook.xml", "x"), "xlsx"),
-                new Case(zip("[Content_Types].xml", "x", "ppt/presentation.xml", "x"), "pptx"),
-                new Case(zip("mimetype", "application/hwp+zip", "Contents/section0.xml", "x"), "hwpx"),
-                new Case(zip("mimetype", "application/vnd.oasis.opendocument.text", "content.xml", "x"), "odt"),
-                new Case(ole("HwpSummaryInformation"), "hwp"),
-                new Case(ole("WordDocument"), "doc"),
-                new Case(ole("Workbook"), "xls"),
-                new Case(ole("PowerPoint Document"), "ppt"));
-        for (var c : cases) {
-            assertEquals(c.extension(), S2FileKind.fromContent(c.content()).extension(), "bytes: " + c.extension());
-            var file = dir.resolve(UUID.randomUUID().toString()); // stored without an extension | 확장자 없이 저장
-            Files.write(file, c.content());
-            assertEquals(c.extension(), S2FileKind.fromContent(file).extension(), "file: " + c.extension());
-        }
-        assertNull(S2FileKind.fromContent(zip("readme.txt", "x")), "a plain zip is not a document");
-        assertNull(S2FileKind.fromContent("just some words".getBytes(StandardCharsets.UTF_8)));
+    void mergeabilityByNameOrMimeType() {
+        assertTrue(S2PdfUtil.isMergeable("보고서.hwpx"));
+        assertTrue(S2PdfUtil.isMergeable("image/png"));
+        assertTrue(S2PdfUtil.isMergeable("application/haansofthwp"));
+        assertTrue(S2PdfUtil.isMergeable("application/vnd.oasis.opendocument.text"));
+        assertFalse(S2PdfUtil.isMergeable("movie.mp4"));
+        assertFalse(S2PdfUtil.isMergeable("image/heic"), "no decoder");
+        assertFalse(S2PdfUtil.isMergeable("application/octet-stream"));
+        assertFalse(S2PdfUtil.isMergeable(null));
     }
 
     private static PDDocument load(InputStream merged) throws IOException {

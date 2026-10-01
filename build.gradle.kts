@@ -157,8 +157,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "io/github/devers2/s2util/support/S2PdfUtil.java",
             "io/github/devers2/s2util/support/S2HtmlResources.java",
             "io/github/devers2/s2util/support/S2PdfCache.java",
-            "io/github/devers2/s2util/support/S2FontCmap.java",
-            "io/github/devers2/s2util/support/S2FileKind.java"
+            "io/github/devers2/s2util/support/S2FontCmap.java"
         ),
         "dependencies" to listOf(
             mapOf( // (jsoup은 MIT이지만 openhtmltopdf와 함께 동작하므로 동일하게 처리)

@@ -128,7 +128,13 @@ before upgrading.
   Content detection reads the first bytes for PDF, images, SVG, HTML and RTF, zip entries for docx, xlsx, pptx, hwpx,
   odt, ods and odp, and stream names for doc, xls, ppt and hwp; non-standard Hangul MIME types
   (`application/x-hwp`, `application/haansofthwp`) are accepted. A file-name hint becomes the bookmark title.
-  `S2PdfUtil.isMergeable(name or MIME type)` filters a list beforehand.
+  `S2PdfUtil.isMergeable(name or MIME type)` filters a list beforehand. Detection is a general feature of `S2FileUtil`
+  (below).
+- `S2FileUtil` file types: `detectExtension(Path | byte[])` (from the content, for uploads stored without an
+  extension), `getExtensionByHint(name, extension or MIME type)`, `getExtensionByMimeType(String)` and
+  `getMimeTypeByExtension(extension or name)`. The MIME table gains png, docx, pptx, md, txt and the Hangul (hwp, hwpx)
+  variants, and the existing `getExtensionByMimeType(Path)` and `getContentType(Path)` fall back to the content when
+  the OS cannot tell (files without an extension).
 - Markdown: `S2MarkdownUtil.toHtml(markdown)` (CommonMark with GitHub-style tables, strikethrough, autolinks, task
   lists and heading anchors) and `PdfSource.ofMarkdown(...)`. Safe on a web page by default (HTML in the Markdown is
   shown as text, links only http, https, mailto and relative, `rel="nofollow"` on links). PDFs look like GitHub; a

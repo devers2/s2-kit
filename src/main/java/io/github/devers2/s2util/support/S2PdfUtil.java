@@ -1397,20 +1397,10 @@ public class S2PdfUtil {
         return configured != null ? configured : SystemFont.FONT;
     }
 
+    /** Image MIME type of a file name, or null when it is not an image | 파일명의 이미지 MIME 타입 (이미지가 아니면 null) */
     private static String getMimeType(String fileName) {
-        if (fileName.endsWith(".png"))
-            return "image/png";
-        if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg"))
-            return "image/jpeg";
-        if (fileName.endsWith(".gif"))
-            return "image/gif";
-        if (fileName.endsWith(".svg"))
-            return "image/svg+xml";
-        if (fileName.endsWith(".webp"))
-            return "image/webp";
-        if (fileName.endsWith(".bmp"))
-            return "image/bmp";
-        return null;
+        var mime = S2FileUtil.getMimeTypeByExtension(fileName);
+        return mime.startsWith("image/") ? mime : null;
     }
 
     /**
@@ -2572,28 +2562,34 @@ public class S2PdfUtil {
          */
         public static PdfSource of(Path file, String hint) throws IOException {
             Objects.requireNonNull(file, "[PdfSource] file must not be null");
-            var detected = S2FileKind.fromHint(hint);
-            if (detected == null) {
-                detected = S2FileKind.fromHint(String.valueOf(file.getFileName()));
+            // Hint, then the file name, then the content (S2FileUtil) | 힌트 → 파일명 → 내용 (S2FileUtil)
+            var extension = S2FileUtil.getExtensionByHint(hint);
+            if (kindOf(extension) == null) {
+                extension = S2FileUtil.getExtension(String.valueOf(file.getFileName()), true);
             }
-            if (detected == null) {
-                detected = S2FileKind.fromContent(file);
+            if (kindOf(extension) == null) {
+                try {
+                    extension = S2FileUtil.detectExtension(file);
+                } catch (S2RuntimeException e) {
+                    throw new IOException(e.getMessage(), e.getCause());
+                }
             }
-            if (detected == null) {
+            var kind = kindOf(extension);
+            if (kind == null) {
                 throw unknownKind(hint != null ? hint : String.valueOf(file.getFileName()));
             }
             var name = isFileName(hint) ? hint.trim() : String.valueOf(file.getFileName());
-            var src = switch (detected.kind()) {
+            var src = switch (kind) {
             case PDF -> ofPdf(file);
             case IMAGE -> ofImage(file);
             case SVG -> ofSvg(file);
             case HTML -> ofHtml(file);
             case TEXT -> ofText(file);
             case MARKDOWN -> ofMarkdown(file);
-            case DOCUMENT -> {
+            default -> {
                 var doc = new PdfSource(SourceType.DOCUMENT);
                 doc.pathData = file;
-                doc.documentName = documentName(name, detected.extension());
+                doc.documentName = documentName(name, extension);
                 yield doc;
             }
             };
@@ -2632,25 +2628,22 @@ public class S2PdfUtil {
          */
         public static PdfSource of(byte[] bytes, String hint) throws IOException {
             Objects.requireNonNull(bytes, "[PdfSource] bytes must not be null");
-            var detected = S2FileKind.fromHint(hint);
-            if (detected == null) {
-                detected = S2FileKind.fromContent(bytes);
+            var extension = S2FileUtil.getExtensionByHint(hint);
+            if (kindOf(extension) == null) {
+                extension = S2FileUtil.detectExtension(bytes);
             }
-            if (detected == null) {
+            var kind = kindOf(extension);
+            if (kind == null) {
                 throw unknownKind(hint != null ? hint : "(이름 없음)");
             }
-            var text = detected.kind() == S2FileKind.Kind.SVG || detected.kind() == S2FileKind.Kind.HTML
-                    || detected.kind() == S2FileKind.Kind.TEXT || detected.kind() == S2FileKind.Kind.MARKDOWN
-                            ? new String(bytes, StandardCharsets.UTF_8)
-                            : null;
-            var src = switch (detected.kind()) {
+            var src = switch (kind) {
             case PDF -> ofPdf(bytes);
             case IMAGE -> ofImage(bytes);
-            case SVG -> ofSvg(text);
-            case HTML -> ofHtml(text);
-            case TEXT -> ofText(text);
-            case MARKDOWN -> ofMarkdown(text);
-            case DOCUMENT -> ofDocument(bytes, documentName(isFileName(hint) ? hint.trim() : "document", detected.extension()));
+            case SVG -> ofSvg(new String(bytes, StandardCharsets.UTF_8));
+            case HTML -> ofHtml(new String(bytes, StandardCharsets.UTF_8));
+            case TEXT -> ofText(new String(bytes, StandardCharsets.UTF_8));
+            case MARKDOWN -> ofMarkdown(new String(bytes, StandardCharsets.UTF_8));
+            default -> ofDocument(bytes, documentName(isFileName(hint) ? hint.trim() : "document", extension));
             };
             return named(src, hint);
         }
@@ -2696,7 +2689,23 @@ public class S2PdfUtil {
 
         private static IllegalArgumentException unknownKind(String name) {
             return new IllegalArgumentException("[PdfSource] 지원하지 않거나 알 수 없는 형식입니다: " + name
-                    + " (원래 파일명, 확장자 또는 MIME 타입을 힌트로 넘기십시오. 지원: " + S2FileKind.supported() + ")");
+                    + " (원래 파일명, 확장자 또는 MIME 타입을 힌트로 넘기십시오. 지원: " + String.join(", ", MERGEABLE_EXTENSIONS) + ")");
+        }
+
+        /** The merge source kind of an extension, or null when it cannot be merged | 확장자의 병합 소스 종류 (병합할 수 없으면 null) */
+        static SourceType kindOf(String extension) {
+            if (extension == null || extension.isEmpty()) {
+                return null;
+            }
+            return switch (extension) {
+            case "pdf" -> SourceType.PDF;
+            case "jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff" -> SourceType.IMAGE;
+            case "svg" -> SourceType.SVG;
+            case "html", "htm", "xhtml" -> SourceType.HTML;
+            case "txt", "text", "log" -> SourceType.TEXT;
+            case "md", "markdown" -> SourceType.MARKDOWN;
+            default -> DOCUMENT_EXTENSIONS.contains(extension) ? SourceType.DOCUMENT : null;
+            };
         }
 
         /**
@@ -3233,8 +3242,13 @@ public class S2PdfUtil {
      * @return 병합할 수 있는 형식이면 true
      */
     public static boolean isMergeable(String nameOrMimeType) {
-        return S2FileKind.fromHint(nameOrMimeType) != null;
+        return PdfSource.kindOf(S2FileUtil.getExtensionByHint(nameOrMimeType)) != null;
     }
+
+    /** Extensions {@link PdfSource#of(Path, String)} merges | 자동 판별로 병합할 수 있는 확장자 */
+    private static final List<String> MERGEABLE_EXTENSIONS = List.of("pdf", "jpg", "jpeg", "png", "gif", "bmp", "webp",
+            "tif", "tiff", "svg", "html", "htm", "txt", "log", "md", "doc", "docx", "odt", "rtf", "xls", "xlsx", "ods",
+            "csv", "ppt", "pptx", "odp", "hwp", "hwpx");
 
     /**
      * Converts the sources in the background and keeps the results in the conversion cache, so a later

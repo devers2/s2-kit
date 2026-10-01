@@ -1127,7 +1127,7 @@ public class S2FileUtil {
     }
 
     /**
-     * MIME TYPE 에 매핑되는 기본 확장자 맵 (MIME TYPE 에서 확인되지 않으면 확장자로 확인)
+     * MIME TYPE 에 매핑되는 기본 확장자 맵 (MIME TYPE 에서 확인되지 않으면 확장자로 확인). 한글은 흔히 쓰이는 비표준 이름도 포함한다.
      */
     // 매 호출마다 새로 만들 필요 없이 한 번만 초기화해서 재사용한다.
     private static final Map<String, String> MIME_TYPE_TO_EXTENSION = Map.ofEntries(
@@ -1136,23 +1136,40 @@ public class S2FileUtil {
             Map.entry("video/x-msvideo", "avi"),
             Map.entry("application/vnd.amazon.ebook", "azw"),
             Map.entry("application/octet-stream", "bin"),
+            Map.entry("image/bmp", "bmp"),
+            Map.entry("image/x-ms-bmp", "bmp"),
             Map.entry("application/x-bzip", "bz"),
             Map.entry("application/x-bzip2", "bz2"),
             Map.entry("application/x-csh", "csh"),
             Map.entry("text/css", "css"),
             Map.entry("text/csv", "csv"),
+            Map.entry("application/csv", "csv"),
             Map.entry("application/msword", "doc"),
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"),
             Map.entry("application/epub+zip", "epub"),
             Map.entry("image/gif", "gif"),
             Map.entry("text/html", "html"),
+            Map.entry("application/x-hwp", "hwp"),
+            Map.entry("application/haansofthwp", "hwp"),
+            Map.entry("application/vnd.hancom.hwp", "hwp"),
+            Map.entry("application/hwp", "hwp"),
+            Map.entry("application/x-hwpx", "hwpx"),
+            Map.entry("application/haansofthwpx", "hwpx"),
+            Map.entry("application/vnd.hancom.hwpx", "hwpx"),
+            Map.entry("application/hwp+zip", "hwpx"),
             Map.entry("image/x-icon", "ico"),
             Map.entry("text/calendar", "ics"),
             Map.entry("application/java-archive", "jar"),
             Map.entry("image/jpeg", "jpg"),
+            Map.entry("image/jpg", "jpg"),
+            Map.entry("image/pjpeg", "jpg"),
             Map.entry("text/javascript", "js"),
             Map.entry("application/json", "json"),
+            Map.entry("text/markdown", "md"),
+            Map.entry("text/x-markdown", "md"),
             Map.entry("audio/midi", "midi"),
             Map.entry("video/mpeg", "mpeg"),
+            Map.entry("video/mp4", "mp4"),
             Map.entry("application/vnd.apple.installer+xml", "mpkg"),
             Map.entry("application/vnd.oasis.opendocument.presentation", "odp"),
             Map.entry("application/vnd.oasis.opendocument.spreadsheet", "ods"),
@@ -1161,15 +1178,19 @@ public class S2FileUtil {
             Map.entry("video/ogg", "ogv"),
             Map.entry("application/ogg", "ogx"),
             Map.entry("application/pdf", "pdf"),
+            Map.entry("image/png", "png"),
             Map.entry("application/vnd.ms-powerpoint", "ppt"),
+            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx"),
             Map.entry("application/x-rar-compressed", "rar"),
             Map.entry("application/rtf", "rtf"),
+            Map.entry("text/rtf", "rtf"),
             Map.entry("application/x-sh", "sh"),
             Map.entry("image/svg+xml", "svg"),
             Map.entry("application/x-shockwave-flash", "swf"),
             Map.entry("application/x-tar", "tar"),
             Map.entry("image/tiff", "tif"),
             Map.entry("application/x-font-ttf", "ttf"),
+            Map.entry("text/plain", "txt"),
             Map.entry("application/vnd.visio", "vsd"),
             Map.entry("audio/x-wav", "wav"),
             Map.entry("audio/webm", "weba"),
@@ -1178,24 +1199,112 @@ public class S2FileUtil {
             Map.entry("application/x-font-woff", "woff"),
             Map.entry("application/xhtml+xml", "xhtml"),
             Map.entry("application/vnd.ms-excel", "xls"),
-            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"));
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
+            Map.entry("application/xml", "xml"),
+            Map.entry("text/xml", "xml"),
+            Map.entry("application/zip", "zip"),
+            Map.entry("application/x-zip-compressed", "zip"));
 
+    /** The usual MIME type of an extension | 확장자의 대표 MIME 타입 */
+    private static final Map<String, String> EXTENSION_TO_MIME_TYPE = Map.ofEntries(
+            Map.entry("bmp", "image/bmp"), Map.entry("css", "text/css"), Map.entry("csv", "text/csv"),
+            Map.entry("doc", "application/msword"),
+            Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Map.entry("gif", "image/gif"), Map.entry("htm", "text/html"), Map.entry("html", "text/html"),
+            Map.entry("hwp", "application/x-hwp"), Map.entry("hwpx", "application/vnd.hancom.hwpx"),
+            Map.entry("ico", "image/x-icon"), Map.entry("jpeg", "image/jpeg"), Map.entry("jpg", "image/jpeg"),
+            Map.entry("js", "text/javascript"), Map.entry("json", "application/json"), Map.entry("md", "text/markdown"),
+            Map.entry("markdown", "text/markdown"), Map.entry("mp4", "video/mp4"),
+            Map.entry("odp", "application/vnd.oasis.opendocument.presentation"),
+            Map.entry("ods", "application/vnd.oasis.opendocument.spreadsheet"),
+            Map.entry("odt", "application/vnd.oasis.opendocument.text"), Map.entry("pdf", "application/pdf"),
+            Map.entry("png", "image/png"), Map.entry("ppt", "application/vnd.ms-powerpoint"),
+            Map.entry("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+            Map.entry("rtf", "application/rtf"), Map.entry("svg", "image/svg+xml"), Map.entry("tif", "image/tiff"),
+            Map.entry("tiff", "image/tiff"), Map.entry("txt", "text/plain"), Map.entry("webp", "image/webp"),
+            Map.entry("xhtml", "application/xhtml+xml"), Map.entry("xls", "application/vnd.ms-excel"),
+            Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            Map.entry("xml", "application/xml"), Map.entry("zip", "application/zip"));
+
+    /**
+     * 파일의 확장자를 MIME 타입으로 판별한다. OS 가 판별하지 못하면(확장자 없는 파일 등) 파일 내용으로 판별한다 ({@link #detectExtension(Path)}).
+     *
+     * @param sourceFile 대상 파일
+     * @return 확장자 (모르면 빈 문자열)
+     */
     public static String getExtensionByMimeType(Path sourceFile) {
-        String extension = "";
-
-        if (sourceFile != null && Files.exists(sourceFile) && Files.isRegularFile(sourceFile)) {
-            var mimeType = getContentType(sourceFile);
-            extension = MIME_TYPE_TO_EXTENSION.getOrDefault(mimeType, "");
+        if (sourceFile == null || !Files.isRegularFile(sourceFile)) {
+            return "";
         }
-
-        return extension;
+        var extension = getExtensionByMimeType(getContentType(sourceFile));
+        return extension.isEmpty() || extension.equals("bin") ? detectExtension(sourceFile) : extension;
     }
 
     /**
-     * 파일의 ContentType 을 가져온다.
+     * MIME 타입의 확장자 ({@code application/pdf} → {@code pdf}). 매개변수({@code ; charset=...})와 대소문자는 무시한다. 한글의 비표준 이름
+     * ({@code application/x-hwp}, {@code application/haansofthwp} 등)도 받는다.
+     *
+     * @param mimeType MIME 타입
+     * @return 확장자 (모르면 빈 문자열)
+     */
+    public static String getExtensionByMimeType(String mimeType) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return "";
+        }
+        var type = mimeType.trim().toLowerCase(java.util.Locale.ROOT).replaceFirst("\\s*;.*$", "");
+        return MIME_TYPE_TO_EXTENSION.getOrDefault(type, "");
+    }
+
+    /**
+     * 확장자(또는 파일명)의 대표 MIME 타입 ({@code hwp} → {@code application/x-hwp}).
+     *
+     * @param extensionOrFileName 확장자({@code png}) 또는 파일명({@code a.png})
+     * @return MIME 타입 (모르면 빈 문자열)
+     */
+    public static String getMimeTypeByExtension(String extensionOrFileName) {
+        if (extensionOrFileName == null || extensionOrFileName.isBlank()) {
+            return "";
+        }
+        var value = extensionOrFileName.trim();
+        var extension = value.contains(".") ? getExtension(value, true) : value.toLowerCase(java.util.Locale.ROOT);
+        return EXTENSION_TO_MIME_TYPE.getOrDefault(extension, "");
+    }
+
+    /**
+     * 파일명, 확장자, MIME 타입 중 무엇이든 받아 확장자를 돌려준다. DB 에 원래 파일명이나 MIME 타입만 있을 때 쓴다.
+     * <ul>
+     * <li>MIME 타입({@code application/x-hwp}) → {@link #getExtensionByMimeType(String)}</li>
+     * <li>파일명({@code 보고서.HWP}, {@code /a/b/c.pdf}) → 소문자 확장자</li>
+     * <li>확장자만({@code hwp}) → 소문자 그대로</li>
+     * </ul>
+     *
+     * @param fileNameExtensionOrMimeType 파일명, 확장자 또는 MIME 타입
+     * @return 소문자 확장자 (모르면 빈 문자열, {@code application/octet-stream} 은 {@code bin})
+     */
+    public static String getExtensionByHint(String fileNameExtensionOrMimeType) {
+        if (fileNameExtensionOrMimeType == null || fileNameExtensionOrMimeType.isBlank()) {
+            return "";
+        }
+        var value = fileNameExtensionOrMimeType.trim();
+        // A MIME type: listed, or under a standard top-level type (its subtype may end like ".document")
+        // | MIME 타입: 표에 있거나 표준 최상위 유형으로 시작 (하위 유형이 ".document" 처럼 끝날 수 있음)
+        var mimeExtension = getExtensionByMimeType(value);
+        if (!mimeExtension.isEmpty()
+                || value.toLowerCase(java.util.Locale.ROOT).matches("^(application|image|text|audio|video|font|model|multipart|message)/[a-z0-9.+-]+(\\s*;.*)?$")) {
+            return mimeExtension;
+        }
+        var name = value.substring(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1);
+        if (name.contains(".")) {
+            return getExtension(name, true);
+        }
+        return name.matches("[A-Za-z0-9]{1,10}") ? name.toLowerCase(java.util.Locale.ROOT) : "";
+    }
+
+    /**
+     * 파일의 ContentType 을 가져온다. OS 가 판별하지 못하면(확장자 없는 파일 등) 내용으로 판별한 형식의 MIME 타입을 돌려준다.
      *
      * @param sourceFile 대상 파일
-     * @return ContentType
+     * @return ContentType (모르면 빈 문자열)
      */
     public static String getContentType(Path sourceFile) {
         var mimeType = "";
@@ -1206,13 +1315,231 @@ public class S2FileUtil {
                 logger.error("MIME 타입 추출 실패: ", e);
                 mimeType = "";
             }
-            /*
-             * JAVA 6 확장자가 없거나 판단하지 못할때는 "application/octet-stream"리턴 MimetypesFileTypeMap
-             * fileTypeMap = new MimetypesFileTypeMap(); mimeType =
-             * fileTypeMap.getContentType(sourceFile);
-             */
+            if ((mimeType.isEmpty() || mimeType.equals("application/octet-stream")) && Files.isRegularFile(sourceFile)) {
+                var detected = getMimeTypeByExtension(detectExtension(sourceFile));
+                mimeType = detected.isEmpty() ? mimeType : detected;
+            }
         }
         return mimeType;
+    }
+
+    /**
+     * 파일 내용으로 형식을 판별해 확장자를 돌려준다. 확장자가 없거나 믿을 수 없는 파일(UUID 로 저장한 업로드 등)에 쓴다.
+     * <ul>
+     * <li>앞부분 서명: pdf, png, jpg, gif, bmp, tif, webp, 그리고 텍스트 시작으로 svg, html, rtf</li>
+     * <li>압축 파일 안의 항목: docx, xlsx, pptx, hwpx, odt, ods, odp (그 외 압축 파일은 zip)</li>
+     * <li>OLE 복합 문서의 스트림 이름: doc, xls, ppt, hwp</li>
+     * </ul>
+     * 일반 텍스트(txt, md, csv 등)는 내용만으로 구분할 수 없어 빈 문자열이다.
+     *
+     * @param sourceFile 대상 파일
+     * @return 확장자 (모르면 빈 문자열)
+     * @throws S2RuntimeException 읽을 수 없을 때 (원인 포함)
+     */
+    public static String detectExtension(Path sourceFile) {
+        Objects.requireNonNull(sourceFile, "sourceFile");
+        try {
+            byte[] head;
+            try (var in = Files.newInputStream(sourceFile)) {
+                head = in.readNBytes(4096);
+            }
+            var simple = FileSignature.fromHead(head);
+            if (!simple.isEmpty()) {
+                return simple;
+            }
+            if (FileSignature.isZip(head)) {
+                try (var zip = new java.util.zip.ZipFile(sourceFile.toFile())) {
+                    var names = new StringBuilder();
+                    String mimetype = null;
+                    for (var entries = zip.entries(); entries.hasMoreElements();) {
+                        var entry = entries.nextElement();
+                        names.append(entry.getName()).append('\n');
+                        if (entry.getName().equals("mimetype")) {
+                            try (var in = zip.getInputStream(entry)) {
+                                mimetype = new String(in.readNBytes(200), StandardCharsets.US_ASCII).trim();
+                            }
+                        }
+                    }
+                    return FileSignature.fromZip(names.toString(), mimetype);
+                } catch (java.util.zip.ZipException e) {
+                    return "";
+                }
+            }
+            if (FileSignature.isOle(head)) {
+                try (var in = Files.newInputStream(sourceFile)) {
+                    return FileSignature.fromOle(in);
+                }
+            }
+            return "";
+        } catch (IOException e) {
+            throw new S2RuntimeException("파일 형식을 판별할 수 없습니다: " + sourceFile, e);
+        }
+    }
+
+    /**
+     * 메모리의 내용으로 형식을 판별해 확장자를 돌려준다 ({@link #detectExtension(Path)} 참고).
+     *
+     * @param content 파일 내용
+     * @return 확장자 (모르면 빈 문자열)
+     */
+    public static String detectExtension(byte[] content) {
+        Objects.requireNonNull(content, "content");
+        var head = java.util.Arrays.copyOf(content, Math.min(content.length, 4096));
+        var simple = FileSignature.fromHead(head);
+        if (!simple.isEmpty()) {
+            return simple;
+        }
+        try {
+            if (FileSignature.isZip(head)) {
+                try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(content))) {
+                    var names = new StringBuilder();
+                    String mimetype = null;
+                    for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                        names.append(entry.getName()).append('\n');
+                        if (entry.getName().equals("mimetype")) {
+                            mimetype = new String(zip.readNBytes(200), StandardCharsets.US_ASCII).trim();
+                        }
+                    }
+                    return FileSignature.fromZip(names.toString(), mimetype);
+                }
+            }
+            return FileSignature.isOle(head) ? FileSignature.fromOle(new java.io.ByteArrayInputStream(content)) : "";
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
+    /** File signatures for {@link #detectExtension} | 파일 서명 판별 */
+    private static final class FileSignature {
+
+        private static final byte[] PDF = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+
+        private FileSignature() {
+        }
+
+        static String fromHead(byte[] b) {
+            var pdf = indexOf(b, PDF);
+            if (pdf >= 0 && pdf < 1024) {
+                return "pdf";
+            }
+            if (b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') {
+                return "png";
+            }
+            if (b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) {
+                return "jpg";
+            }
+            if (b.length >= 4 && b[0] == 'G' && b[1] == 'I' && b[2] == 'F' && b[3] == '8') {
+                return "gif";
+            }
+            if (b.length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E'
+                    && b[10] == 'B' && b[11] == 'P') {
+                return "webp";
+            }
+            if (b.length >= 4 && ((b[0] == 'I' && b[1] == 'I' && b[2] == 42 && b[3] == 0)
+                    || (b[0] == 'M' && b[1] == 'M' && b[2] == 0 && b[3] == 42))) {
+                return "tif";
+            }
+            if (b.length >= 14 && b[0] == 'B' && b[1] == 'M') {
+                return "bmp";
+            }
+            var text = new String(b, 0, Math.min(b.length, 1024), StandardCharsets.UTF_8).replace("\uFEFF", "")
+                    .stripLeading().toLowerCase(java.util.Locale.ROOT);
+            if (text.startsWith("{\\rtf")) {
+                return "rtf";
+            }
+            if (text.startsWith("<svg") || (text.startsWith("<?xml") && text.contains("<svg"))) {
+                return "svg";
+            }
+            if (text.startsWith("<!doctype html") || text.startsWith("<html")) {
+                return "html";
+            }
+            return "";
+        }
+
+        /** Office Open XML, OpenDocument and HWPX by their entries | 압축 항목으로 구분 */
+        static String fromZip(String names, String mimetype) {
+            if (mimetype != null) {
+                switch (mimetype) {
+                case "application/hwp+zip" -> {
+                    return "hwpx";
+                }
+                case "application/vnd.oasis.opendocument.text" -> {
+                    return "odt";
+                }
+                case "application/vnd.oasis.opendocument.spreadsheet" -> {
+                    return "ods";
+                }
+                case "application/vnd.oasis.opendocument.presentation" -> {
+                    return "odp";
+                }
+                default -> {
+                    // Other zip files: look at the entries | 그 외: 항목을 봄
+                }
+                }
+            }
+            if (names.contains("word/")) {
+                return "docx";
+            }
+            if (names.contains("xl/")) {
+                return "xlsx";
+            }
+            if (names.contains("ppt/")) {
+                return "pptx";
+            }
+            if (names.contains("Contents/section")) {
+                return "hwpx";
+            }
+            return "zip";
+        }
+
+        /** Word, Excel, PowerPoint 97-2003 and HWP 5 by stream names (UTF-16) | 스트림 이름(UTF-16)으로 구분 */
+        static String fromOle(InputStream in) throws IOException {
+            var hwp = "HwpSummaryInformation".getBytes(StandardCharsets.UTF_16LE);
+            var word = "WordDocument".getBytes(StandardCharsets.UTF_16LE);
+            var workbook = "Workbook".getBytes(StandardCharsets.UTF_16LE);
+            var book = "Book".getBytes(StandardCharsets.UTF_16LE);
+            var powerPoint = "PowerPoint Document".getBytes(StandardCharsets.UTF_16LE);
+            var buffer = new byte[64 * 1024];
+            var carry = new byte[0];
+            boolean sawWord = false, sawSheet = false, sawSlides = false;
+            int read;
+            while ((read = in.readNBytes(buffer, 0, buffer.length)) > 0) {
+                // The end of the previous chunk is kept so names across chunks are found | 경계에 걸친 이름도 찾도록 앞 조각 끝을 붙임
+                var chunk = new byte[carry.length + read];
+                System.arraycopy(carry, 0, chunk, 0, carry.length);
+                System.arraycopy(buffer, 0, chunk, carry.length, read);
+                if (indexOf(chunk, hwp) >= 0) {
+                    return "hwp";
+                }
+                sawWord |= indexOf(chunk, word) >= 0;
+                sawSheet |= indexOf(chunk, workbook) >= 0 || indexOf(chunk, book) >= 0;
+                sawSlides |= indexOf(chunk, powerPoint) >= 0;
+                carry = java.util.Arrays.copyOfRange(chunk, Math.max(0, chunk.length - 64), chunk.length);
+            }
+            return sawWord ? "doc" : sawSlides ? "ppt" : sawSheet ? "xls" : "";
+        }
+
+        static boolean isZip(byte[] b) {
+            return b.length >= 4 && b[0] == 'P' && b[1] == 'K' && b[2] == 3 && b[3] == 4;
+        }
+
+        static boolean isOle(byte[] b) {
+            return b.length >= 8 && (b[0] & 0xFF) == 0xD0 && (b[1] & 0xFF) == 0xCF && (b[2] & 0xFF) == 0x11
+                    && (b[3] & 0xFF) == 0xE0 && (b[4] & 0xFF) == 0xA1 && (b[5] & 0xFF) == 0xB1 && (b[6] & 0xFF) == 0x1A
+                    && (b[7] & 0xFF) == 0xE1;
+        }
+
+        private static int indexOf(byte[] data, byte[] pattern) {
+            outer: for (int i = 0; i <= data.length - pattern.length; i++) {
+                for (int j = 0; j < pattern.length; j++) {
+                    if (data[i + j] != pattern[j]) {
+                        continue outer;
+                    }
+                }
+                return i;
+            }
+            return -1;
+        }
     }
 
     /**
