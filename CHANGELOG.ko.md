@@ -101,6 +101,11 @@
   결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
   `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- 마크다운: `S2MarkdownUtil.toHtml(markdown)`(CommonMark + GitHub 식 표·취소선·자동 링크·체크박스·제목 앵커)과 `PdfSource.ofMarkdown(...)`.
+  기본값으로 웹 화면에 바로 넣어도 안전합니다(마크다운 안의 HTML 은 글자로, 링크는 http·https·mailto·상대 경로만, 링크에 `rel="nofollow"`).
+  PDF 는 GitHub 와 비슷한 모양으로 렌더링하며, 파일로 준 마크다운은 같은 폴더(와 하위)의 이미지만 넣고(`../`·심볼릭 링크로 밖을 가리키면 제외)
+  원격 이미지는 가져오지 않습니다. 의존성 `org.commonmark:commonmark`와 확장(BSD 2-Clause, autolink 는 MIT)은 앱이 추가하는 선택 의존성이며,
+  `S2PdfUtil`은 `S2MarkdownUtil`을 이름으로 호출해 두 기능을 따로 뺀 빌드도 컴파일됩니다.
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만
   (`width`, 세로는 비율대로), 세로만(`height`, 가로는 비율대로) 정할 수 있고, 위치는 가운데와 8방향(`Position`), 간격은 `offset(x, y)`
   (가장자리 기준이면 안쪽으로, 가운데 기준인 축은 x 오른쪽·y 아래로), 불투명도는 `opacity`. 단위는 pt. 이미지는 한 번만 넣어 모든 쪽이
@@ -172,6 +177,10 @@
   크기를 바꾸지 않는 JPEG 는 다시 압축하지 않고 PDF 에서 돌려 그립니다. `S2ImageUtil`이 JPEG 를 쓸 때 ImageIO 기본 품질(0.75) 대신 0.9 를 씁니다.
 - 나눔고딕처럼 제어 문자(U+0000~U+001F)와 공백을 같은 글리프에 연결한 폰트로 만든 PDF 에서, 복사·검색한 공백이 빈 문자(U+0000)가 되던 문제를
   고쳤습니다. 폰트를 불러올 때 제어 문자 연결을 지웁니다(화면 모양은 같음).
+- 라이선스: `licenses/NOTICE`의 UUID Creator 가 jsoup 의 라이선스 파일(`LICENSE-MIT`, 저작권자 Jonathan Hedley)을 가리키고 있었습니다.
+  UUID Creator 원문(`LICENSE-UUID-CREATOR-MIT`, Fabio Lima)을 추가해 바로잡았습니다. commonmark-java(`LICENSE-COMMONMARK-BSD`)와
+  autolink-java(`LICENSE-AUTOLINK-MIT`) 원문을 추가했습니다. 경량 빌드에서 `S2PdfUtil`을 빼면 jsoup 을 쓰는 보조 클래스(`S2HtmlResources` 등)가
+  남아 컴파일이 실패하던 문제도 고쳤습니다(기능 묶음에 함께 등록).
 - `S2FileUtil.deleteFilesOlderThan`은 접두사가 있으면 디렉토리를 지우지 않으며, 시작 디렉토리는 지우지 않습니다.
 - `licenses/NOTICE`가 OpenHTMLtoPDF 를 "LGPL 2.1 / MPL 2.0"으로 적고 있었습니다. 실제로는 LGPL 2.1 이상이며 MPL 2.0 을 쓰는 의존성이 없어
   `LICENSE-MPL-2.0`을 삭제했습니다. NOTICE 에 Spring Web, Spring Integration SFTP, JSR-305 를 추가하고, 컴파일 전용·선택 의존성을 표시하며,

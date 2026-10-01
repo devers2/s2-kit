@@ -14,7 +14,7 @@ For more details, please refer to the 'LICENSE' file in the root directory.
    - URL: [https://github.com/lz4/lz4-java](https://github.com/lz4/lz4-java)
 
 3. UUID Creator
-   - License: MIT License (See 'LICENSE-MIT' for details)
+   - License: MIT License (See 'LICENSE-UUID-CREATOR-MIT' for details)
    - URL: [https://github.com/f4b6a3/uuid-creator](https://github.com/f4b6a3/uuid-creator)
 
 4. JSch (Java Secure Channel), maintained fork com.github.mwiede:jsch
@@ -56,11 +56,19 @@ For more details, please refer to the 'LICENSE' file in the root directory.
     - URL: [https://pdfbox.apache.org/](https://pdfbox.apache.org/)
 
 13. Jsoup Java HTML Parser (Optional; added by the user for S2PdfUtil)
-    - License: MIT License (See 'LICENSE-MIT' for details)
+    - License: MIT License (See 'LICENSE-MIT' for details; the jsoup license)
     - URL: [https://jsoup.org/](https://jsoup.org/)
 
 14. OpenHTMLtoPDF SVG support (openhtmltopdf-svg-support) and Apache Batik (Optional; added by the user to draw SVG in S2PdfUtil)
     - License: openhtmltopdf-svg-support: GNU Lesser General Public License, Version 2.1 or later; Apache Batik, Apache XML Graphics Commons: Apache License 2.0
     - URL: [https://xmlgraphics.apache.org/batik/](https://xmlgraphics.apache.org/batik/)
+
+15. commonmark-java (commonmark, commonmark-ext-gfm-tables, commonmark-ext-gfm-strikethrough, commonmark-ext-autolink, commonmark-ext-task-list-items, commonmark-ext-heading-anchor) (Optional; added by the user for S2MarkdownUtil)
+    - License: BSD 2-Clause License (See 'LICENSE-COMMONMARK-BSD' for details)
+    - URL: [https://github.com/commonmark/commonmark-java](https://github.com/commonmark/commonmark-java)
+
+16. autolink-java (org.nibor.autolink:autolink) (Optional; transitive dependency of commonmark-ext-autolink)
+    - License: MIT License (See 'LICENSE-AUTOLINK-MIT' for details)
+    - URL: [https://github.com/robinst/autolink-java](https://github.com/robinst/autolink-java)
 
 ---

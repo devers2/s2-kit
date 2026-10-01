@@ -895,6 +895,103 @@ public class S2PdfUtil {
     }
 
     // ------------------------------------------------------------------------
+    // Markdown (optional S2MarkdownUtil + CommonMark) | 마크다운 (선택: S2MarkdownUtil + CommonMark)
+
+    /** GitHub-like look that the built-in renderer supports | 내장 렌더러가 지원하는 GitHub 와 비슷한 모양 */
+    private static final String MARKDOWN_CSS = """
+            body { font-size: 10.5pt; line-height: 1.6; color: #1f2328; }
+            h1, h2, h3, h4, h5, h6 { margin: 1.2em 0 0.6em; font-weight: bold; line-height: 1.25; }
+            h1 { font-size: 1.9em; border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
+            h2 { font-size: 1.5em; border-bottom: 1px solid #d1d9e0; padding-bottom: 0.3em; }
+            h3 { font-size: 1.25em; } h4 { font-size: 1em; } h5 { font-size: 0.9em; } h6 { font-size: 0.85em; color: #59636e; }
+            p, ul, ol, table, pre, blockquote { margin: 0 0 0.9em; }
+            ul, ol { padding-left: 2em; }
+            code { background: #eff1f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 90%; }
+            pre { background: #f6f8fa; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; word-wrap: break-word; }
+            pre code { background: none; padding: 0; }
+            blockquote { color: #59636e; border-left: 4px solid #d1d9e0; padding: 0 1em; margin-left: 0; }
+            table { border-collapse: collapse; }
+            th, td { border: 1px solid #d1d9e0; padding: 5px 10px; }
+            th { background: #f6f8fa; font-weight: bold; }
+            img { max-width: 100%; }
+            hr { border: 0; border-top: 2px solid #d1d9e0; margin: 1.5em 0; }
+            a { color: #0969da; text-decoration: none; }
+            del { color: #59636e; }
+            li.task-list-item { list-style: none; margin-left: -1.3em; }
+            """;
+
+    /** Largest image a Markdown source embeds | 마크다운 소스가 넣는 이미지 하나의 최대 크기 */
+    private static final long MARKDOWN_IMAGE_MAX_BYTES = 20L * 1024 * 1024;
+
+    /**
+     * A whole HTML page for Markdown: converted by S2MarkdownUtil (called by name, so a build without it fails only
+     * here), checkboxes as characters, and local images under {@code imageRoot} embedded | 마크다운을 HTML 페이지로.
+     * S2MarkdownUtil 로 변환하고(이름으로 호출해 그 기능이 빠진 빌드는 여기서만 실패), 체크박스는 문자로, imageRoot 아래 이미지는 넣는다
+     */
+    static String markdownPage(String markdown, Path imageRoot) throws IOException {
+        String body;
+        try {
+            var converter = Class.forName("io.github.devers2.s2util.support.S2MarkdownUtil").getMethod("toHtml", String.class);
+            body = (String) converter.invoke(null, markdown);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            throw new IOException("마크다운 기능(S2MarkdownUtil)이 빠진 빌드입니다.", e);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            var cause = e.getCause() != null ? e.getCause() : e;
+            throw new IOException(cause.getMessage(), cause);
+        } catch (IllegalAccessException e) {
+            throw new IOException("마크다운을 변환할 수 없습니다: " + e.getMessage(), e);
+        }
+        var doc = Jsoup.parseBodyFragment(body);
+        // The renderer draws no form controls | 렌더러는 입력 요소를 그리지 않음
+        for (var box : doc.select("input[type=checkbox]")) {
+            var item = box.parent();
+            if (item != null && item.tagName().equals("li")) {
+                item.addClass("task-list-item"); // no bullet next to the box | 상자 옆 글머리표 없앰
+            }
+            box.replaceWith(new org.jsoup.nodes.TextNode(box.hasAttr("checked") ? "■ " : "□ "));
+        }
+        for (var img : doc.select("img")) {
+            var src = img.attr("src").trim();
+            if (src.isEmpty() || src.startsWith("data:") || src.startsWith("//") || src.matches("^[A-Za-z][A-Za-z0-9+.-]*:.*")) {
+                continue; // data URIs stay; remote addresses are refused later | data URI 는 그대로, 원격 주소는 뒤에서 거부됨
+            }
+            var embedded = imageRoot != null ? localImage(imageRoot, src) : null;
+            if (embedded != null) {
+                img.attr("src", embedded);
+            } else {
+                logger.warn("마크다운의 이미지를 넣지 않습니다: {}", src);
+                img.removeAttr("src");
+            }
+        }
+        return "<html><head><style>" + MARKDOWN_CSS + "</style></head><body class=\"markdown-body\">" + doc.body().html()
+                + "</body></html>";
+    }
+
+    /**
+     * A local image under {@code root} as a data URI, or null; paths leaving the folder, by {@code ../} or a symbolic
+     * link, are refused | root 아래 이미지를 data URI 로 (없거나 폴더 밖을 가리키면 null)
+     */
+    private static String localImage(Path root, String src) {
+        try {
+            var relative = java.net.URLDecoder.decode(src.replaceFirst("[?#].*$", "").replace("+", "%2B"),
+                    StandardCharsets.UTF_8);
+            var base = root.toRealPath();
+            var candidate = base.resolve(relative).normalize();
+            if (!candidate.startsWith(base) || !Files.isRegularFile(candidate)) {
+                return null;
+            }
+            var file = candidate.toRealPath();
+            if (!file.startsWith(base) || Files.size(file) > MARKDOWN_IMAGE_MAX_BYTES) {
+                return null;
+            }
+            var mime = getMimeType(file.getFileName().toString().toLowerCase(Locale.ROOT));
+            return mime == null ? null : "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(Files.readAllBytes(file));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------------
     // SVG (optional openhtmltopdf-svg-support) | SVG (선택 의존성 openhtmltopdf-svg-support)
 
     private static final String SVG_DRAWER = "com.openhtmltopdf.svgsupport.BatikSVGDrawer";
@@ -2162,7 +2259,7 @@ public class S2PdfUtil {
 
     public static class PdfSource implements AutoCloseable {
         public enum SourceType {
-            PDF, HTML, IMAGE, TEXT, SVG, URL, DOCUMENT
+            PDF, HTML, IMAGE, TEXT, SVG, URL, DOCUMENT, MARKDOWN
         }
 
         private final SourceType type;
@@ -2170,6 +2267,8 @@ public class S2PdfUtil {
         private byte[] byteData;
         private File fileData;
         private Path pathData;
+        /** Folder whose images a Markdown source may embed | 마크다운 소스가 이미지를 넣을 수 있는 폴더 */
+        private Path markdownImageRoot;
         private BufferedImage imageObj;
         private String textOrHtmlContent;
 
@@ -2364,6 +2463,75 @@ public class S2PdfUtil {
         public static PdfSource ofSvg(Path svgPath) throws IOException {
             return ofSvg(Files.readString(Objects.requireNonNull(svgPath, "[PdfSource] svgPath must not be null"),
                     StandardCharsets.UTF_8));
+        }
+
+        /**
+         * 마크다운 소스를 만든다. {@link S2MarkdownUtil}로 HTML 로 바꿔(제목, 표, 코드 블록, 인용, 목록, 체크박스, 취소선) GitHub 와 비슷한 모양으로
+         * 렌더링한다. 마크다운 안의 HTML 태그는 글자로 보이고, 원격 이미지는 가져오지 않는다. CommonMark 의존성이 필요하다 ({@link S2MarkdownUtil} 참고).
+         *
+         * @param markdown 마크다운
+         * @return 마크다운 소스 (이미지 없음)
+         */
+        public static PdfSource ofMarkdown(String markdown) {
+            var src = new PdfSource(SourceType.MARKDOWN);
+            src.textOrHtmlContent = Objects.requireNonNull(markdown, "[PdfSource] markdown must not be null");
+            return src;
+        }
+
+        /**
+         * 마크다운 소스를 만들고, 상대 경로 이미지({@code ![](img/a.png)})를 {@code imageRoot} 폴더(와 그 하위)에서 읽어 넣는다. {@code ../} 나 심볼릭
+         * 링크로 폴더 밖을 가리키는 이미지는 넣지 않는다.
+         *
+         * @param markdown  마크다운
+         * @param imageRoot 이미지 기준 폴더
+         * @return 마크다운 소스
+         */
+        public static PdfSource ofMarkdown(String markdown, Path imageRoot) {
+            var src = ofMarkdown(markdown);
+            src.markdownImageRoot = Objects.requireNonNull(imageRoot, "[PdfSource] imageRoot must not be null");
+            return src;
+        }
+
+        /**
+         * 마크다운 파일 소스 (UTF-8). 같은 폴더(와 그 하위)의 이미지를 넣는다.
+         *
+         * @param markdownFile 마크다운 파일
+         * @return 마크다운 소스
+         * @throws IOException 읽을 수 없을 때
+         */
+        public static PdfSource ofMarkdown(Path markdownFile) throws IOException {
+            Objects.requireNonNull(markdownFile, "[PdfSource] markdownFile must not be null");
+            var src = ofMarkdown(Files.readString(markdownFile, StandardCharsets.UTF_8),
+                    markdownFile.toAbsolutePath().getParent());
+            src.pathData = markdownFile;
+            return src;
+        }
+
+        /**
+         * 마크다운 파일 소스 (UTF-8). 같은 폴더(와 그 하위)의 이미지를 넣는다.
+         *
+         * @param markdownFile 마크다운 파일
+         * @return 마크다운 소스
+         * @throws IOException 읽을 수 없을 때
+         */
+        public static PdfSource ofMarkdown(File markdownFile) throws IOException {
+            return ofMarkdown(Objects.requireNonNull(markdownFile, "[PdfSource] markdownFile must not be null").toPath());
+        }
+
+        /**
+         * 마크다운 스트림 소스 (UTF-8, 읽은 뒤 닫음). 이미지 기준 폴더가 없으므로 상대 경로 이미지는 넣지 않는다.
+         *
+         * @param markdownStream 마크다운 스트림
+         * @return 마크다운 소스
+         * @throws IOException 읽을 수 없을 때
+         */
+        public static PdfSource ofMarkdown(InputStream markdownStream) throws IOException {
+            try {
+                return ofMarkdown(new String(S2StreamUtil.streamToByteArray(markdownStream, false, DEFAULT_MAX_SOURCE_BYTES),
+                        StandardCharsets.UTF_8));
+            } finally {
+                S2StreamUtil.closeStream(markdownStream);
+            }
         }
 
         /**
@@ -2800,6 +2968,14 @@ public class S2PdfUtil {
                 }
                 pdfFileToMerge = converted("doc", intermediateTempFiles, key, target -> {
                     convertDocumentToPdf(source, target);
+                    return true;
+                });
+            }
+            case MARKDOWN -> {
+                var html = markdownPage(source.textOrHtmlContent, source.markdownImageRoot);
+                var key = options.cache ? htmlKey("MARKDOWN", html, null, null, null, S2PdfUtil.class, null) : null;
+                pdfFileToMerge = converted("md", intermediateTempFiles, key, target -> {
+                    renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
                     return true;
                 });
             }

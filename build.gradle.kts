@@ -121,7 +121,7 @@ extra["releaseCompatibility"] = JavaVersion.VERSION_17
  *   - S2PdfUtil 포함 (기본값): setOf("licensesInfo", "S2PdfUtil")
  *   - S2PdfUtil 제외 (경량화): setOf("licensesInfo")
  */
-extra["activeFeatures"] = setOf("licensesInfo", "S2PdfUtil")
+extra["activeFeatures"] = setOf("licensesInfo", "S2PdfUtil", "S2MarkdownUtil")
 
 /**
  * [동적 기능 소스 정보 (Feature Toggles Definition)]
@@ -138,6 +138,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "licenses/LICENSE-EPL-2.0",
             "licenses/LICENSE-LGPL-2.1",
             "licenses/LICENSE-MIT",
+            "licenses/LICENSE-UUID-CREATOR-MIT",
             "licenses/LICENSE-JSCH-BSD",
             "licenses/LICENSE-JZLIB-BSD",
             "licenses/LICENSE-JBCRYPT-ISC",
@@ -150,7 +151,14 @@ extra["dynamicSourceInfoMap"] = mapOf(
          * 최종 사용자가 의존성을 직접 추가해야 하며 Shadow JAR에서 쉐이딩/번들링 되지 않도록 방지해야 함
          */
         /* "variantId" to "pdf", */
-        "sources" to listOf("io/github/devers2/s2util/support/S2PdfUtil.java"),
+        // Helpers used only by S2PdfUtil leave with it (S2HtmlResources needs jsoup)
+        // | S2PdfUtil 전용 보조 클래스도 함께 빠짐 (S2HtmlResources 는 jsoup 사용)
+        "sources" to listOf(
+            "io/github/devers2/s2util/support/S2PdfUtil.java",
+            "io/github/devers2/s2util/support/S2HtmlResources.java",
+            "io/github/devers2/s2util/support/S2PdfCache.java",
+            "io/github/devers2/s2util/support/S2FontCmap.java"
+        ),
         "dependencies" to listOf(
             mapOf( // (jsoup은 MIT이지만 openhtmltopdf와 함께 동작하므로 동일하게 처리)
                 "configuration" to "compileOnly",
@@ -166,6 +174,24 @@ extra["dynamicSourceInfoMap"] = mapOf(
             )
         ),
         "licenses" to listOf("README-LGPL-2.1-PDF.md")
+    ),
+    "S2MarkdownUtil" to mapOf(
+        /*
+         * commonmark-java (BSD 2-Clause) and autolink-java (MIT): compileOnly, added by the user, not redistributed.
+         * S2PdfUtil calls S2MarkdownUtil by name, so either feature can be left out on its own
+         * | commonmark-java(BSD 2-Clause), autolink-java(MIT): compileOnly 로 사용자가 추가하며 재배포하지 않음.
+         * S2PdfUtil 은 S2MarkdownUtil 을 이름으로 호출하므로 두 기능은 따로 뺄 수 있음
+         */
+        "sources" to listOf("io/github/devers2/s2util/support/S2MarkdownUtil.java"),
+        "dependencies" to listOf(
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark", "version" to "0.30.0"),
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-gfm-tables", "version" to "0.30.0"),
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-gfm-strikethrough", "version" to "0.30.0"),
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-autolink", "version" to "0.30.0"),
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-task-list-items", "version" to "0.30.0"),
+            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-heading-anchor", "version" to "0.30.0")
+        ),
+        "licenses" to listOf("licenses/LICENSE-COMMONMARK-BSD", "licenses/LICENSE-AUTOLINK-MIT")
     )
 )
 
@@ -352,6 +378,11 @@ dependencies {
     testImplementation("org.jsoup:jsoup:1.23.2")
     testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85")
     testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.85") // optional SVG drawing | 선택: SVG 그리기
+    // Optional Markdown (S2MarkdownUtil) | 선택: 마크다운
+    for (module in listOf("commonmark", "commonmark-ext-gfm-tables", "commonmark-ext-gfm-strikethrough", "commonmark-ext-autolink",
+            "commonmark-ext-task-list-items", "commonmark-ext-heading-anchor")) {
+        testImplementation("org.commonmark:$module:0.30.0")
+    }
     testImplementation(libs.jakarta.servlet.api) // S2PaginationTag 시험 (TagSupport)
     testImplementation(libs.jakarta.servlet.jsp)
     testImplementation(libs.spring6.context) // S2AnnotationResolver, S2RestApiUtil 시험

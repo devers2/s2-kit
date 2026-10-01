@@ -176,6 +176,9 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // MergeOptions.create().pageNumbers(2, 1)
 // Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
 //   MergeOptions.create().cache(true)
+// Markdown (needs the optional org.commonmark:commonmark and extensions): images from the same folder, no remote ones
+//   S2PdfUtil.PdfSource.ofMarkdown(Path.of("note.md"))
+//   HTML for a web page: S2MarkdownUtil.toHtml(markdown) (HTML in the Markdown is shown as text, safe from XSS)
 // Converting right after an upload, in the background, makes even the first view use the cache
 //   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
 // Shrink photos and scans to a resolution for their page (images inside PDF sources too; default 0 = keep)
@@ -280,7 +283,13 @@ dependencies {
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     implementation 'org.jsoup:jsoup:1.23.2'
+    implementation 'org.commonmark:commonmark-ext-heading-anchor:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
+    implementation 'org.commonmark:commonmark:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-autolink:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'
     implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85'
+    implementation 'org.commonmark:commonmark-ext-task-list-items:0.30.0'
 }
 ```
 

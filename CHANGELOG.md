@@ -122,6 +122,13 @@ before upgrading.
   6 photos: 5.1 s first, then 0.29 s).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
   same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- Markdown: `S2MarkdownUtil.toHtml(markdown)` (CommonMark with GitHub-style tables, strikethrough, autolinks, task
+  lists and heading anchors) and `PdfSource.ofMarkdown(...)`. Safe on a web page by default (HTML in the Markdown is
+  shown as text, links only http, https, mailto and relative, `rel="nofollow"` on links). PDFs look like GitHub; a
+  Markdown file embeds images only from its own folder and below (`../` and symbolic links out are refused), and remote
+  images are not fetched. `org.commonmark:commonmark` and its extensions (BSD 2-Clause; autolink is MIT) are optional
+  dependencies the app adds; `S2PdfUtil` calls `S2MarkdownUtil` by name, so either feature can be built without the
+  other.
 - Watermarks: `MergeOptions.watermark(Watermark.of(image)...)` stamps an image on every page. Size both sides (`size`),
   the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
   one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered
@@ -206,6 +213,10 @@ before upgrading.
   `S2ImageUtil` writes JPEG at quality 0.9 instead of ImageIO's default 0.75.
 - PDFs made with a font that maps control characters (U+0000 to U+001F) to its space glyph, such as NanumGothic, copied
   and searched spaces as U+0000. Control-character mappings are now removed when a font is loaded (it looks the same).
+- Licenses: `licenses/NOTICE` pointed UUID Creator at jsoup's license file (`LICENSE-MIT`, Jonathan Hedley). Its own
+  text (`LICENSE-UUID-CREATOR-MIT`, Fabio Lima) is now included, along with commonmark-java (`LICENSE-COMMONMARK-BSD`)
+  and autolink-java (`LICENSE-AUTOLINK-MIT`). A lightweight build without `S2PdfUtil` failed to compile because its
+  helpers (`S2HtmlResources` and others, which use jsoup) stayed; they are now part of the same feature.
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL

@@ -175,6 +175,9 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
 // 변환 결과 캐시: 같은 문서·HTML 을 다시 병합하면 변환 없이 재사용 (요청마다 선택, 기본 꺼짐)
 //   MergeOptions.create().cache(true)
+// 마크다운 (선택 의존성 org.commonmark:commonmark 와 확장 필요): 같은 폴더의 이미지 포함, 원격 이미지는 가져오지 않음
+//   S2PdfUtil.PdfSource.ofMarkdown(Path.of("연구노트.md"))
+//   웹 화면용 HTML: S2MarkdownUtil.toHtml(markdown) (마크다운 안의 HTML 은 글자로 보여 XSS 안전)
 // 업로드 직후 백그라운드에서 미리 변환해 두면 처음 볼 때도 캐시를 씀
 //   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
 // 사진·스캔 이미지를 쪽 기준 해상도로 줄이기 (PDF 소스 안의 이미지 포함, 기본 0 = 원본 유지)
@@ -278,7 +281,13 @@ dependencies {
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
     implementation 'org.jsoup:jsoup:1.23.2'
+    implementation 'org.commonmark:commonmark-ext-heading-anchor:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
+    implementation 'org.commonmark:commonmark:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-autolink:0.30.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'
     implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85'
+    implementation 'org.commonmark:commonmark-ext-task-list-items:0.30.0'
 }
 ```
 
