@@ -86,7 +86,8 @@ before upgrading.
   naming the right one.
 - `S2PdfUtil.merge(sources, MergeOptions)`: a bookmark per source (a PDF's own bookmarks move under it;
   `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata. `pageNumbers(skipFirst, skipLast)` leaves out leading and trailing
-  pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`). Page numbers sit upright at the
+  pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`). `MergeOptions.copy()` derives
+  options from shared ones without touching them. Page numbers sit upright at the
   bottom center of the page as shown, also on rotated pages (`/Rotate`).
 - Conversion result cache: requests with `MergeOptions.cache(true)` keep the PDF converted from a source that needs
   converting (document, HTML, web page, image, text, SVG) and reuse it when the same source comes again (4 documents:

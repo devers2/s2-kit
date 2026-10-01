@@ -499,6 +499,21 @@ class S2PdfMergeTest {
     }
 
     @Test
+    void copiedOptionsLeaveTheSharedOnesAlone() throws IOException {
+        var shared = MergeOptions.create().pageNumbers(1, 0).title("공유");
+        var derived = shared.copy().pageNumbers(false).title("파생");
+        var sources = List.of(PdfSource.ofText("cover"), PdfSource.ofText("body"));
+        try (var doc = load(S2PdfUtil.merge(sources, shared))) {
+            assertEquals("공유", doc.getDocumentInformation().getTitle());
+            assertTrue(pageText(doc, 2).contains("1 / 1"), "the shared options keep their page numbers");
+        }
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("cover"), PdfSource.ofText("body")), derived))) {
+            assertEquals("파생", doc.getDocumentInformation().getTitle());
+            assertFalse(pageText(doc, 2).contains(" / "));
+        }
+    }
+
+    @Test
     void addPageNumbersFailsLoudly() throws IOException {
         var pdf = chapterPdf();
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.addPageNumbers(pdf, 5, 10, null));

@@ -1731,6 +1731,34 @@ public class S2PdfUtil {
         }
 
         /**
+         * 같은 설정의 새 옵션을 만든다. 용도별로 만들어 둔 공유 옵션(상수)을 바탕으로 조금 바꿔 쓸 때, 원본을 건드리지 않도록 쓴다.
+         * {@link Watermark} 객체는 함께 쓴다 (워터마크를 바꾸려면 새 {@code Watermark}를 넘긴다).
+         *
+         * <pre>{@code
+         * static final MergeOptions DOWNLOAD = MergeOptions.create().cache(true).pageNumbers(1, 0);
+         * S2PdfUtil.merge(sources, DOWNLOAD.copy().watermark(mark));   // DOWNLOAD 는 그대로
+         * }</pre>
+         *
+         * @return 설정을 복사한 새 옵션
+         */
+        public MergeOptions copy() {
+            var copy = new MergeOptions();
+            copy.bookmarks = bookmarks;
+            copy.pageNumbers = pageNumbers;
+            copy.pageNumberSkipFirst = pageNumberSkipFirst;
+            copy.pageNumberSkipLast = pageNumberSkipLast;
+            copy.pageNumberFontSize = pageNumberFontSize;
+            copy.pageNumberFormat = pageNumberFormat;
+            copy.title = title;
+            copy.author = author;
+            copy.watermark = watermark;
+            copy.cache = cache;
+            copy.imageDpi = imageDpi;
+            copy.pdfImageDpi = pdfImageDpi;
+            return copy;
+        }
+
+        /**
          * 소스마다 책갈피를 만든다. 원래 PDF 에 있던 책갈피는 그 소스의 책갈피 아래로 들어간다. 제목은 {@link PdfSource#title(String)}, 없으면
          * 파일명·URL·"문서 N".
          *
