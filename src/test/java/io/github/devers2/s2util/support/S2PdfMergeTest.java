@@ -374,6 +374,66 @@ class S2PdfMergeTest {
         }
     }
 
+    /** Bounds of pixels close to a color at 72 dpi | 한 색에 가까운 픽셀 영역 */
+    private static int[] colorBounds(PDDocument doc, int pageIndex, java.awt.Color color) throws IOException {
+        var image = new org.apache.pdfbox.rendering.PDFRenderer(doc).renderImageWithDPI(pageIndex, 72);
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, maxX = -1, maxY = -1;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                var c = new java.awt.Color(image.getRGB(x, y));
+                if (Math.abs(c.getRed() - color.getRed()) < 40 && Math.abs(c.getGreen() - color.getGreen()) < 40
+                        && Math.abs(c.getBlue() - color.getBlue()) < 40) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return maxX < 0 ? null : new int[] { minX, minY, maxX - minX + 1, maxY - minY + 1 };
+    }
+
+    @Test
+    void watermarkFollowsRotatedPages() throws IOException {
+        // Left half red, right half blue: shows the watermark is upright | 왼쪽 빨강, 오른쪽 파랑: 바로 섰는지 확인
+        var img = new BufferedImage(60, 40, BufferedImage.TYPE_INT_RGB);
+        var g = img.createGraphics();
+        g.setColor(java.awt.Color.RED);
+        g.fillRect(0, 0, 30, 40);
+        g.setColor(java.awt.Color.BLUE);
+        g.fillRect(30, 0, 30, 40);
+        g.dispose();
+        var out = new ByteArrayOutputStream();
+        ImageIO.write(img, "png", out);
+
+        var pdf = dir.resolve("rotated.pdf");
+        try (var doc = new PDDocument()) {
+            for (var rotation : new int[] { 0, 90, 180, 270 }) {
+                var page = new PDPage(new org.apache.pdfbox.pdmodel.common.PDRectangle(50, 20, 595, 842));
+                page.setRotation(rotation);
+                doc.addPage(page);
+            }
+            doc.save(pdf.toFile());
+        }
+        var watermark = S2PdfUtil.Watermark.of(out.toByteArray()).size(60, 40)
+                .position(S2PdfUtil.Watermark.Position.TOP_LEFT).offset(20, 30);
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofPdf(pdf)), MergeOptions.create().watermark(watermark)))) {
+            for (int i = 0; i < 4; i++) {
+                var red = colorBounds(doc, i, java.awt.Color.RED);
+                var blue = colorBounds(doc, i, java.awt.Color.BLUE);
+                var label = "rotation " + (i * 90);
+                assertNotNull(red, label);
+                assertNotNull(blue, label);
+                assertEquals(20, red[0], 2, label + " x");
+                assertEquals(30, red[1], 2, label + " y");
+                assertEquals(30, red[2], 2, label + " width");
+                assertEquals(40, red[3], 2, label + " height");
+                assertEquals(50, blue[0], 2, label + " blue on the right");
+                assertEquals(30, blue[1], 2, label + " blue y");
+            }
+        }
+    }
+
     @Test
     void watermarkInputIsChecked() throws IOException {
         var red = colored("png", 10, 10, java.awt.Color.RED);

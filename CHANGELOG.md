@@ -91,7 +91,8 @@ before upgrading.
   the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
   one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered
   axis; `opacity`. Lengths in points. The image is embedded once and shared by all pages, PNG transparency is kept,
-  and page numbers are drawn above it.
+  and page numbers are drawn above it. On rotated pages (`/Rotate` 90, 180, 270) it is placed on the page as shown,
+  upright.
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`; without a configured font an
   installed Korean TrueType font is used (`SYSTEM_FONT_CANDIDATES`: Malgun Gothic, NanumGothic, Noto Sans KR, ...).
 - `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).

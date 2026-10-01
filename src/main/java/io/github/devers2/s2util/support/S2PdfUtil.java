@@ -3648,13 +3648,36 @@ public class S2PdfUtil {
         state.setNonStrokingAlphaConstant(watermark.opacity);
         state.setStrokingAlphaConstant(watermark.opacity);
         for (var page : document.getPages()) {
-            var origin = watermark.origin(page.getCropBox(), size[0], size[1]);
+            var box = page.getCropBox();
+            var rotation = ((page.getRotation() % 360) + 360) % 360;
+            var quarter = rotation == 90 || rotation == 270;
+            // Position on the page as shown (width and height swap for a quarter turn) | 화면에 보이는 쪽 기준 위치 (90·270도는 가로·세로가 바뀜)
+            var shown = new PDRectangle(quarter ? box.getHeight() : box.getWidth(),
+                    quarter ? box.getWidth() : box.getHeight());
+            var origin = watermark.origin(shown, size[0], size[1]);
             try (var contentStream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND,
                     true, true)) {
                 contentStream.setGraphicsStateParameters(state);
+                contentStream.transform(shownToPage(box, rotation));
                 contentStream.drawImage(image, origin[0], origin[1], size[0], size[1]);
             }
         }
+    }
+
+    /**
+     * Maps coordinates on the page as shown (origin at the shown lower-left corner) to the page's own space, for a page
+     * displayed turned clockwise by {@code rotation} degrees, so a watermark lands where it is meant to and stays
+     * upright | 시계 방향으로 rotation 도 돌려 보이는 쪽에서, 보이는 쪽 좌표(보이는 왼쪽 아래가 원점)를 쪽 자체 좌표로 바꾼다. 워터마크가 의도한 곳에
+     * 바로 선 채로 놓인다
+     */
+    private static org.apache.pdfbox.util.Matrix shownToPage(PDRectangle box, int rotation) {
+        float llx = box.getLowerLeftX(), lly = box.getLowerLeftY(), w = box.getWidth(), h = box.getHeight();
+        return switch (rotation) {
+        case 90 -> new org.apache.pdfbox.util.Matrix(0, 1, -1, 0, llx + w, lly);
+        case 180 -> new org.apache.pdfbox.util.Matrix(-1, 0, 0, -1, llx + w, lly + h);
+        case 270 -> new org.apache.pdfbox.util.Matrix(0, -1, 1, 0, llx, lly + h);
+        default -> new org.apache.pdfbox.util.Matrix(1, 0, 0, 1, llx, lly);
+        };
     }
 
     /**

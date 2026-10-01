@@ -77,7 +77,8 @@
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만
   (`width`, 세로는 비율대로), 세로만(`height`, 가로는 비율대로) 정할 수 있고, 위치는 가운데와 8방향(`Position`), 간격은 `offset(x, y)`
   (가장자리 기준이면 안쪽으로, 가운데 기준인 축은 x 오른쪽·y 아래로), 불투명도는 `opacity`. 단위는 pt. 이미지는 한 번만 넣어 모든 쪽이
-  공유하고, PNG 투명도를 유지하며, 쪽 번호는 워터마크 위에 그립니다.
+  공유하고, PNG 투명도를 유지하며, 쪽 번호는 워터마크 위에 그립니다. 회전된 쪽(`/Rotate` 90·180·270)은 화면에 보이는 쪽 기준으로
+  놓고 바로 세웁니다.
 - `S2PdfUtil.setDefaultFont(Path)` / `setDefaultFont(Class, String)` / `resetDefaultFont()`. 폰트를 지정하지 않으면 설치된 한글 TrueType 폰트를
   씁니다(`SYSTEM_FONT_CANDIDATES`: 맑은 고딕, 나눔고딕, Noto Sans KR 등).
 - `PdfSource.maxBytes(long)` (다운로드·메모리 이미지 소스 기본 100MB).
