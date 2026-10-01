@@ -71,7 +71,7 @@ final class S2PdfCache {
     /** 0 or less: half of the free-space reserve | 0 이하: 최소 여유 공간의 50% */
     static final long DEFAULT_MAX_BYTES = 0;
     static final Duration DEFAULT_MAX_AGE = Duration.ofDays(1);
-    /** 0 or less: the smaller of 20% of the disk and 20GB | 0 이하: 디스크 용량의 20% 와 20GB 중 작은 값 */
+    /** 0 or less: the smaller of 10% of the disk and 20GB | 0 이하: 디스크 용량의 10% 와 20GB 중 작은 값 */
     static final long DEFAULT_MIN_FREE_BYTES = 0;
     private static final long MIN_FREE_CAP = 20L * 1024 * 1024 * 1024;
 
@@ -117,7 +117,7 @@ final class S2PdfCache {
 
     /** Free space to keep on the cache's disk | 캐시 디스크에 남길 여유 공간 */
     private static long minFree(java.nio.file.FileStore store) throws IOException {
-        return minFreeBytes > 0 ? minFreeBytes : Math.min(MIN_FREE_CAP, store.getTotalSpace() / 5);
+        return minFreeBytes > 0 ? minFreeBytes : Math.min(MIN_FREE_CAP, store.getTotalSpace() / 10);
     }
 
     /** Size limit of the cache: as configured, or half of the free-space reserve | 캐시 최대 크기: 지정값 또는 최소 여유 공간의 50% */
