@@ -783,7 +783,7 @@ public class S2PdfUtil {
      */
     public static boolean isBrowserRenderingAvailable() {
         var command = resolveBrowserCommand();
-        return browserEnabled && command != null && commandExists(command.get(0));
+        return browserEnabled && command != null && S2OfficeConverter.commandExists(command.get(0));
     }
 
     private static List<String> resolveBrowserCommand() {
@@ -792,7 +792,7 @@ public class S2PdfUtil {
             return configured;
         }
         var detected = detectedBrowserCommand;
-        if (detected != null && commandExists(detected.get(0))) {
+        if (detected != null && S2OfficeConverter.commandExists(detected.get(0))) {
             return detected;
         }
         detected = detectBrowserCommand();
@@ -808,7 +808,7 @@ public class S2PdfUtil {
         if (fromEnv != null && !fromEnv.isBlank()) {
             return List.of(fromEnv.trim());
         }
-        var found = findOnPath("s2-chrome");
+        var found = S2OfficeConverter.findOnPath("s2-chrome");
         if (found != null) {
             return List.of(found.toString());
         }
@@ -828,7 +828,7 @@ public class S2PdfUtil {
             String cssPath, String fontPath, Class<?> clazz, String... convertCssBackgroundImageTargetSelectors)
             throws IOException {
         var command = browserEnabled ? resolveBrowserCommand() : null;
-        if (command != null && commandExists(command.get(0))) {
+        if (command != null && S2OfficeConverter.commandExists(command.get(0))) {
             var htmlWithImages = embedImages(htmlContent, staticResourceBasePath, convertCssBackgroundImageTargetSelectors);
             var cssContent = S2Util.isNotEmpty(cssPath)
                     ? loadCssContent(clazz, cssPath, staticResourceBasePath, convertCssBackgroundImageTargetSelectors)
@@ -871,16 +871,16 @@ public class S2PdfUtil {
             try {
                 finished = process.waitFor(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
-                destroyTree(process);
+                S2OfficeConverter.destroyTree(process);
                 Thread.currentThread().interrupt();
                 throw new IOException("브라우저 변환이 중단되었습니다.", e);
             }
             if (!finished) {
-                destroyTree(process);
+                S2OfficeConverter.destroyTree(process);
                 throw new IOException("브라우저 변환 제한 시간(" + timeout.toSeconds() + "초)을 넘었습니다");
             }
             if (process.exitValue() != 0 || !Files.isRegularFile(output) || Files.size(output) == 0) {
-                throw new IOException("종료 코드 " + process.exitValue() + ", 명령 " + args.get(0) + ", 출력: " + readTail(log, 2000));
+                throw new IOException("종료 코드 " + process.exitValue() + ", 명령 " + args.get(0) + ", 출력: " + S2OfficeConverter.readTail(log, 2000));
             }
             try (var in = Files.newInputStream(output)) {
                 var head = in.readNBytes(1024);
@@ -1035,255 +1035,19 @@ public class S2PdfUtil {
     }
 
     // ------------------------------------------------------------------------
-    // Office and Hangul documents (LibreOffice) | 오피스·한글 문서 (LibreOffice)
+    // Office and Hangul documents: S2OfficeConverter | 오피스·한글 문서: S2OfficeConverter
 
-    /** Extensions accepted by {@link PdfSource#ofDocument(Path)}; hwp/hwpx need the H2Orestart extension | 문서 확장자 */
-    public static final java.util.Set<String> DOCUMENT_EXTENSIONS = java.util.Set.of(
-            "doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "csv", "ppt", "pptx", "odp", "hwp", "hwpx");
-
-    private static final java.util.Set<String> HWP_EXTENSIONS = java.util.Set.of("hwp", "hwpx");
-
-    private static final String CONVERTER_REQUIRED = "오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.";
-
-    /** Set by setOfficeCommand; never re-detected | setOfficeCommand 로 지정한 명령 (다시 찾지 않음) */
-    private static volatile List<String> configuredOfficeCommand;
-    /** Last detected command; "not found" is not remembered, so an install is picked up without a restart | 마지막으로 찾은 명령. "없음"은 기억하지 않아 설치 후 재시작 없이 반영 */
-    private static volatile List<String> detectedOfficeCommand;
-    private static volatile Duration officeTimeout = Duration.ofMinutes(3);
-
-    /**
-     * 문서 변환에 쓸 LibreOffice 호환 명령을 정한다. 지정하지 않으면 다음 순서로 찾는다.
-     * <ol>
-     * <li>환경 변수 {@code S2_SOFFICE}</li>
-     * <li>PATH 의 {@code s2-soffice} (_devtools2 {@code scripts/linux/setup-projects/s2/s2-office-converter/setup-s2-office-converter.sh}가 설치하는 Podman 변환기)</li>
-     * <li>PATH 의 {@code soffice}, {@code libreoffice}</li>
-     * <li>고정 경로 {@code /usr/local/bin/s2-soffice}(PATH 에 없을 때), 운영체제별 기본 설치 경로 (Windows {@code C:\Program Files\LibreOffice\program\soffice.exe}, macOS
-     * {@code /Applications/LibreOffice.app/Contents/MacOS/soffice}, Linux {@code /opt/libreoffice}*{@code /program/soffice})</li>
-     * </ol>
-     * 명령은 {@code --headless --convert-to pdf --outdir <폴더> <파일>} 형식을 받아야 한다.
-     *
-     * @param command 명령과 앞부분 인자 (예: {@code "s2-soffice"}, {@code "/opt/libreoffice/program/soffice"})
-     */
-    public static void setOfficeCommand(String... command) {
-        if (command == null || command.length == 0 || command[0] == null || command[0].isBlank()) {
-            throw new IllegalArgumentException("명령이 비었습니다.");
-        }
-        configuredOfficeCommand = List.of(command);
-    }
-
-    /** 지정한 명령을 지우고 자동 탐색으로 되돌린다. */
-    public static void resetOfficeCommand() {
-        configuredOfficeCommand = null;
-        detectedOfficeCommand = null;
-    }
-
-    /**
-     * 문서 한 건의 변환 제한 시간 (기본 3분). 넘으면 변환 프로세스를 강제로 끝내고 예외를 던진다.
-     *
-     * @param timeout 제한 시간
-     */
-    public static void setOfficeTimeout(Duration timeout) {
-        if (timeout == null || timeout.isNegative() || timeout.isZero()) {
-            throw new IllegalArgumentException("제한 시간은 0 보다 커야 합니다: " + timeout);
-        }
-        officeTimeout = timeout;
-    }
-
-    /**
-     * 오피스·한글 문서를 변환할 수 있는지 확인한다 (변환 명령이 있는지만 보며 실행하지는 않음). 화면에서 문서 첨부 기능을 보여 줄지 정할 때 쓴다.
-     *
-     * @return 변환 명령이 있으면 true
-     */
-    public static boolean isOfficeConversionAvailable() {
-        var command = resolveOfficeCommand();
-        return command != null && commandExists(command.get(0));
-    }
-
-    /** A path must be executable; a bare name must be on the PATH | 경로는 실행 가능해야 하고, 이름만 있으면 PATH 에 있어야 함 */
-    private static boolean commandExists(String command) {
-        if (command.contains("/") || command.contains("\\")) {
-            return Files.isExecutable(Path.of(command));
-        }
-        return findOnPath(command) != null;
-    }
-
-    /**
-     * 사용할 변환 명령. 없으면 비어 있다.
-     *
-     * @return 명령과 앞부분 인자
-     */
-    public static java.util.Optional<List<String>> officeCommand() {
-        return java.util.Optional.ofNullable(resolveOfficeCommand());
-    }
-
-    /**
-     * The configured command, or the detected one. Detection is repeated while nothing is found and when the
-     * detected command disappears, so installing or removing the converter needs no restart (it only checks a few
-     * paths).
-     */
-    private static List<String> resolveOfficeCommand() {
-        var configured = configuredOfficeCommand;
-        if (configured != null) {
-            return configured;
-        }
-        var detected = detectedOfficeCommand;
-        if (detected != null && commandExists(detected.get(0))) {
-            return detected;
-        }
-        detected = detectOfficeCommand();
-        if (detected != null && !detected.equals(detectedOfficeCommand)) {
-            logger.info("문서 변환 명령: {}", detected);
-        }
-        detectedOfficeCommand = detected;
-        return detected;
-    }
-
-    private static List<String> detectOfficeCommand() {
-        var fromEnv = System.getenv("S2_SOFFICE");
-        if (fromEnv != null && !fromEnv.isBlank()) {
-            return List.of(fromEnv.trim());
-        }
-        var windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-        for (var name : windows ? List.of("soffice.exe", "soffice.com") : List.of("s2-soffice", "soffice", "libreoffice")) {
-            var found = findOnPath(name);
-            if (found != null) {
-                return List.of(found.toString());
-            }
-        }
-        var candidates = new ArrayList<Path>();
-        if (windows) {
-            for (var base : new String[] { System.getenv("ProgramFiles"), System.getenv("ProgramFiles(x86)") }) {
-                if (base != null) {
-                    candidates.add(Path.of(base, "LibreOffice", "program", "soffice.exe"));
-                }
-            }
-        } else {
-            // Where s2-office-converter/setup-s2-office-converter.sh (_devtools2) installs it, for PATHs without /usr/local/bin (cron, trimmed services)
-            // | 설치 스크립트가 두는 위치. /usr/local/bin 이 PATH 에 없는 환경(cron, PATH 를 좁힌 서비스) 대비
-            candidates.add(Path.of("/usr/local/bin/s2-soffice"));
-            candidates.add(Path.of("/Applications/LibreOffice.app/Contents/MacOS/soffice"));
-            candidates.add(Path.of("/usr/lib/libreoffice/program/soffice"));
-            try (var dirs = Files.newDirectoryStream(Path.of("/opt"), "libreoffice*")) {
-                for (var dir : dirs) {
-                    candidates.add(dir.resolve("program").resolve("soffice"));
-                }
-            } catch (IOException | RuntimeException ignored) {
-                // No /opt or not readable | /opt 가 없거나 읽을 수 없음
-            }
-        }
-        for (var candidate : candidates) {
-            if (Files.isExecutable(candidate)) {
-                return List.of(candidate.toString());
-            }
-        }
-        return null;
-    }
-
-    private static Path findOnPath(String name) {
-        var path = System.getenv("PATH");
-        if (path == null) {
-            return null;
-        }
-        for (var dir : path.split(java.io.File.pathSeparator)) {
-            if (dir.isBlank()) {
-                continue;
-            }
-            try {
-                var candidate = Path.of(dir, name);
-                if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
-                    return candidate;
-                }
-            } catch (RuntimeException ignored) {
-                // Invalid PATH entry | 잘못된 PATH 항목
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Converts one document with LibreOffice in a private temporary folder (its own user profile, so conversions can
-     * run concurrently) and moves the PDF to {@code target}.
-     */
+    /** A document source to PDF at {@code target}, in the caller's conversion slot | 문서 소스를 target 에 PDF 로 (호출자의 변환 자리에서) */
     private static void convertDocumentToPdf(PdfSource source, Path target) throws IOException {
-        var command = resolveOfficeCommand();
-        if (command == null || !commandExists(command.get(0))) {
-            throw new IOException(CONVERTER_REQUIRED);
+        S2OfficeConverter.Input input;
+        if (source.pathData != null) {
+            input = S2OfficeConverter.input(source.pathData);
+        } else if (source.byteData != null) {
+            input = S2OfficeConverter.input(source.byteData);
+        } else {
+            input = S2OfficeConverter.input(source.inputStream);
         }
-        var extension = S2FileUtil.getExtension(source.documentName, true);
-        var work = Files.createTempDirectory("s2_office_");
-        try {
-            // A plain ASCII name avoids encoding issues in the command line | 명령줄 인코딩 문제를 피하려고 ASCII 이름 사용
-            var input = work.resolve("document." + extension);
-            if (source.pathData != null) {
-                Files.copy(source.pathData, input);
-            } else if (source.byteData != null) {
-                Files.write(input, source.byteData);
-            } else {
-                try (var out = Files.newOutputStream(input)) {
-                    source.inputStream.transferTo(out);
-                }
-            }
-            var outDir = Files.createDirectories(work.resolve("out"));
-
-            var args = new ArrayList<>(command);
-            var wrapper = Path.of(command.get(0)).getFileName().toString().startsWith("s2-soffice");
-            if (!wrapper) {
-                // A separate LibreOffice profile per call lets conversions run at the same time | 호출마다 별도 프로필 → 동시 변환 가능
-                args.add("-env:UserInstallation=" + work.resolve("profile").toUri());
-            }
-            args.addAll(List.of("--headless", "--norestore", "--nolockcheck", "--convert-to", "pdf", "--outdir",
-                    outDir.toString(), input.toString()));
-
-            var log = work.resolve("soffice.log");
-            Process process;
-            try {
-                process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-            } catch (IOException e) {
-                throw new IOException(CONVERTER_REQUIRED, e);
-            }
-            var timeout = officeTimeout;
-            boolean finished;
-            try {
-                finished = process.waitFor(timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                destroyTree(process);
-                Thread.currentThread().interrupt();
-                throw new IOException("문서 변환이 중단되었습니다.", e);
-            }
-            if (!finished) {
-                destroyTree(process);
-                throw new IOException("문서 변환 제한 시간(" + timeout.toSeconds() + "초)을 넘었습니다: " + source.documentName);
-            }
-            var output = outDir.resolve("document.pdf");
-            if (process.exitValue() != 0 || !Files.isRegularFile(output) || Files.size(output) == 0) {
-                // Short message for users; the exit code and LibreOffice output go to the cause and the log
-                // | 사용자에게는 짧은 메시지, 종료 코드와 LibreOffice 출력은 원인(cause)과 로그로
-                var detail = new IOException("soffice 종료 코드 " + process.exitValue() + ", 명령 " + args.get(0) + ", 출력: "
-                        + readTail(log, 2000));
-                logger.warn("문서 변환 실패: {} ({})", source.documentName, detail.getMessage());
-                // Plain LibreOffice without the H2Orestart extension cannot read Hangul files | H2Orestart 없는 LibreOffice 는 한글 파일을 못 읽음
-                var message = HWP_EXTENSIONS.contains(extension) && !wrapper ? CONVERTER_REQUIRED
-                        : "문서를 PDF로 변환하지 못했습니다: " + source.documentName;
-                throw new IOException(message, detail);
-            }
-            Files.move(output, target, StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            S2FileUtil.deleteQuietly(work);
-        }
-    }
-
-    private static void destroyTree(Process process) {
-        process.descendants().forEach(ProcessHandle::destroyForcibly);
-        process.destroyForcibly();
-    }
-
-    private static String readTail(Path log, int maxChars) {
-        try {
-            var text = Files.readString(log, StandardCharsets.UTF_8).strip();
-            return text.length() > maxChars ? "..." + text.substring(text.length() - maxChars) : text;
-        } catch (IOException | RuntimeException e) {
-            return "";
-        }
+        S2OfficeConverter.convertToPdf(input, source.documentName, target);
     }
 
     // ------------------------------------------------------------------------
@@ -2704,15 +2468,15 @@ public class S2PdfUtil {
             case "html", "htm", "xhtml" -> SourceType.HTML;
             case "txt", "text", "log" -> SourceType.TEXT;
             case "md", "markdown" -> SourceType.MARKDOWN;
-            default -> DOCUMENT_EXTENSIONS.contains(extension) ? SourceType.DOCUMENT : null;
+            default -> S2OfficeConverter.DOCUMENT_EXTENSIONS.contains(extension) ? SourceType.DOCUMENT : null;
             };
         }
 
         /**
-         * 오피스·한글 문서 소스를 만든다. 병합할 때 LibreOffice({@link S2PdfUtil#setOfficeCommand(String...)} 참고)로 PDF 로 변환한다.
+         * 오피스·한글 문서 소스를 만든다. 병합할 때 LibreOffice({@link S2OfficeConverter#setCommand(String...)} 참고)로 PDF 로 변환한다.
          * LibreOffice 가 없으면 이 소스를 병합할 때 원인을 알려 주는 예외가 나며, 다른 소스만 병합하는 데는 영향이 없다.
          *
-         * @param path 문서 파일 ({@link S2PdfUtil#DOCUMENT_EXTENSIONS}, hwp·hwpx 는 H2Orestart 확장 필요)
+         * @param path 문서 파일 ({@link S2OfficeConverter#DOCUMENT_EXTENSIONS}, hwp·hwpx 는 H2Orestart 확장 필요)
          * @return 문서 소스
          * @throws IllegalArgumentException 지원하지 않는 확장자일 때
          */
@@ -2762,9 +2526,9 @@ public class S2PdfUtil {
 
         private static String checkDocumentName(String fileName) {
             var extension = S2FileUtil.getExtension(fileName == null ? "" : fileName, true);
-            if (!DOCUMENT_EXTENSIONS.contains(extension)) {
+            if (!S2OfficeConverter.DOCUMENT_EXTENSIONS.contains(extension)) {
                 throw new IllegalArgumentException(
-                        "[PdfSource] 지원하지 않는 문서 형식입니다: " + fileName + " (지원: " + DOCUMENT_EXTENSIONS + ")");
+                        "[PdfSource] 지원하지 않는 문서 형식입니다: " + fileName + " (지원: " + S2OfficeConverter.DOCUMENT_EXTENSIONS + ")");
             }
             return fileName;
         }
@@ -2992,9 +2756,6 @@ public class S2PdfUtil {
      * @return 병합된 PDF 스트림 (S2ResourceInputStream - close 시 임시 파일 자동 정리)
      * @throws IOException 입출력 또는 변환 오류 시
      */
-    private static volatile int conversionParallelism = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
-    /** Shared by every merge, so the limit holds for the whole server | 모든 병합이 함께 써서 서버 전체 한도가 됨 */
-    private static volatile java.util.concurrent.Semaphore conversionSlots = new java.util.concurrent.Semaphore(conversionParallelism, true);
 
     /**
      * 서버 전체에서 동시에 실행할 변환 수 (기본: CPU 수와 4 중 작은 값). 요청이 몇 건이 오든 이 수만큼만 동시에 변환하고 나머지는 차례를 기다린다. 문서·웹
@@ -3003,11 +2764,7 @@ public class S2PdfUtil {
      * @param parallelism 1 이상
      */
     public static void setConversionParallelism(int parallelism) {
-        if (parallelism < 1) {
-            throw new IllegalArgumentException("동시 변환 수는 1 이상이어야 합니다: " + parallelism);
-        }
-        conversionParallelism = parallelism;
-        conversionSlots = new java.util.concurrent.Semaphore(parallelism, true);
+        S2OfficeConverter.setParallelism(parallelism);
     }
 
     /** Writes a converted PDF; returns false when the result must not be cached (a fallback) | 변환 결과를 쓴다. 대체 결과면 false */
@@ -3133,7 +2890,7 @@ public class S2PdfUtil {
                         source.pathData = copy;
                     }
                     key = S2PdfCache.key("DOCUMENT").add(S2FileUtil.getExtension(source.documentName, true).toLowerCase(Locale.ROOT))
-                            .add(S2PdfCache.commandIdentity(resolveOfficeCommand()));
+                            .add(S2PdfCache.commandIdentity(S2OfficeConverter.resolveCommand()));
                     if (source.pathData != null) {
                         key.addFile(source.pathData);
                     } else {
@@ -3235,7 +2992,7 @@ public class S2PdfUtil {
 
     /**
      * 파일명, 확장자 또는 MIME 타입으로 병합할 수 있는 형식인지 확인한다 (내용은 보지 않음). 병합 목록을 미리 거르거나 화면에 병합 가능 여부를 표시할 때 쓴다.
-     * 형식만 보며, 문서 변환기({@link #isOfficeConversionAvailable()})나 마크다운 의존성({@code S2MarkdownUtil.isAvailable()}) 설치 여부는 따로
+     * 형식만 보며, 문서 변환기({@link S2OfficeConverter#isAvailable()})나 마크다운 의존성({@code S2MarkdownUtil.isAvailable()}) 설치 여부는 따로
      * 확인한다.
      *
      * @param nameOrMimeType 파일명({@code 보고서.hwp}), 확장자({@code hwp}) 또는 MIME 타입({@code application/x-hwp})
@@ -3282,8 +3039,8 @@ public class S2PdfUtil {
         Objects.requireNonNull(sources, "sources");
         var settings = (options != null ? options : MergeOptions.create()).forPreparing();
         var temps = java.util.Collections.synchronizedList(new ArrayList<Path>());
-        var executor = S2ThreadUtil.newExecutor(conversionParallelism);
-        var slots = conversionSlots;
+        var executor = S2ThreadUtil.newExecutor(S2OfficeConverter.parallelism());
+        var slots = S2OfficeConverter.slots();
         var conversions = new ArrayList<CompletableFuture<Void>>();
         for (int i = 0; i < sources.size(); i++) {
             var source = sources.get(i);
@@ -3358,9 +3115,9 @@ public class S2PdfUtil {
         // downloads use), and are added in the original order | 변환은 전용 풀에서 동시에 실행하고(외부 변환기가 URL 다운로드용 공용
         // 풀을 채우지 않도록) 원래 순서대로 붙인다
         var cancelled = new AtomicBoolean();
-        var parallelism = conversionParallelism;
+        var parallelism = S2OfficeConverter.parallelism();
         var converters = S2ThreadUtil.newExecutor(parallelism);
-        var slots = conversionSlots;
+        var slots = S2OfficeConverter.slots();
         var prepared = new ArrayList<CompletableFuture<File>>();
         try {
             for (int i = 0; i < sources.size(); i++) {

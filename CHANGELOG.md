@@ -122,6 +122,16 @@ before upgrading.
   6 photos: 5.1 s first, then 0.29 s).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
   same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- `S2OfficeConverter`: a separate class converting Office and Hangul documents through LibreOffice (s2-soffice or an
+  installed soffice): `toPdf`, `toHtml` for web editor imports, and `convert` to another format (hwp to docx, say).
+  `toHtml` returns the body HTML and the images apart: scripts, frames, event attributes, dangerous links and
+  print-only styles are removed, `<font>` and `<center>` become styles, images are named `image-1.png` and so on, BMP
+  becomes PNG, `maxImageWidth` shrinks them, and formats browsers cannot show (WMF) are dropped.
+  `html(name -> url)` points images at the app's storage and `htmlWithEmbeddedImages()` embeds data URIs (an hwpx:
+  45MB of images down to 4.5MB). Hangul (hwp) uses the plain HTML filter, since LibreOffice crashes on it with XHTML.
+  The settings (`setCommand`, `setTimeout`, `isAvailable`, `setParallelism`) live only here and `S2PdfUtil` shares
+  them and the server-wide conversion limit (`S2PdfUtil.setConversionParallelism` sets the same limit). In a
+  lightweight build it is a feature needing only jsoup, and the `S2PdfUtil` feature requires it (checked by the build).
 - Source kind detection: `PdfSource.of(Path | File | byte[] | InputStream [, hint])` tells the kind from a hint
   (original file name, extension or MIME type), then the file name, then the content, and makes the matching source.
   Mixed attachment lists from a database, stored under names without an extension (UUIDs), merge without branching.
@@ -153,11 +163,11 @@ before upgrading.
 - `PdfSource.maxBytes(long)` (default 100MB for downloads and in-memory image sources).
 - Office and Hangul documents in `S2PdfUtil.merge`: `PdfSource.ofDocument(...)` (doc, docx, odt, rtf, xls, xlsx, ods,
   csv, ppt, pptx, odp, hwp, hwpx) is converted by a LibreOffice-compatible command when one is installed:
-  `setOfficeCommand`, the `S2_SOFFICE` environment variable, `s2-soffice` (a Podman converter with LibreOffice,
+  `S2OfficeConverter.setCommand`, the `S2_SOFFICE` environment variable, `s2-soffice` (a Podman converter with LibreOffice,
   H2Orestart and Korean fonts), `soffice`/`libreoffice` on the PATH, or the default install folders. No Java
   dependency is added. Without LibreOffice every other source still merges, and a document source fails with "오피스·한글 문서를 변환하려면
-  s2-office-converter 설치가 필요합니다." (details in the cause and the log); `isOfficeConversionAvailable()` tells the caller in advance. Each conversion uses its own
-  profile folder (conversions can run concurrently) and a time limit (`setOfficeTimeout`, default 3 minutes).
+  s2-office-converter 설치가 필요합니다." (details in the cause and the log); `S2OfficeConverter.isAvailable()` tells the caller in advance. Each conversion uses its own
+  profile folder (conversions can run concurrently) and a time limit (`S2OfficeConverter.setTimeout`, default 3 minutes).
 - HTML pages fetched by URL (`ofUrl`, `ofHtmlUrl`) come out as the browser shows them: the page's images (`<img>`, lazy
   `data-src`/`srcset`, CSS backgrounds) and stylesheets (`<link>`, `@import`) are fetched and embedded. The same origin is
   fetched as is, and request headers (login cookies) go only to it. Other hosts (CDNs) are fetched only when public;

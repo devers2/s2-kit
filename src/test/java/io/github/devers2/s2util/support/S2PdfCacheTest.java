@@ -68,7 +68,7 @@ class S2PdfCacheTest {
     @AfterEach
     void tearDown() {
         S2PdfUtil.resetConversionCache();
-        S2PdfUtil.resetOfficeCommand();
+        S2OfficeConverter.resetCommand();
         S2PdfUtil.resetBrowserCommand();
         S2PdfUtil.setBrowserRenderingEnabled(true);
     }
@@ -118,7 +118,7 @@ class S2PdfCacheTest {
 
     @Test
     void theSameDocumentIsConvertedOnce() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("plan.docx"), "docx bytes");
         for (int i = 0; i < 3; i++) {
             try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("cover"), PdfSource.ofDocument(docx)), CACHED))) {
@@ -137,7 +137,7 @@ class S2PdfCacheTest {
 
     @Test
     void theCacheIsUsedOnlyWhenAsked() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("plan.docx"), "docx bytes");
         for (int i = 0; i < 2; i++) {
             S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx))).close();
@@ -148,7 +148,7 @@ class S2PdfCacheTest {
 
     @Test
     void changedContentOrConverterIsConvertedAgain() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("plan.docx"), "version 1");
         S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();
         Files.writeString(docx, "version 2");
@@ -158,7 +158,7 @@ class S2PdfCacheTest {
         // Upgrading the converter (a different wrapper) | 변환기 업그레이드 (다른 래퍼)
         var upgraded = fakeSoffice("soffice-v2");
         Files.writeString(upgraded, Files.readString(upgraded) + "# v2\n");
-        S2PdfUtil.setOfficeCommand(upgraded.toString());
+        S2OfficeConverter.setCommand(upgraded.toString());
         S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();
         assertEquals(3, calls(), "new converter");
         assertEquals(3, entries().size());
@@ -282,7 +282,7 @@ class S2PdfCacheTest {
 
     @Test
     void theFolderIsPrivateAndConcurrentRequestsAgree() throws Exception {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("same.docx"), "same content");
         var pool = Executors.newFixedThreadPool(8);
         try {
@@ -310,7 +310,7 @@ class S2PdfCacheTest {
 
     @Test
     void preparedSourcesMakeTheFirstMergeFast() throws Exception {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("uploaded.docx"), "uploaded");
         var html = "<h1>note</h1>";
         // Right after an upload | 업로드 직후
@@ -342,7 +342,7 @@ class S2PdfCacheTest {
 
     @Test
     void aFailedPreparationDoesNotThrow() throws IOException {
-        S2PdfUtil.setOfficeCommand(dir.resolve("missing-soffice").toString());
+        S2OfficeConverter.setCommand(dir.resolve("missing-soffice").toString());
         var future = S2PdfUtil.prepare(PdfSource.ofDocument(Files.writeString(dir.resolve("a.docx"), "x")),
                 PdfSource.ofText("still prepared"));
         var e = assertThrows(java.util.concurrent.ExecutionException.class,
@@ -381,7 +381,7 @@ class S2PdfCacheTest {
     @Test
     void anExpiredEntryIsNotServedBeforeCleanup() throws IOException {
         S2PdfUtil.setConversionCacheMaxAge(Duration.ofHours(24));
-        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("old.docx"), "old");
         S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();
         Files.setLastModifiedTime(entries().get(0), FileTime.from(Instant.now().minus(Duration.ofHours(25))));

@@ -104,7 +104,7 @@ class ReadmeExamplesTest {
                 java.time.Duration.ofSeconds(30)));
 
         InputStream uploadedStream = InputStream.nullInputStream();
-        if (io.github.devers2.s2util.support.S2PdfUtil.isOfficeConversionAvailable()) {
+        if (io.github.devers2.s2util.support.S2OfficeConverter.isAvailable()) {
             io.github.devers2.s2util.support.S2PdfUtil.merge(List.of(
                     io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
                     io.github.devers2.s2util.support.S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));

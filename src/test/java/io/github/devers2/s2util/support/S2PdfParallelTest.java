@@ -44,7 +44,7 @@ class S2PdfParallelTest {
 
     @AfterEach
     void tearDown() {
-        S2PdfUtil.resetOfficeCommand();
+        S2OfficeConverter.resetCommand();
         S2PdfUtil.setConversionParallelism(Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors())));
     }
 
@@ -112,7 +112,7 @@ class S2PdfParallelTest {
 
     @Test
     void documentsAreConvertedConcurrentlyInOrder() throws IOException {
-        S2PdfUtil.setOfficeCommand(slowSoffice().toString());
+        S2OfficeConverter.setCommand(slowSoffice().toString());
         S2PdfUtil.setConversionParallelism(4);
         var start = System.nanoTime();
         try (var doc = load(S2PdfUtil.merge(documents("1", "2", "3", "4"), MergeOptions.create().bookmarks(true)))) {
@@ -125,7 +125,7 @@ class S2PdfParallelTest {
 
     @Test
     void parallelismOneConvertsOneAtATime() throws IOException {
-        S2PdfUtil.setOfficeCommand(slowSoffice().toString());
+        S2OfficeConverter.setCommand(slowSoffice().toString());
         S2PdfUtil.setConversionParallelism(1);
         var start = System.nanoTime();
         S2PdfUtil.merge(documents("1", "1", "1")).close();
@@ -135,7 +135,7 @@ class S2PdfParallelTest {
 
     @Test
     void theLimitHoldsAcrossConcurrentMerges() throws Exception {
-        S2PdfUtil.setOfficeCommand(slowSoffice().toString());
+        S2OfficeConverter.setCommand(slowSoffice().toString());
         S2PdfUtil.setConversionParallelism(2);
         // Two merges of two documents each, at once: 4 conversions, 2 at a time | 문서 2건짜리 병합 2개 동시: 변환 4건을 2건씩
         var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
@@ -162,7 +162,7 @@ class S2PdfParallelTest {
 
     @Test
     void theFirstFailureInOrderIsReported() throws IOException {
-        S2PdfUtil.setOfficeCommand(slowSoffice().toString());
+        S2OfficeConverter.setCommand(slowSoffice().toString());
         S2PdfUtil.setConversionParallelism(4);
         var sources = new ArrayList<PdfSource>(List.of(PdfSource.ofText("ok")));
         sources.addAll(documents("1", "fail", "fail"));

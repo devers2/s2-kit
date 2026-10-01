@@ -53,8 +53,8 @@ class S2PdfOfficeTest {
 
     @AfterEach
     void tearDown() {
-        S2PdfUtil.resetOfficeCommand();
-        S2PdfUtil.setOfficeTimeout(Duration.ofMinutes(3));
+        S2OfficeConverter.resetCommand();
+        S2OfficeConverter.setTimeout(Duration.ofMinutes(3));
     }
 
     /** A soffice stand-in: {@code behavior} is "ok", "fail" or "hang" | soffice 대역 */
@@ -90,7 +90,7 @@ class S2PdfOfficeTest {
 
     @Test
     void documentsAreConvertedAndMergedInOrder() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("ok").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("ok").toString());
         var docx = Files.writeString(dir.resolve("계획서 초안.docx"), "docx bytes");
         var options = MergeOptions.create().bookmarks(true);
         try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("cover"), PdfSource.ofDocument(docx),
@@ -111,13 +111,13 @@ class S2PdfOfficeTest {
 
     @Test
     void withoutLibreOfficeOnlyDocumentSourcesFail() throws IOException {
-        S2PdfUtil.setOfficeCommand(dir.resolve("missing-soffice").toString());
+        S2OfficeConverter.setCommand(dir.resolve("missing-soffice").toString());
         var e = assertThrows(IOException.class,
                 () -> S2PdfUtil.merge(PdfSource.ofText("ok"), PdfSource.ofDocument(new byte[] { 1 }, "보고서.docx")));
         assertEquals("병합 소스 #2 (DOCUMENT 보고서.docx) 처리 실패: 오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.",
                 e.getMessage());
 
-        assertFalse(S2PdfUtil.isOfficeConversionAvailable(), "a configured command that does not exist");
+        assertFalse(S2OfficeConverter.isAvailable(), "a configured command that does not exist");
 
         // Other sources still merge | 다른 소스는 그대로 병합
         try (var doc = load(S2PdfUtil.merge(PdfSource.ofText("still works")))) {
@@ -127,7 +127,7 @@ class S2PdfOfficeTest {
 
     @Test
     void failedConversionsExplainWhy() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("fail").toString());
+        S2OfficeConverter.setCommand(fakeSoffice("fail").toString());
         var e = assertThrows(IOException.class,
                 () -> S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "보고서.hwp")));
         // Plain LibreOffice failing on a Hangul file: the converter (with H2Orestart) is what is missing
@@ -145,8 +145,8 @@ class S2PdfOfficeTest {
 
     @Test
     void hungConversionsAreStopped() throws IOException {
-        S2PdfUtil.setOfficeCommand(fakeSoffice("hang").toString());
-        S2PdfUtil.setOfficeTimeout(Duration.ofMillis(500));
+        S2OfficeConverter.setCommand(fakeSoffice("hang").toString());
+        S2OfficeConverter.setTimeout(Duration.ofMillis(500));
         var start = System.nanoTime();
         var e = assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "a.xlsx")));
         assertTrue(e.getMessage().contains("제한 시간"), e.getMessage());
@@ -158,11 +158,11 @@ class S2PdfOfficeTest {
         // S2_SOFFICE cannot be set from a test, so detection is exercised through a configured path that appears later
         // | 테스트에서 환경 변수를 바꿀 수 없어, 나중에 생기는 경로로 "없음 → 있음" 전환을 확인
         var later = dir.resolve("installed-later");
-        S2PdfUtil.setOfficeCommand(later.toString());
-        assertFalse(S2PdfUtil.isOfficeConversionAvailable());
+        S2OfficeConverter.setCommand(later.toString());
+        assertFalse(S2OfficeConverter.isAvailable());
         Files.copy(fakeSoffice("ok"), later);
         Files.setPosixFilePermissions(later, PosixFilePermissions.fromString("rwx------"));
-        assertTrue(S2PdfUtil.isOfficeConversionAvailable(), "checked again, not remembered as missing");
+        assertTrue(S2OfficeConverter.isAvailable(), "checked again, not remembered as missing");
         try (var doc = load(S2PdfUtil.merge(PdfSource.ofDocument(new byte[] { 1 }, "a.docx")))) {
             assertEquals(2, doc.getNumberOfPages());
         }
@@ -172,14 +172,14 @@ class S2PdfOfficeTest {
     void unsupportedFormatsAreRejectedUpFront() {
         assertThrows(IllegalArgumentException.class, () -> PdfSource.ofDocument(new byte[] { 1 }, "a.exe"));
         assertThrows(IllegalArgumentException.class, () -> PdfSource.ofDocument(new byte[] { 1 }, "noextension"));
-        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setOfficeTimeout(Duration.ZERO));
-        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setOfficeCommand());
+        assertThrows(IllegalArgumentException.class, () -> S2OfficeConverter.setTimeout(Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> S2OfficeConverter.setCommand());
     }
 
     @Test
     void realConversionWhenAConverterIsInstalled() throws IOException {
-        S2PdfUtil.resetOfficeCommand();
-        Assumptions.assumeTrue(S2PdfUtil.isOfficeConversionAvailable(), "no LibreOffice / s2-soffice installed");
+        S2OfficeConverter.resetCommand();
+        Assumptions.assumeTrue(S2OfficeConverter.isAvailable(), "no LibreOffice / s2-soffice installed");
         // RTF is plain text, so the test needs no binary sample | RTF 는 텍스트라 이진 표본이 필요 없음
         var rtf = "{\\rtf1\\ansi\\uc0 Hello S2 \\u54620\\u44544}";
         try (var doc = load(S2PdfUtil.merge(PdfSource.ofDocument(rtf.getBytes(), "sample.rtf")))) {

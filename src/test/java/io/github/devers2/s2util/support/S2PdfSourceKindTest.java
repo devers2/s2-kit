@@ -46,7 +46,7 @@ class S2PdfSourceKindTest {
 
     @AfterEach
     void tearDown() {
-        S2PdfUtil.resetOfficeCommand();
+        S2OfficeConverter.resetCommand();
     }
 
     private static byte[] pdf(int pages) throws IOException {
@@ -97,7 +97,7 @@ class S2PdfSourceKindTest {
                 echo "$input" >> "%s/inputs.log"; base="$(basename "$input")"; cp "%s" "$out/${base%%.*}.pdf"
                 """.formatted(dir, converted));
         Files.setPosixFilePermissions(soffice, PosixFilePermissions.fromString("rwx------"));
-        S2PdfUtil.setOfficeCommand(soffice.toString());
+        S2OfficeConverter.setCommand(soffice.toString());
 
         // Like a table of attachments: stored path (no extension), original name or MIME type | 첨부 테이블처럼
         record Attachment(Path stored, String hint) {

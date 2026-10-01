@@ -206,10 +206,15 @@ S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view
 
 // 오피스·한글 문서(docx, xlsx, pptx, hwp, hwpx 등)는 LibreOffice 가 설치되어 있으면 변환됨
 // (s2-soffice, soffice, libreoffice 를 자동으로 찾음). 없어도 다른 소스는 그대로 병합됨
-if (S2PdfUtil.isOfficeConversionAvailable()) {
+if (S2OfficeConverter.isAvailable()) {
     S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
             S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));
 }
+
+// 웹에디터 가져오기: 오피스·한글 문서를 본문 HTML 과 이미지로 (스크립트·위험 링크 제거, BMP → PNG)
+var imported = S2OfficeConverter.toHtml(Path.of("보고서.hwp"), S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
+// 이미지를 저장소에 올린 뒤 그 주소로: imported.images() → imported.html(name -> "/files/editor/" + name)
+// 다른 형식으로: S2OfficeConverter.convert(Path.of("보고서.hwp"), "docx", outDir)
 ```
 
 #### SFTP (`S2SftpFileManagerImpl`)

@@ -208,10 +208,15 @@ S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view
 
 // Office and Hangul documents (docx, xlsx, pptx, hwp, hwpx ...) are converted by LibreOffice when it is installed
 // (s2-soffice, soffice or libreoffice is found automatically); without it every other source still merges
-if (S2PdfUtil.isOfficeConversionAvailable()) {
+if (S2OfficeConverter.isAvailable()) {
     S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("plan.docx")),
             S2PdfUtil.PdfSource.ofDocument(uploadedStream, "report.hwp")));
 }
+
+// Web editor import: an Office or Hangul document as body HTML and images (scripts and bad links removed, BMP to PNG)
+var imported = S2OfficeConverter.toHtml(Path.of("report.hwp"), S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
+// Upload the images, then point the HTML at them: imported.images() -> imported.html(name -> "/files/editor/" + name)
+// Another format: S2OfficeConverter.convert(Path.of("report.hwp"), "docx", outDir)
 ```
 
 #### SFTP (`S2SftpFileManagerImpl`)

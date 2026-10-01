@@ -121,7 +121,14 @@ extra["releaseCompatibility"] = JavaVersion.VERSION_17
  *   - S2PdfUtil 포함 (기본값): setOf("licensesInfo", "S2PdfUtil")
  *   - S2PdfUtil 제외 (경량화): setOf("licensesInfo")
  */
-extra["activeFeatures"] = setOf("licensesInfo", "S2PdfUtil", "S2MarkdownUtil")
+extra["activeFeatures"] = setOf("licensesInfo", "S2OfficeConverter", "S2PdfUtil", "S2MarkdownUtil")
+
+// S2PdfUtil converts Office and Hangul documents through S2OfficeConverter | S2PdfUtil 은 S2OfficeConverter 로 오피스·한글 문서를 변환
+(extra["activeFeatures"] as Set<*>).let { features ->
+    require("S2PdfUtil" !in features || "S2OfficeConverter" in features) {
+        "activeFeatures: S2PdfUtil 기능은 S2OfficeConverter 기능이 필요합니다. | S2PdfUtil needs the S2OfficeConverter feature."
+    }
+}
 
 /**
  * [동적 기능 소스 정보 (Feature Toggles Definition)]
@@ -143,6 +150,16 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "licenses/LICENSE-JZLIB-BSD",
             "licenses/LICENSE-JBCRYPT-ISC",
             "licenses/NOTICE"
+        )
+    ),
+    "S2OfficeConverter" to mapOf(
+        /*
+         * Office and Hangul documents through LibreOffice (an external program, not linked): PDF, HTML for web editors,
+         * other formats. jsoup (MIT) cleans the HTML | LibreOffice(외부 프로그램, 링크하지 않음)로 오피스·한글 문서 변환. jsoup(MIT)으로 HTML 정리
+         */
+        "sources" to listOf("io/github/devers2/s2util/support/S2OfficeConverter.java"),
+        "dependencies" to listOf(
+            mapOf("configuration" to "compileOnly", "group" to "org.jsoup", "name" to "jsoup", "version" to "1.23.2")
         )
     ),
     "S2PdfUtil" to mapOf(

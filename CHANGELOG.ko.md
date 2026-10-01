@@ -101,6 +101,14 @@
   결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
   `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
+- `S2OfficeConverter`: LibreOffice(s2-soffice 또는 설치된 soffice)로 오피스·한글 문서를 변환하는 별도 클래스. `toPdf`, 웹에디터 가져오기용
+  `toHtml`, 다른 형식으로 바꾸는 `convert`(예: hwp → docx). `toHtml`은 본문 HTML 과 이미지를 따로 돌려줍니다: 스크립트·프레임·이벤트 속성·
+  위험한 링크와 인쇄 전용 스타일을 지우고, `<font>`·`<center>`를 스타일로 바꾸며, 이미지는 `image-1.png`처럼 이름을 붙이고 BMP 는 PNG 로,
+  `maxImageWidth`로 줄이며 웹에서 못 쓰는 형식(WMF 등)은 뺍니다. `html(이름 → 주소)`로 앱 저장소 주소로 바꾸거나
+  `htmlWithEmbeddedImages()`로 data URI 를 넣습니다(hwpx 예: 이미지 45MB → 4.5MB). 한글(hwp)은 XHTML 필터에서 LibreOffice 가 비정상
+  종료하므로 일반 HTML 필터를 씁니다. 설정(`setCommand`, `setTimeout`, `isAvailable`, `setParallelism`)은 이 클래스에만 있고
+  `S2PdfUtil`이 같은 설정과 서버 전체 변환 한도를 씁니다(`S2PdfUtil.setConversionParallelism`은 같은 한도). 경량 빌드에서는 jsoup 만 필요한
+  별도 기능 묶음이며, `S2PdfUtil` 기능은 이 기능을 필요로 합니다(빌드에서 확인).
 - 소스 종류 자동 판별: `PdfSource.of(Path | File | byte[] | InputStream [, 힌트])`는 힌트(원래 파일명, 확장자, MIME 타입), 파일명, 내용 순으로
   종류를 판별해 알맞은 소스를 만듭니다. DB 의 첨부 목록처럼 종류가 섞이고 저장 파일명에 확장자가 없는(UUID) 파일도 분기 없이 병합합니다. 내용
   판별은 PDF·이미지·SVG·HTML·RTF 는 앞부분, docx·xlsx·pptx·hwpx·odt·ods·odp 는 압축 항목, doc·xls·ppt·hwp 는 내부 스트림 이름으로 하며, 한글
@@ -123,11 +131,11 @@
   씁니다(`SYSTEM_FONT_CANDIDATES`: 맑은 고딕, 나눔고딕, Noto Sans KR 등).
 - `PdfSource.maxBytes(long)` (다운로드·메모리 이미지 소스 기본 100MB).
 - `S2PdfUtil.merge`의 오피스·한글 문서: `PdfSource.ofDocument(...)`(doc, docx, odt, rtf, xls, xlsx, ods, csv, ppt, pptx, odp, hwp, hwpx)는
-  LibreOffice 호환 명령이 설치되어 있으면 변환됩니다. `setOfficeCommand`, 환경 변수 `S2_SOFFICE`, `s2-soffice`(LibreOffice·H2Orestart·한글
+  LibreOffice 호환 명령이 설치되어 있으면 변환됩니다. `S2OfficeConverter.setCommand`, 환경 변수 `S2_SOFFICE`, `s2-soffice`(LibreOffice·H2Orestart·한글
   폰트가 든 Podman 변환기), PATH 의 `soffice`/`libreoffice`, 기본 설치 경로 순으로 찾습니다. Java 의존성은 추가되지 않습니다. LibreOffice 가
   없어도 다른 소스는 그대로 병합되며, 문서 소스는 "오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다." 예외를 냅니다(상세는
-  원인(cause)과 로그). `isOfficeConversionAvailable()`로 미리
-  확인할 수 있습니다. 변환마다 별도 프로필 폴더(동시 변환 가능)와 제한 시간(`setOfficeTimeout`, 기본 3분)을 씁니다.
+  원인(cause)과 로그). `S2OfficeConverter.isAvailable()`로 미리
+  확인할 수 있습니다. 변환마다 별도 프로필 폴더(동시 변환 가능)와 제한 시간(`S2OfficeConverter.setTimeout`, 기본 3분)을 씁니다.
 - URL 로 받은 HTML 페이지(`ofUrl`, `ofHtmlUrl`)가 화면처럼 나옵니다. 페이지의 이미지(`<img>`, 지연 로딩 `data-src`·`srcset`, CSS 배경)와
   스타일시트(`<link>`, `@import`)를 받아 넣습니다. 같은 출처는 그대로 받고 요청 헤더(로그인 쿠키 등)도 같은 출처에만 보냅니다. 다른
   호스트(CDN 등)는 공개 주소일 때만 받으며, 내부망·루프백·링크 로컬 주소는 리다이렉트를 거쳐도 막습니다. 리소스는 최대 300개, 하나당 20MB,
