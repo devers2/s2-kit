@@ -1841,6 +1841,44 @@ public class S2PdfUtil {
         S2PdfCache.configure(directory, maxBytes, maxAge, minFreeBytes);
     }
 
+    /**
+     * 변환 결과 캐시의 저장 폴더만 바꾼다 (나머지 설정은 그대로).
+     *
+     * @param directory 저장 폴더. null 이면 기본값({@code java.io.tmpdir/s2-pdf-cache})
+     */
+    public static void setConversionCacheDirectory(Path directory) {
+        S2PdfCache.directory(directory);
+    }
+
+    /**
+     * 변환 결과 캐시 폴더의 최대 크기만 바꾼다 (나머지 설정은 그대로). 넘으면 오래 안 쓴 것부터 지운다.
+     *
+     * @param maxBytes 최대 크기. 0 이하이면 기본값(최소 여유 공간의 50%)
+     */
+    public static void setConversionCacheMaxBytes(long maxBytes) {
+        S2PdfCache.maxBytes(maxBytes);
+    }
+
+    /**
+     * 변환 결과의 보관 기간만 바꾼다 (나머지 설정은 그대로). 마지막으로 쓴 뒤 이 기간이 지나면 쓰지 않고, 다음 정리 때 지운다.
+     *
+     * @param maxAge 보관 기간 (기본 1일 = 24시간)
+     * @throws IllegalArgumentException null 이거나 0 이하일 때
+     */
+    public static void setConversionCacheMaxAge(Duration maxAge) {
+        S2PdfCache.maxAge(maxAge);
+    }
+
+    /**
+     * 디스크에 남길 최소 여유 공간만 바꾼다 (나머지 설정은 그대로). 저장 후 이보다 적어지면 저장하지 않는다. 최대 크기를 정하지 않았으면 최대 크기는 이
+     * 값의 50% 가 된다.
+     *
+     * @param minFreeBytes 최소 여유 공간. 0 이하이면 기본값(디스크 용량의 10% 와 20GB 중 작은 값)
+     */
+    public static void setConversionCacheMinFreeBytes(long minFreeBytes) {
+        S2PdfCache.minFreeBytes(minFreeBytes);
+    }
+
     /** 변환 결과 캐시 설정을 기본값으로 되돌린다 (저장된 항목은 지우지 않음). */
     public static void resetConversionCache() {
         S2PdfCache.configure(null, S2PdfCache.DEFAULT_MAX_BYTES, S2PdfCache.DEFAULT_MAX_AGE, S2PdfCache.DEFAULT_MIN_FREE_BYTES);

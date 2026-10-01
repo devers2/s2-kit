@@ -320,10 +320,24 @@ class S2PdfCacheTest {
         assertEquals(2L << 30, S2PdfCache.maxBytes(), "half of a configured reserve");
         S2PdfUtil.setConversionCache(cache, 123, Duration.ofDays(1), 0);
         assertEquals(123, S2PdfCache.maxBytes());
+
+        // One setting at a time; the others stay | 하나씩 바꾸고 나머지는 유지
+        S2PdfUtil.setConversionCacheMaxBytes(0);
+        S2PdfUtil.setConversionCacheMinFreeBytes(6L << 30);
+        assertEquals(3L << 30, S2PdfCache.maxBytes(), "half of the new reserve");
+        S2PdfUtil.setConversionCacheMaxBytes(456);
+        assertEquals(456, S2PdfCache.maxBytes());
+        S2PdfUtil.setConversionCacheMaxAge(Duration.ofHours(6));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCacheMaxAge(Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCacheMaxAge(null));
+        S2PdfUtil.setConversionCacheDirectory(dir.resolve("other"));
+        assertEquals(dir.resolve("other"), S2PdfCache.directory());
+        assertEquals(456, S2PdfCache.maxBytes(), "unchanged by the folder change");
     }
 
     @Test
     void anExpiredEntryIsNotServedBeforeCleanup() throws IOException {
+        S2PdfUtil.setConversionCacheMaxAge(Duration.ofHours(24));
         S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
         var docx = Files.writeString(dir.resolve("old.docx"), "old");
         S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();

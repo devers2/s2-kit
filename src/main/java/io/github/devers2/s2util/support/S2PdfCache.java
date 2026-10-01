@@ -115,6 +115,26 @@ final class S2PdfCache {
         return directory;
     }
 
+    static void directory(Path directory) {
+        S2PdfCache.directory = directory != null ? directory : DEFAULT_DIRECTORY;
+        knownSize.set(-1);
+    }
+
+    static void maxBytes(long maxBytes) {
+        S2PdfCache.maxBytes = maxBytes;
+    }
+
+    static void maxAge(Duration maxAge) {
+        if (maxAge == null || maxAge.isNegative() || maxAge.isZero()) {
+            throw new IllegalArgumentException("보관 기간은 0 보다 길어야 합니다: " + maxAge);
+        }
+        S2PdfCache.maxAge = maxAge;
+    }
+
+    static void minFreeBytes(long minFreeBytes) {
+        S2PdfCache.minFreeBytes = minFreeBytes;
+    }
+
     /** Free space to keep on the cache's disk | 캐시 디스크에 남길 여유 공간 */
     private static long minFree(java.nio.file.FileStore store) throws IOException {
         return minFreeBytes > 0 ? minFreeBytes : Math.min(MIN_FREE_CAP, store.getTotalSpace() / 10);

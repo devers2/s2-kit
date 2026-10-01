@@ -80,7 +80,9 @@
   버전, 라이브러리 버전)의 SHA-256 이라 위조로 남의 결과를 받을 수 없고, 변환기를 바꾸면 다시 변환합니다. 브라우저 실패로 대신 만든 결과는
   저장하지 않습니다. 기본은 꺼짐. `setConversionCache(폴더, 최대 크기, 보관 기간, 최소 여유 공간)`(앱 시작 때 한 번, 기본
   `java.io.tmpdir/s2-pdf-cache`, 최대 크기는 최소 여유 공간의 50%, 마지막으로 쓴 뒤 24시간, 최소 여유 공간은 디스크 용량의 10% 와 20GB 중
-  작은 값. 200GB 이상 디스크에서 여유 20GB·캐시 10GB(평균 1MB 로 약 1만 건). 0 을 넘기면 기본값), `resetConversionCache`,
+  작은 값. 200GB 이상 디스크에서 여유 20GB·캐시 10GB(평균 1MB 로 약 1만 건). 0 을 넘기면 기본값), 하나씩 바꾸는
+  `setConversionCacheDirectory`·`setConversionCacheMaxBytes`·`setConversionCacheMaxAge`·`setConversionCacheMinFreeBytes`,
+  `resetConversionCache`,
   `clearConversionCache`. 보관 기간이 지난 항목은 정리 전이라도 쓰지 않습니다. 정리는 별도 배치 없이 요청이 올 때 마지막 정리가 오늘 이전이거나 크기 상한을
   넘으면 백그라운드에서 한 번만 합니다(보관 기간이 지난 것, 그다음 오래 안 쓴 것부터). 여유 공간이 부족하면 저장하지 않고, 폴더는 앱 실행
   계정만 읽을 수 있습니다.

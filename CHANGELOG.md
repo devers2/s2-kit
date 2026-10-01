@@ -96,7 +96,9 @@ before upgrading.
   converter converts again. A browser fallback is not kept. Off by default. `setConversionCache(folder, max size,
   max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, a size limit of half the
   free-space reserve, 24 hours since last use, a reserve of the smaller of 10% of the disk and 20GB, so 20GB and a 10GB
-  cache (about 10,000 results at 1MB) on disks of 200GB or more; 0 means the default), `resetConversionCache`, `clearConversionCache`. An entry past its age is not
+  cache (about 10,000 results at 1MB) on disks of 200GB or more; 0 means the default), one-at-a-time
+  `setConversionCacheDirectory`, `setConversionCacheMaxBytes`, `setConversionCacheMaxAge` and
+  `setConversionCacheMinFreeBytes`, `resetConversionCache`, `clearConversionCache`. An entry past its age is not
   served even before a cleanup removes it. Cleanup needs no batch job: a request starts it in the background, once, when the last one
   was before today or the size limit is exceeded (expired entries, then the least recently used). Nothing is stored
   when disk space is short, and the folder is readable only by the application account.
