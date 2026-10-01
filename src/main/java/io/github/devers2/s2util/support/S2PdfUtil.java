@@ -1833,7 +1833,7 @@ public class S2PdfUtil {
      * @param directory    저장 폴더 (null 이면 {@code java.io.tmpdir/s2-pdf-cache}). 앱 실행 계정만 읽을 수 있게 만든다
      * @param maxBytes     전체 최대 크기 (기본 1GB). 넘으면 오래 안 쓴 것부터 지운다
      * @param maxAge       보관 기간 (기본 1일 = 24시간). 마지막으로 쓴 뒤 이 시간이 지나면 쓰지 않고, 다음 정리 때 지운다
-     * @param minFreeBytes 디스크 최소 여유 공간. 저장 후 이보다 적어지면 저장하지 않는다. 0 이하이면 기본값(디스크 용량의 10% 와 5GB 중 큰 값)
+     * @param minFreeBytes 디스크 최소 여유 공간. 저장 후 이보다 적어지면 저장하지 않는다. 0 이하이면 기본값(디스크 용량의 10% 와 10GB 중 작은 값)
      */
     public static void setConversionCache(Path directory, long maxBytes, Duration maxAge, long minFreeBytes) {
         S2PdfCache.configure(directory, maxBytes, maxAge, minFreeBytes);
