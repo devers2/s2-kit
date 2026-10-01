@@ -170,6 +170,8 @@
   `ofSvg`는 필요한 의존성을 알려 주는 예외를 냅니다.
 - 사진 방향: 휴대폰으로 세로로 찍은 사진(EXIF 방향)이 PDF 와 `S2ImageUtil` 크기 변경 결과에서 옆으로 누워 나왔습니다. 이제 바로 세우며,
   크기를 바꾸지 않는 JPEG 는 다시 압축하지 않고 PDF 에서 돌려 그립니다. `S2ImageUtil`이 JPEG 를 쓸 때 ImageIO 기본 품질(0.75) 대신 0.9 를 씁니다.
+- 나눔고딕처럼 제어 문자(U+0000~U+001F)와 공백을 같은 글리프에 연결한 폰트로 만든 PDF 에서, 복사·검색한 공백이 빈 문자(U+0000)가 되던 문제를
+  고쳤습니다. 폰트를 불러올 때 제어 문자 연결을 지웁니다(화면 모양은 같음).
 - `S2FileUtil.deleteFilesOlderThan`은 접두사가 있으면 디렉토리를 지우지 않으며, 시작 디렉토리는 지우지 않습니다.
 - `licenses/NOTICE`가 OpenHTMLtoPDF 를 "LGPL 2.1 / MPL 2.0"으로 적고 있었습니다. 실제로는 LGPL 2.1 이상이며 MPL 2.0 을 쓰는 의존성이 없어
   `LICENSE-MPL-2.0`을 삭제했습니다. NOTICE 에 Spring Web, Spring Integration SFTP, JSR-305 를 추가하고, 컴파일 전용·선택 의존성을 표시하며,

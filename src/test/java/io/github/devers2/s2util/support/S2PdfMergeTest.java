@@ -82,6 +82,26 @@ class S2PdfMergeTest {
     }
 
     @Test
+    void spacesCopyAsSpacesWithEveryInstalledKoreanFont() throws IOException {
+        // NanumGothic maps U+0000-U+001F to its space glyph; spaces used to copy as U+0000
+        // | 나눔고딕은 U+0000~U+001F 를 공백 글리프에 연결해, 공백이 U+0000 으로 복사되던 문제
+        var fonts = S2PdfUtil.SYSTEM_FONT_CANDIDATES.stream().map(Path::of).filter(Files::isReadable).toList();
+        Assumptions.assumeFalse(fonts.isEmpty(), "no Korean font installed");
+        try {
+            for (var font : fonts) {
+                S2PdfUtil.setDefaultFont(font);
+                try (var doc = load(S2PdfUtil.merge(PdfSource.ofHtml("<p>Hello 한글 텍스트</p>")))) {
+                    assertTrue(text(doc).contains("Hello 한글 텍스트"), font + ": " + text(doc).chars().mapToObj(Integer::toHexString).toList());
+                }
+            }
+        } finally {
+            S2PdfUtil.resetDefaultFont();
+        }
+        var notAFont = "not a font".getBytes();
+        assertSame(notAFont, S2FontCmap.withoutControlCharacters(notAFont));
+    }
+
+    @Test
     void koreanWithoutAFontFailsInsteadOfPrintingHashes() throws IOException {
         var e = assertThrows(IOException.class, () -> S2PdfUtil.requireFontFor("<p>한글</p>", false));
         assertTrue(e.getMessage().contains("setDefaultFont"), e.getMessage());

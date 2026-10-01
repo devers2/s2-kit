@@ -1193,6 +1193,13 @@ public class S2PdfUtil {
     // Fonts | 폰트
 
     private record FontSource(String description, byte[] bytes) {
+        /**
+         * Fonts that map control characters to the space glyph (NanumGothic) would make spaces copy and search as U+0000
+         * | 제어 문자를 공백 글리프에 연결한 폰트(나눔고딕)는 PDF 에서 복사·검색한 공백이 U+0000 이 되므로 정리
+         */
+        FontSource {
+            bytes = S2FontCmap.withoutControlCharacters(bytes);
+        }
     }
 
     /**

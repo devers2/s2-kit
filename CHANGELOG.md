@@ -203,6 +203,8 @@ before upgrading.
 - Photo orientation: portrait phone photos (EXIF orientation) came out lying on their side in PDFs and in
   `S2ImageUtil` resize results. They are now upright; a JPEG kept at its size is not re-encoded but turned when drawn.
   `S2ImageUtil` writes JPEG at quality 0.9 instead of ImageIO's default 0.75.
+- PDFs made with a font that maps control characters (U+0000 to U+001F) to its space glyph, such as NanumGothic, copied
+  and searched spaces as U+0000. Control-character mappings are now removed when a font is loaded (it looks the same).
 - `S2FileUtil.deleteFilesOlderThan` no longer deletes directories when a prefix is given, and never deletes the start
   directory.
 - `licenses/NOTICE` listed OpenHTMLtoPDF as "LGPL 2.1 / MPL 2.0"; it is LGPL 2.1 or later, and no dependency uses MPL
