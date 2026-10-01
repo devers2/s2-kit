@@ -249,6 +249,24 @@ class S2PdfImageTest {
     }
 
     @Test
+    void imagesAndPdfsCanBeSetApart() throws IOException {
+        var pdf = pdfWithImages();
+        var photo = jpeg(halves(6000, 4000));
+        var sources = List.of(PdfSource.ofPdf(pdf), PdfSource.ofImage(photo));
+        // Photos shrunk, scanned PDF kept | 사진만 줄이고 스캔 PDF 는 원본
+        try (var doc = load(S2PdfUtil.merge(sources, MergeOptions.create().imageDpi(150, 0)))) {
+            assertTrue(images(doc).stream().anyMatch(i -> i.getWidth() == 5000), "PDF image kept");
+            assertTrue(images(doc).stream().anyMatch(i -> Math.abs(i.getWidth() - 1671) <= 2), "photo shrunk");
+        }
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofPdf(pdf), PdfSource.ofImage(photo)),
+                MergeOptions.create().imageDpi(0, 150)))) {
+            assertTrue(images(doc).stream().anyMatch(i -> i.getWidth() == 6000), "photo kept");
+            assertTrue(images(doc).stream().noneMatch(i -> i.getWidth() == 5000), "PDF image shrunk");
+        }
+        assertThrows(IllegalArgumentException.class, () -> MergeOptions.create().imageDpi(150, 10));
+    }
+
+    @Test
     void shrunkResultsAreCached() throws IOException {
         var cache = dir.resolve("cache");
         S2PdfUtil.setConversionCache(cache, 1L << 30, Duration.ofDays(1), 1);

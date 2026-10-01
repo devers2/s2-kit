@@ -111,7 +111,8 @@ before upgrading.
   sources** to the dpi for their page size. Only images at least 1.2 times larger than needed are shrunk, read
   subsampled so even 50-megapixel photos use little memory; JPEG is written as JPEG (quality 0.9), the rest
   losslessly, and an image that would not get smaller is kept. 1-bit scans, JBIG2/CCITT/JPEG 2000 and images with
-  transparency masks inside PDFs are left alone. With the cache on, shrunk results are stored (48 scanned pages and
+  transparency masks inside PDFs are left alone. `imageDpi(imageSources, pdfSources)` sets them apart (say, shrunk
+  for a preview and original for a download). With the cache on, shrunk results are stored (48 scanned pages and
   6 photos: 5.1 s first, then 0.29 s).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
   same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.

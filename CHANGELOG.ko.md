@@ -93,7 +93,8 @@
 - 이미지 해상도 맞추기: `MergeOptions.imageDpi(dpi)`(기본 0 = 원본 유지)는 이미지 소스와 **PDF 소스 안의 이미지**를 쪽 크기 기준 dpi 에
   맞게 줄입니다. 목표보다 1.2 배 이상 클 때만 줄이고, 처음부터 줄여 읽어(서브샘플링) 5천만 화소 사진도 메모리를 적게 씁니다. JPEG 는 JPEG(품질
   0.9)로, 그 외는 무손실로 다시 넣고, 다시 넣어도 작아지지 않으면 원본을 둡니다. 1비트(흑백 스캔), JBIG2·CCITT·JPEG2000, 투명 마스크가 있는 PDF
-  이미지는 건드리지 않습니다. 캐시를 켜면 줄인 결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
+  이미지는 건드리지 않습니다. `imageDpi(이미지 소스, PDF 소스)`로 따로 정할 수 있고(예: 미리보기는 줄이고 다운로드는 원본), 캐시를 켜면 줄인
+  결과를 저장합니다(스캔 PDF 48쪽 + 사진 6장: 첫 요청 5.1초, 이후 0.29초).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
   `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만

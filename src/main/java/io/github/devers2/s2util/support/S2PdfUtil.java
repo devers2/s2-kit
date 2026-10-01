@@ -1711,6 +1711,7 @@ public class S2PdfUtil {
         private Watermark watermark;
         private boolean cache;
         private int imageDpi;
+        private int pdfImageDpi;
 
         private MergeOptions() {
         }
@@ -1835,14 +1836,28 @@ public class S2PdfUtil {
          * 1비트(흑백 스캔), JBIG2·CCITT·JPEG2000, 투명 마스크가 있는 PDF 이미지는 건드리지 않는다. 캐시를 켜면 줄인 결과를 저장한다.
          * </p>
          *
-         * @param dpi 72 이상, 0 이면 줄이지 않음
+         * @param dpi 72 이상, 0 이면 줄이지 않음 (이미지 소스와 PDF 소스 모두에 적용)
          * @return 이 옵션
          */
         public MergeOptions imageDpi(int dpi) {
-            if (dpi != 0 && dpi < 72) {
-                throw new IllegalArgumentException("이미지 해상도는 72 dpi 이상이어야 합니다 (0 은 원본 유지): " + dpi);
+            return imageDpi(dpi, dpi);
+        }
+
+        /**
+         * 이미지 소스와 PDF 소스 안의 이미지를 따로 정한다 ({@link #imageDpi(int)} 참고). 예: 사진만 줄이고 스캔 PDF 는 원본 유지 {@code imageDpi(150, 0)}.
+         *
+         * @param imageSourceDpi 이미지 소스({@code ofImage}, 이미지 URL)의 해상도. 0 이면 원본 유지
+         * @param pdfImageDpi    PDF 소스({@code ofPdf}, PDF URL) 안 이미지의 해상도. 0 이면 원본 유지
+         * @return 이 옵션
+         */
+        public MergeOptions imageDpi(int imageSourceDpi, int pdfImageDpi) {
+            for (var dpi : new int[] { imageSourceDpi, pdfImageDpi }) {
+                if (dpi != 0 && dpi < 72) {
+                    throw new IllegalArgumentException("이미지 해상도는 72 dpi 이상이어야 합니다 (0 은 원본 유지): " + dpi);
+                }
             }
-            this.imageDpi = dpi;
+            this.imageDpi = imageSourceDpi;
+            this.pdfImageDpi = pdfImageDpi;
             return this;
         }
     }
@@ -2672,7 +2687,7 @@ public class S2PdfUtil {
                     Files.copy(source.inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
                     pdfFileToMerge = tempFile.toFile();
                 }
-                if (pdfFileToMerge != null && options.imageDpi > 0) {
+                if (pdfFileToMerge != null && options.pdfImageDpi > 0) {
                     pdfFileToMerge = withSmallerImages(pdfFileToMerge.toPath(), options, intermediateTempFiles);
                 }
             }
@@ -2773,7 +2788,7 @@ public class S2PdfUtil {
                     case PDF -> {
                         var tempFile = createTrackedTempFile("url_pdf", ".pdf", intermediateTempFiles);
                         Files.write(tempFile, fetched.data);
-                        pdfFileToMerge = options.imageDpi > 0 ? withSmallerImages(tempFile, options, intermediateTempFiles)
+                        pdfFileToMerge = options.pdfImageDpi > 0 ? withSmallerImages(tempFile, options, intermediateTempFiles)
                                 : tempFile.toFile();
                     }
                     case HTML -> {
@@ -3692,12 +3707,12 @@ public class S2PdfUtil {
      */
     private static File withSmallerImages(Path pdf, MergeOptions options, List<Path> intermediateTempFiles)
             throws IOException {
-        var key = options.cache ? S2PdfCache.key("PDF-IMAGES").add(String.valueOf(options.imageDpi)).addFile(pdf).hex() : null;
+        var key = options.cache ? S2PdfCache.key("PDF-IMAGES").add(String.valueOf(options.pdfImageDpi)).addFile(pdf).hex() : null;
         var target = createTrackedTempFile("pdf_img", ".pdf", intermediateTempFiles);
         if (key != null && S2PdfCache.restore(key, target)) {
             return target.toFile();
         }
-        if (!shrinkPdfImages(pdf, target, options.imageDpi)) {
+        if (!shrinkPdfImages(pdf, target, options.pdfImageDpi)) {
             return pdf.toFile();
         }
         if (key != null) {
