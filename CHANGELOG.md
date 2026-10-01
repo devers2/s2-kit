@@ -86,7 +86,8 @@ before upgrading.
   naming the right one.
 - `S2PdfUtil.merge(sources, MergeOptions)`: a bookmark per source (a PDF's own bookmarks move under it;
   `PdfSource.title`), page numbers (`pageNumbers`, `pageNumberStyle`), and title/author metadata. `pageNumbers(skipFirst, skipLast)` leaves out leading and trailing
-  pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`).
+  pages (cover, contents, appendix) and numbers the rest among themselves (`1 / N`). Page numbers sit upright at the
+  bottom center of the page as shown, also on rotated pages (`/Rotate`).
 - Watermarks: `MergeOptions.watermark(Watermark.of(image)...)` stamps an image on every page. Size both sides (`size`),
   the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
   one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered

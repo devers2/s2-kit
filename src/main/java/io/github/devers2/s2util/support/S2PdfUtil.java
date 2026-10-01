@@ -3690,11 +3690,16 @@ public class S2PdfUtil {
             var page = document.getPage(startIndex + n);
             var text = String.format(format, n + 1, count);
             var textWidth = font.getStringWidth(text) / 1000 * fontSize;
+            var box = page.getCropBox();
+            var rotation = ((page.getRotation() % 360) + 360) % 360;
+            // Bottom center of the page as shown, also on rotated pages | 회전된 쪽도 화면에 보이는 쪽의 아래 가운데
+            var shownWidth = rotation == 90 || rotation == 270 ? box.getHeight() : box.getWidth();
             try (var contentStream = new PDPageContentStream(document, page, PDPageContentStream.AppendMode.APPEND,
                     true, true)) {
+                contentStream.transform(shownToPage(box, rotation));
                 contentStream.beginText();
                 contentStream.setFont(font, fontSize);
-                contentStream.newLineAtOffset((page.getMediaBox().getWidth() - textWidth) / 2, 20F); // 하단 20pt, 가운데
+                contentStream.newLineAtOffset((shownWidth - textWidth) / 2, 20F); // 하단 20pt, 가운데
                 contentStream.showText(text);
                 contentStream.endText();
             }

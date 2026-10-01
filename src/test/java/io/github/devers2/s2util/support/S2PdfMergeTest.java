@@ -435,6 +435,32 @@ class S2PdfMergeTest {
     }
 
     @Test
+    void pageNumbersFollowRotatedPages() throws IOException {
+        var pdf = dir.resolve("rotated-numbers.pdf");
+        try (var doc = new PDDocument()) {
+            for (var rotation : new int[] { 0, 90, 180, 270 }) {
+                var page = new PDPage(new org.apache.pdfbox.pdmodel.common.PDRectangle(50, 20, 595, 842));
+                page.setRotation(rotation);
+                doc.addPage(page);
+            }
+            doc.save(pdf.toFile());
+        }
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofPdf(pdf)),
+                MergeOptions.create().pageNumberStyle("%d / %d", 20)))) {
+            for (int i = 0; i < 4; i++) {
+                var label = "rotation " + (i * 90);
+                var shownWidth = i % 2 == 0 ? 595 : 842;
+                var shownHeight = i % 2 == 0 ? 842 : 595;
+                var text = colorBounds(doc, i, java.awt.Color.BLACK);
+                assertNotNull(text, label);
+                assertEquals(shownWidth / 2.0, text[0] + text[2] / 2.0, 3, label + " centered");
+                assertEquals(shownHeight - 20, text[1] + text[3], 4, label + " on the shown bottom");
+                assertTrue(text[2] > text[3], label + " upright (wider than tall): " + java.util.Arrays.toString(text));
+            }
+        }
+    }
+
+    @Test
     void watermarkInputIsChecked() throws IOException {
         var red = colored("png", 10, 10, java.awt.Color.RED);
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.Watermark.of(red).width(0));

@@ -73,7 +73,7 @@
   납니다.
 - `S2PdfUtil.merge(sources, MergeOptions)`: 소스별 책갈피(PDF 의 기존 책갈피는 그 아래로, `PdfSource.title`), 쪽 번호(`pageNumbers`,
   `pageNumberStyle`), 제목·작성자 문서 정보. `pageNumbers(skipFirst, skipLast)`는 앞·뒤 쪽(표지, 목차, 부록 등)을 빼고 나머지 쪽에만 그
-  쪽들 기준 번호(`1 / N`)를 넣습니다.
+  쪽들 기준 번호(`1 / N`)를 넣습니다. 쪽 번호는 회전된 쪽(`/Rotate`)에서도 화면에 보이는 쪽의 아래 가운데에 바로 선 채로 들어갑니다.
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만
   (`width`, 세로는 비율대로), 세로만(`height`, 가로는 비율대로) 정할 수 있고, 위치는 가운데와 8방향(`Position`), 간격은 `offset(x, y)`
   (가장자리 기준이면 안쪽으로, 가운데 기준인 축은 x 오른쪽·y 아래로), 불투명도는 `opacity`. 단위는 pt. 이미지는 한 번만 넣어 모든 쪽이
