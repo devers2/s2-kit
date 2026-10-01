@@ -90,7 +90,8 @@ before upgrading.
   bottom center of the page as shown, also on rotated pages (`/Rotate`).
 - Conversion result cache: requests with `MergeOptions.cache(true)` keep the PDF converted from a source that needs
   converting (document, HTML, web page, image, text, SVG) and reuse it when the same source comes again (4 documents:
-  9.6 s → 0.12 s). Keys are the SHA-256 of the content and of the settings that shape the result (CSS and fonts,
+  9.6 s → 0.12 s). PDF sources and JPEG images need almost no converting and are not stored, so a 100MB merge of
+  mostly scanned PDFs takes only a few MB of cache. Keys are the SHA-256 of the content and of the settings that shape the result (CSS and fonts,
   converter version, library version), so nobody can forge a key to get another user's result, and changing the
   converter converts again. A browser fallback is not kept. Off by default. `setConversionCache(folder, max size,
   max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, a size limit of half the

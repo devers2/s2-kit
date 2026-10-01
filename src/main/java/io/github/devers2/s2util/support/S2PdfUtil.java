@@ -1811,7 +1811,8 @@ public class S2PdfUtil {
 
         /**
          * 이 요청에서 변환 결과 캐시를 쓴다 (기본 false). 변환이 필요한 소스(문서, HTML, 웹 페이지, 이미지, 텍스트, SVG)의 변환 결과를 저장해 두었다가 같은
-         * 소스가 다시 오면 변환 없이 쓴다. PDF 소스는 변환이 없어 캐시하지 않는다. 저장 위치·한도는
+         * 소스가 다시 오면 변환 없이 쓴다. PDF 소스와 JPEG 이미지는 변환이 거의 없어 캐시하지 않는다 (병합 결과 PDF 자체도
+         * 저장하지 않음). 저장 위치·한도는
          * {@link S2PdfUtil#setConversionCache(Path, long, Duration, long)}.
          * <p>
          * 변환 결과가 디스크에 남으므로 개인정보가 든 문서라면 보관 기간을 짧게 두는 것이 안전하다.
@@ -2640,7 +2641,9 @@ public class S2PdfUtil {
                     } else {
                         imageBytes = S2StreamUtil.streamToByteArray(source.inputStream, false, source.maxBytes);
                     }
-                    var key = options.cache ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
+                    // JPEG is embedded as is in milliseconds; caching it would only take space
+                    // | JPEG 는 그대로 넣어 몇 ms 면 끝나므로 캐시하면 공간만 차지함
+                    var key = options.cache && !isJpeg(imageBytes) ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
                     pdfFileToMerge = converted("img", intermediateTempFiles, key, target -> {
                         renderImageToPdfFile(null, imageBytes, target);
                         return true;
@@ -2728,7 +2731,7 @@ public class S2PdfUtil {
                                         source.cssPath, source.fontPath, clazz, source.cssSelectors));
                     }
                     case IMAGE -> {
-                        var key = options.cache ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
+                        var key = options.cache && !isJpeg(fetched.data) ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
                         pdfFileToMerge = converted("url_img", intermediateTempFiles, key, target -> {
                             renderImageToPdfFile(null, fetched.data, target);
                             return true;

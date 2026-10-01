@@ -188,6 +188,21 @@ class S2PdfCacheTest {
     }
 
     @Test
+    void pdfAndJpegSourcesTakeNoCacheSpace() throws IOException {
+        var pdf = dir.resolve("scan.pdf");
+        Files.copy(samplePdf, pdf);
+        var jpeg = new java.io.ByteArrayOutputStream();
+        var png = new java.io.ByteArrayOutputStream();
+        var image = new java.awt.image.BufferedImage(50, 50, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        javax.imageio.ImageIO.write(image, "jpg", jpeg);
+        javax.imageio.ImageIO.write(image, "png", png);
+        S2PdfUtil.merge(List.of(PdfSource.ofPdf(pdf), PdfSource.ofImage(jpeg.toByteArray())), CACHED).close();
+        assertEquals(List.of(), entries(), "nothing to convert, nothing stored");
+        S2PdfUtil.merge(List.of(PdfSource.ofImage(png.toByteArray())), CACHED).close();
+        assertEquals(1, entries().size(), "PNG is decoded, so it is cached");
+    }
+
+    @Test
     void aBrowserFallbackIsNotCached() throws IOException {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
