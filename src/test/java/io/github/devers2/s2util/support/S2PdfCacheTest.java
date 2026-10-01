@@ -55,7 +55,7 @@ class S2PdfCacheTest {
     void setUp() throws IOException {
         Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"), "shell scripts");
         cache = dir.resolve("cache");
-        S2PdfUtil.setConversionCache(cache, 1024L * 1024 * 1024, Duration.ofDays(1), 0);
+        S2PdfUtil.setConversionCache(cache, 1024L * 1024 * 1024, Duration.ofDays(1), 1);
         S2PdfUtil.setBrowserRenderingEnabled(false);
         samplePdf = dir.resolve("converted.pdf");
         try (var doc = new PDDocument()) {
@@ -233,7 +233,7 @@ class S2PdfCacheTest {
         Files.setLastModifiedTime(stored.get(0), FileTime.from(Instant.now().minus(Duration.ofDays(2))));
         Files.setLastModifiedTime(stored.get(1), FileTime.from(Instant.now().minusSeconds(600)));
         Files.setLastModifiedTime(stored.get(2), FileTime.from(Instant.now()));
-        S2PdfUtil.setConversionCache(cache, size + size / 2, Duration.ofDays(1), 0);
+        S2PdfUtil.setConversionCache(cache, size + size / 2, Duration.ofDays(1), 1);
         S2PdfCache.cleanup();
         assertEquals(List.of(stored.get(2)), entries(), "expired one and least recently used one removed");
         assertTrue(Files.exists(cache.resolve(".last-cleanup")));
@@ -297,6 +297,16 @@ class S2PdfCacheTest {
     void settingsAreChecked() {
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 0, Duration.ofDays(1), 0));
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 1, Duration.ZERO, 0));
-        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 1, Duration.ofDays(1), -1));
+    }
+
+    @Test
+    void anExpiredEntryIsNotServedBeforeCleanup() throws IOException {
+        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        var docx = Files.writeString(dir.resolve("old.docx"), "old");
+        S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();
+        Files.setLastModifiedTime(entries().get(0), FileTime.from(Instant.now().minus(Duration.ofHours(25))));
+        Files.write(cache.resolve(".last-cleanup"), new byte[0]); // cleaned today: no cleanup runs | 오늘 정리함
+        S2PdfUtil.merge(List.of(PdfSource.ofDocument(docx)), CACHED).close();
+        assertEquals(2, calls(), "past 24 hours it is converted again");
     }
 }

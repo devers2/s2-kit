@@ -93,10 +93,15 @@ before upgrading.
   9.6 s → 0.12 s). Keys are the SHA-256 of the content and of the settings that shape the result (CSS and fonts,
   converter version, library version), so nobody can forge a key to get another user's result, and changing the
   converter converts again. A browser fallback is not kept. Off by default. `setConversionCache(folder, max size,
-  max age, min free space)` (default `java.io.tmpdir/s2-pdf-cache`, 1GB, 1 day, 1GB), `resetConversionCache`,
-  `clearConversionCache`. Cleanup needs no batch job: a request starts it in the background, once, when the last one
+  max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, 1GB, 24 hours since last use,
+  the larger of 10% of the disk and 5GB), `resetConversionCache`, `clearConversionCache`. An entry past its age is not
+  served even before a cleanup removes it. Cleanup needs no batch job: a request starts it in the background, once, when the last one
   was before today or the size limit is exceeded (expired entries, then the least recently used). Nothing is stored
   when disk space is short, and the folder is readable only by the application account.
+- Merge sources are converted concurrently (`setConversionParallelism`, default the smaller of the CPU count and 4).
+  The order and the error message (the first failing source in order) stay the same; the first request for 4
+  documents went from 9.8 s to 4.8 s (the slowest one). Conversions run on a pool made for each merge, so they never
+  block the shared pool the URL downloads use.
 - Watermarks: `MergeOptions.watermark(Watermark.of(image)...)` stamps an image on every page. Size both sides (`size`),
   the width only (`width`, height in ratio) or the height only (`height`, width in ratio); position at the center or
   one of eight directions (`Position`); `offset(x, y)` moves inward from an anchored edge, or right/down on a centered

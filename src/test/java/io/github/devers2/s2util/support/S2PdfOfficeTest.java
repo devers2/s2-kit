@@ -102,8 +102,10 @@ class S2PdfOfficeTest {
         }
         var calls = Files.readAllLines(dir.resolve("calls.log"));
         assertEquals(2, calls.size());
-        assertTrue(calls.get(0).contains("--convert-to pdf") && calls.get(0).contains("document.docx"), calls.get(0));
-        assertTrue(calls.get(0).contains("-env:UserInstallation="), "a private profile per conversion");
+        // Conversions run concurrently, so calls come in any order | 동시에 변환하므로 호출 순서는 정해져 있지 않음
+        var docxCall = calls.stream().filter(call -> call.contains("document.docx")).findFirst().orElseThrow();
+        assertTrue(docxCall.contains("--convert-to pdf"), docxCall);
+        assertTrue(calls.stream().allMatch(call -> call.contains("-env:UserInstallation=")), "a private profile per conversion");
         assertTrue(Files.exists(docx), "the source file is left alone");
     }
 

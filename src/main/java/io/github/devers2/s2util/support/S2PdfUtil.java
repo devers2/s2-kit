@@ -1827,13 +1827,13 @@ public class S2PdfUtil {
     }
 
     /**
-     * 변환 결과 캐시의 위치와 한도를 정한다 ({@link MergeOptions#cache(boolean)}로 켠 요청에만 쓰임). 정리는 요청이 올 때 마지막 정리가 오늘 이전이면, 또는
-     * 크기 상한을 넘으면 백그라운드에서 한 번만 한다.
+     * 변환 결과 캐시의 위치와 한도를 정한다 ({@link MergeOptions#cache(boolean)}로 켠 요청에만 쓰임). 앱 시작 때 한 번 호출하며, 호출하지 않으면 기본값을
+     * 쓴다. 정리는 요청이 올 때 마지막 정리가 오늘 이전이면, 또는 크기 상한을 넘으면 백그라운드에서 한 번만 한다.
      *
      * @param directory    저장 폴더 (null 이면 {@code java.io.tmpdir/s2-pdf-cache}). 앱 실행 계정만 읽을 수 있게 만든다
      * @param maxBytes     전체 최대 크기 (기본 1GB). 넘으면 오래 안 쓴 것부터 지운다
-     * @param maxAge       보관 기간 (기본 1일). 마지막으로 쓴 뒤 이 기간이 지나면 지운다
-     * @param minFreeBytes 디스크 최소 여유 공간 (기본 1GB). 저장 후 이보다 적어지면 저장하지 않는다
+     * @param maxAge       보관 기간 (기본 1일 = 24시간). 마지막으로 쓴 뒤 이 시간이 지나면 쓰지 않고, 다음 정리 때 지운다
+     * @param minFreeBytes 디스크 최소 여유 공간. 저장 후 이보다 적어지면 저장하지 않는다. 0 이하이면 기본값(디스크 용량의 10% 와 5GB 중 큰 값)
      */
     public static void setConversionCache(Path directory, long maxBytes, Duration maxAge, long minFreeBytes) {
         S2PdfCache.configure(directory, maxBytes, maxAge, minFreeBytes);
@@ -2531,6 +2531,21 @@ public class S2PdfUtil {
      * @return 병합된 PDF 스트림 (S2ResourceInputStream - close 시 임시 파일 자동 정리)
      * @throws IOException 입출력 또는 변환 오류 시
      */
+    private static volatile int conversionParallelism = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+
+    /**
+     * 병합 한 건에서 동시에 변환할 소스 수 (기본: CPU 수와 4 중 작은 값). 문서·웹 페이지 변환은 건마다 컨테이너(LibreOffice·Chromium, 수백 MB 메모리)를
+     * 띄우므로 서버 메모리에 맞춰 정한다. 1 이면 차례로 변환한다.
+     *
+     * @param parallelism 1 이상
+     */
+    public static void setConversionParallelism(int parallelism) {
+        if (parallelism < 1) {
+            throw new IllegalArgumentException("동시 변환 수는 1 이상이어야 합니다: " + parallelism);
+        }
+        conversionParallelism = parallelism;
+    }
+
     /** Writes a converted PDF; returns false when the result must not be cached (a fallback) | 변환 결과를 쓴다. 대체 결과면 false */
     @FunctionalInterface
     private interface PdfWriter {
@@ -2572,13 +2587,180 @@ public class S2PdfUtil {
         return key;
     }
 
+    /**
+     * Turns one source into a PDF file (converting when needed); runs concurrently for the sources of a merge
+     * | 소스 하나를 PDF 파일로 만든다 (필요하면 변환). 병합의 소스들에 대해 동시에 실행된다
+     */
+    private static File prepareSource(PdfSource source, MergeOptions options, List<Path> intermediateTempFiles,
+            CompletableFuture<UrlFetchResult> future) throws IOException {
+        File pdfFileToMerge = null;
+        switch (source.type) {
+            case PDF -> {
+                if (source.fileData != null) {
+                    pdfFileToMerge = source.fileData;
+                } else if (source.pathData != null) {
+                    pdfFileToMerge = source.pathData.toFile();
+                } else if (source.byteData != null) {
+                    var tempFile = createTrackedTempFile("src", ".pdf", intermediateTempFiles);
+                    Files.write(tempFile, source.byteData);
+                    pdfFileToMerge = tempFile.toFile();
+                } else if (source.inputStream != null) {
+                    var tempFile = createTrackedTempFile("src", ".pdf", intermediateTempFiles);
+                    Files.copy(source.inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                    pdfFileToMerge = tempFile.toFile();
+                }
+            }
+            case HTML -> {
+                var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
+                var key = options.cache ? htmlKey("HTML", source.textOrHtmlContent, source.staticResourceBasePath,
+                        source.cssPath, source.fontPath, clazz, source.cssSelectors) : null;
+                pdfFileToMerge = converted("html", intermediateTempFiles, key, target -> {
+                    renderHtmlToPdfFile(target, source.textOrHtmlContent, source.staticResourceBasePath,
+                            source.cssPath, source.fontPath, clazz, source.cssSelectors);
+                    return true;
+                });
+            }
+            case IMAGE -> {
+                if (source.imageObj != null) {
+                    var tempFile = createTrackedTempFile("img", ".pdf", intermediateTempFiles);
+                    renderImageToPdfFile(source.imageObj, null, tempFile);
+                    pdfFileToMerge = tempFile.toFile();
+                } else {
+                    byte[] imageBytes;
+                    if (source.fileData != null) {
+                        imageBytes = Files.readAllBytes(source.fileData.toPath());
+                    } else if (source.pathData != null) {
+                        imageBytes = Files.readAllBytes(source.pathData);
+                    } else if (source.byteData != null) {
+                        imageBytes = source.byteData;
+                    } else {
+                        imageBytes = S2StreamUtil.streamToByteArray(source.inputStream, false, source.maxBytes);
+                    }
+                    var key = options.cache ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
+                    pdfFileToMerge = converted("img", intermediateTempFiles, key, target -> {
+                        renderImageToPdfFile(null, imageBytes, target);
+                        return true;
+                    });
+                }
+            }
+            case TEXT -> {
+                var html = convertTextToHtml(source.textOrHtmlContent);
+                var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
+                pdfFileToMerge = converted("txt", intermediateTempFiles, key, target -> {
+                    renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                    return true;
+                });
+            }
+            case DOCUMENT -> {
+                S2PdfCache.Key key = null;
+                if (options.cache) {
+                    // A stream is kept in a file first so it can be hashed and then converted
+                    // | 스트림은 해시한 뒤 변환할 수 있도록 먼저 파일로
+                    if (source.pathData == null && source.byteData == null) {
+                        var copy = createTrackedTempFile("doc_src", "." + S2FileUtil.getExtension(source.documentName, true),
+                                intermediateTempFiles);
+                        Files.copy(source.inputStream, copy, StandardCopyOption.REPLACE_EXISTING);
+                        source.pathData = copy;
+                    }
+                    key = S2PdfCache.key("DOCUMENT").add(S2FileUtil.getExtension(source.documentName, true).toLowerCase(Locale.ROOT))
+                            .add(S2PdfCache.commandIdentity(resolveOfficeCommand()));
+                    if (source.pathData != null) {
+                        key.addFile(source.pathData);
+                    } else {
+                        key.add(source.byteData);
+                    }
+                }
+                pdfFileToMerge = converted("doc", intermediateTempFiles, key, target -> {
+                    convertDocumentToPdf(source, target);
+                    return true;
+                });
+            }
+            case SVG -> {
+                var html = convertSvgToHtml(source.textOrHtmlContent);
+                var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
+                pdfFileToMerge = converted("svg", intermediateTempFiles, key, target -> {
+                    renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                    return true;
+                });
+            }
+            case URL -> {
+                UrlFetchResult fetched;
+                try {
+                    fetched = (future != null) ? future.join() : fetchUrlContent(source);
+                } catch (CompletionException ce) {
+                    if (ce.getCause() instanceof IOException ioe) {
+                        throw ioe;
+                    }
+                    throw new IOException("URL 병합 처리 오류: " + ce.getMessage(), ce);
+                }
+
+                var effectiveType = source.urlExpectedType != null
+                        ? source.urlExpectedType
+                        : detectTypeFromUrlAndContent(fetched.contentType, fetched.data, source.urlString);
+
+                var responseCharset = parseCharsetFromContentType(fetched.contentType, StandardCharsets.UTF_8);
+
+                switch (effectiveType) {
+                    case PDF -> {
+                        var tempFile = createTrackedTempFile("url_pdf", ".pdf", intermediateTempFiles);
+                        Files.write(tempFile, fetched.data);
+                        pdfFileToMerge = tempFile.toFile();
+                    }
+                    case HTML -> {
+                        // Images and stylesheets of the page are fetched and embedded (same origin, or
+                        // public hosts) | 페이지의 이미지·스타일시트를 받아 넣음 (같은 출처 또는 공개 호스트)
+                        var htmlContent = S2HtmlResources.inline(new String(fetched.data, responseCharset),
+                                fetched.uri, source.httpHeaders, source.timeout, source.maxBytes,
+                                ref -> classpathImageExists(ref, source.staticResourceBasePath));
+                        var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
+                        // The page as fetched, with its images and CSS, decides the key: a changed page is
+                        // converted again | 받아 온 페이지(이미지·CSS 포함)가 키. 페이지가 바뀌면 다시 변환
+                        var key = options.cache ? htmlKey("WEB", htmlContent, source.staticResourceBasePath,
+                                source.cssPath, source.fontPath, clazz, source.cssSelectors)
+                                .add(browserEnabled ? S2PdfCache.commandIdentity(resolveBrowserCommand()) : "no-browser")
+                                : null;
+                        pdfFileToMerge = converted("url_html", intermediateTempFiles, key,
+                                target -> renderWebPageToPdfFile(target, htmlContent, source.staticResourceBasePath,
+                                        source.cssPath, source.fontPath, clazz, source.cssSelectors));
+                    }
+                    case IMAGE -> {
+                        var key = options.cache ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
+                        pdfFileToMerge = converted("url_img", intermediateTempFiles, key, target -> {
+                            renderImageToPdfFile(null, fetched.data, target);
+                            return true;
+                        });
+                    }
+                    case SVG -> {
+                        var html = convertSvgToHtml(new String(fetched.data, responseCharset));
+                        var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
+                        pdfFileToMerge = converted("url_svg", intermediateTempFiles, key, target -> {
+                            renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                            return true;
+                        });
+                    }
+                    case TEXT -> {
+                        var html = convertTextToHtml(new String(fetched.data, responseCharset));
+                        var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
+                        pdfFileToMerge = converted("url_txt", intermediateTempFiles, key, target -> {
+                            renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                            return true;
+                        });
+                    }
+                    default -> throw new IOException("URL 콘텐츠의 타입을 처리할 수 없습니다: " + source.urlString);
+                }
+            }
+        }
+        return pdfFileToMerge;
+    }
+
     public static InputStream merge(List<PdfSource> sources, MergeOptions options) throws IOException {
         Objects.requireNonNull(options, "options");
         if (sources == null || sources.isEmpty()) {
             throw new IllegalArgumentException("[merge] sources must not be null or empty.");
         }
 
-        var intermediateTempFiles = new ArrayList<Path>();
+        // Filled from concurrent conversions | 동시 변환에서 채워짐
+        var intermediateTempFiles = java.util.Collections.synchronizedList(new ArrayList<Path>());
         var merger = new PDFMergerUtility();
         Path finalMergedTempFile = null;
         boolean success = false;
@@ -2599,184 +2781,62 @@ public class S2PdfUtil {
             }
         }
 
+        // Conversions run concurrently on a pool of their own (blocking converters must not fill the shared pool the URL
+        // downloads use), and are added in the original order | 변환은 전용 풀에서 동시에 실행하고(외부 변환기가 URL 다운로드용 공용
+        // 풀을 채우지 않도록) 원래 순서대로 붙인다
+        var cancelled = new AtomicBoolean();
+        var parallelism = conversionParallelism;
+        var converters = S2ThreadUtil.newExecutor(parallelism);
+        var slots = new java.util.concurrent.Semaphore(parallelism);
+        var prepared = new ArrayList<CompletableFuture<File>>();
         try {
             for (int i = 0; i < sources.size(); i++) {
                 var source = sources.get(i);
                 if (source == null) {
+                    prepared.add(CompletableFuture.completedFuture(null));
                     continue;
                 }
+                final var index = i;
+                final var future = urlFutures.get(i);
+                prepared.add(CompletableFuture.supplyAsync(() -> {
+                    slots.acquireUninterruptibly();
+                    try {
+                        if (cancelled.get()) {
+                            return null;
+                        }
+                        return prepareSource(source, options, intermediateTempFiles, future);
+                    } catch (IOException | RuntimeException e) {
+                        throw new CompletionException(new IOException(
+                                "병합 소스 #" + (index + 1) + " (" + source.describe() + ") 처리 실패: " + e.getMessage(), e));
+                    } finally {
+                        slots.release();
+                    }
+                }, converters));
+            }
 
-                File pdfFileToMerge = null;
-
+            for (int i = 0; i < sources.size(); i++) {
+                var source = sources.get(i);
+                File pdfFileToMerge;
                 try {
-                    switch (source.type) {
-                        case PDF -> {
-                            if (source.fileData != null) {
-                                pdfFileToMerge = source.fileData;
-                            } else if (source.pathData != null) {
-                                pdfFileToMerge = source.pathData.toFile();
-                            } else if (source.byteData != null) {
-                                var tempFile = createTrackedTempFile("src", ".pdf", intermediateTempFiles);
-                                Files.write(tempFile, source.byteData);
-                                pdfFileToMerge = tempFile.toFile();
-                            } else if (source.inputStream != null) {
-                                var tempFile = createTrackedTempFile("src", ".pdf", intermediateTempFiles);
-                                Files.copy(source.inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
-                                pdfFileToMerge = tempFile.toFile();
-                            }
-                        }
-                        case HTML -> {
-                            var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
-                            var key = options.cache ? htmlKey("HTML", source.textOrHtmlContent, source.staticResourceBasePath,
-                                    source.cssPath, source.fontPath, clazz, source.cssSelectors) : null;
-                            pdfFileToMerge = converted("html", intermediateTempFiles, key, target -> {
-                                renderHtmlToPdfFile(target, source.textOrHtmlContent, source.staticResourceBasePath,
-                                        source.cssPath, source.fontPath, clazz, source.cssSelectors);
-                                return true;
-                            });
-                        }
-                        case IMAGE -> {
-                            if (source.imageObj != null) {
-                                var tempFile = createTrackedTempFile("img", ".pdf", intermediateTempFiles);
-                                renderImageToPdfFile(source.imageObj, null, tempFile);
-                                pdfFileToMerge = tempFile.toFile();
-                            } else {
-                                byte[] imageBytes;
-                                if (source.fileData != null) {
-                                    imageBytes = Files.readAllBytes(source.fileData.toPath());
-                                } else if (source.pathData != null) {
-                                    imageBytes = Files.readAllBytes(source.pathData);
-                                } else if (source.byteData != null) {
-                                    imageBytes = source.byteData;
-                                } else {
-                                    imageBytes = S2StreamUtil.streamToByteArray(source.inputStream, false, source.maxBytes);
-                                }
-                                var key = options.cache ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
-                                pdfFileToMerge = converted("img", intermediateTempFiles, key, target -> {
-                                    renderImageToPdfFile(null, imageBytes, target);
-                                    return true;
-                                });
-                            }
-                        }
-                        case TEXT -> {
-                            var html = convertTextToHtml(source.textOrHtmlContent);
-                            var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
-                            pdfFileToMerge = converted("txt", intermediateTempFiles, key, target -> {
-                                renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
-                                return true;
-                            });
-                        }
-                        case DOCUMENT -> {
-                            S2PdfCache.Key key = null;
-                            if (options.cache) {
-                                // A stream is kept in a file first so it can be hashed and then converted
-                                // | 스트림은 해시한 뒤 변환할 수 있도록 먼저 파일로
-                                if (source.pathData == null && source.byteData == null) {
-                                    var copy = createTrackedTempFile("doc_src", "." + S2FileUtil.getExtension(source.documentName, true),
-                                            intermediateTempFiles);
-                                    Files.copy(source.inputStream, copy, StandardCopyOption.REPLACE_EXISTING);
-                                    source.pathData = copy;
-                                }
-                                key = S2PdfCache.key("DOCUMENT").add(S2FileUtil.getExtension(source.documentName, true).toLowerCase(Locale.ROOT))
-                                        .add(S2PdfCache.commandIdentity(resolveOfficeCommand()));
-                                if (source.pathData != null) {
-                                    key.addFile(source.pathData);
-                                } else {
-                                    key.add(source.byteData);
-                                }
-                            }
-                            pdfFileToMerge = converted("doc", intermediateTempFiles, key, target -> {
-                                convertDocumentToPdf(source, target);
-                                return true;
-                            });
-                        }
-                        case SVG -> {
-                            var html = convertSvgToHtml(source.textOrHtmlContent);
-                            var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
-                            pdfFileToMerge = converted("svg", intermediateTempFiles, key, target -> {
-                                renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
-                                return true;
-                            });
-                        }
-                        case URL -> {
-                            var future = urlFutures.get(i);
-                            UrlFetchResult fetched;
-                            try {
-                                fetched = (future != null) ? future.join() : fetchUrlContent(source);
-                            } catch (CompletionException ce) {
-                                if (ce.getCause() instanceof IOException ioe) {
-                                    throw ioe;
-                                }
-                                throw new IOException("URL 병합 처리 오류: " + ce.getMessage(), ce);
-                            }
-
-                            var effectiveType = source.urlExpectedType != null
-                                    ? source.urlExpectedType
-                                    : detectTypeFromUrlAndContent(fetched.contentType, fetched.data, source.urlString);
-
-                            var responseCharset = parseCharsetFromContentType(fetched.contentType, StandardCharsets.UTF_8);
-
-                            switch (effectiveType) {
-                                case PDF -> {
-                                    var tempFile = createTrackedTempFile("url_pdf", ".pdf", intermediateTempFiles);
-                                    Files.write(tempFile, fetched.data);
-                                    pdfFileToMerge = tempFile.toFile();
-                                }
-                                case HTML -> {
-                                    // Images and stylesheets of the page are fetched and embedded (same origin, or
-                                    // public hosts) | 페이지의 이미지·스타일시트를 받아 넣음 (같은 출처 또는 공개 호스트)
-                                    var htmlContent = S2HtmlResources.inline(new String(fetched.data, responseCharset),
-                                            fetched.uri, source.httpHeaders, source.timeout, source.maxBytes,
-                                            ref -> classpathImageExists(ref, source.staticResourceBasePath));
-                                    var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
-                                    // The page as fetched, with its images and CSS, decides the key: a changed page is
-                                    // converted again | 받아 온 페이지(이미지·CSS 포함)가 키. 페이지가 바뀌면 다시 변환
-                                    var key = options.cache ? htmlKey("WEB", htmlContent, source.staticResourceBasePath,
-                                            source.cssPath, source.fontPath, clazz, source.cssSelectors)
-                                            .add(browserEnabled ? S2PdfCache.commandIdentity(resolveBrowserCommand()) : "no-browser")
-                                            : null;
-                                    pdfFileToMerge = converted("url_html", intermediateTempFiles, key,
-                                            target -> renderWebPageToPdfFile(target, htmlContent, source.staticResourceBasePath,
-                                                    source.cssPath, source.fontPath, clazz, source.cssSelectors));
-                                }
-                                case IMAGE -> {
-                                    var key = options.cache ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
-                                    pdfFileToMerge = converted("url_img", intermediateTempFiles, key, target -> {
-                                        renderImageToPdfFile(null, fetched.data, target);
-                                        return true;
-                                    });
-                                }
-                                case SVG -> {
-                                    var html = convertSvgToHtml(new String(fetched.data, responseCharset));
-                                    var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
-                                    pdfFileToMerge = converted("url_svg", intermediateTempFiles, key, target -> {
-                                        renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
-                                        return true;
-                                    });
-                                }
-                                case TEXT -> {
-                                    var html = convertTextToHtml(new String(fetched.data, responseCharset));
-                                    var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
-                                    pdfFileToMerge = converted("url_txt", intermediateTempFiles, key, target -> {
-                                        renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
-                                        return true;
-                                    });
-                                }
-                                default -> throw new IOException("URL 콘텐츠의 타입을 처리할 수 없습니다: " + source.urlString);
-                            }
-                        }
+                    pdfFileToMerge = prepared.get(i).join();
+                } catch (CompletionException e) {
+                    cancelled.set(true);
+                    if (e.getCause() instanceof IOException ioe) {
+                        throw ioe;
                     }
-
-                    if (pdfFileToMerge != null && options.bookmarks) {
+                    throw new IOException("병합 소스 #" + (i + 1) + " 처리 실패: " + e.getMessage(), e);
+                }
+                if (pdfFileToMerge == null) {
+                    continue;
+                }
+                if (options.bookmarks) {
+                    try {
                         pdfFileToMerge = withBookmark(pdfFileToMerge, source.bookmarkTitle(i), intermediateTempFiles);
+                    } catch (IOException | RuntimeException e) {
+                        throw new IOException("병합 소스 #" + (i + 1) + " (" + source.describe() + ") 처리 실패: " + e.getMessage(), e);
                     }
-                } catch (IOException | RuntimeException e) {
-                    throw new IOException("병합 소스 #" + (i + 1) + " (" + source.describe() + ") 처리 실패: " + e.getMessage(), e);
                 }
-
-                if (pdfFileToMerge != null) {
-                    merger.addSource(pdfFileToMerge);
-                }
+                merger.addSource(pdfFileToMerge);
             }
 
             // 최종 병합 대상 임시 파일 생성
@@ -2821,6 +2881,17 @@ public class S2PdfUtil {
             success = true;
             return resultStream;
         } finally {
+            // Conversions still running finish (each has its own time limit) before their temporary files are removed;
+            // ones not started yet are skipped | 진행 중인 변환은 끝난 뒤(각자 제한 시간 있음) 임시 파일을 지운다. 시작 전인 것은 건너뜀
+            cancelled.set(true);
+            for (var conversion : prepared) {
+                try {
+                    conversion.join();
+                } catch (RuntimeException ignored) {
+                    // Already reported, or not needed after a failure | 이미 보고했거나 실패 후라 필요 없음
+                }
+            }
+            converters.shutdown();
             // 실패 또는 작업 종료 시 미완료된 백그라운드 비동기 다운로드 작업 즉시 취소
             for (var future : urlFutures.values()) {
                 if (!future.isDone()) {
