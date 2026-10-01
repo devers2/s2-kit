@@ -74,6 +74,13 @@
 - `S2PdfUtil.merge(sources, MergeOptions)`: 소스별 책갈피(PDF 의 기존 책갈피는 그 아래로, `PdfSource.title`), 쪽 번호(`pageNumbers`,
   `pageNumberStyle`), 제목·작성자 문서 정보. `pageNumbers(skipFirst, skipLast)`는 앞·뒤 쪽(표지, 목차, 부록 등)을 빼고 나머지 쪽에만 그
   쪽들 기준 번호(`1 / N`)를 넣습니다. 쪽 번호는 회전된 쪽(`/Rotate`)에서도 화면에 보이는 쪽의 아래 가운데에 바로 선 채로 들어갑니다.
+- 변환 결과 캐시: `MergeOptions.cache(true)`로 켠 요청은 변환이 필요한 소스(문서, HTML, 웹 페이지, 이미지, 텍스트, SVG)의 변환 결과를
+  저장해 두었다가 같은 소스가 다시 오면 변환 없이 씁니다(문서 4건 병합 9.6초 → 0.12초). 키는 내용과 결과를 정하는 설정(CSS·폰트, 변환기
+  버전, 라이브러리 버전)의 SHA-256 이라 위조로 남의 결과를 받을 수 없고, 변환기를 바꾸면 다시 변환합니다. 브라우저 실패로 대신 만든 결과는
+  저장하지 않습니다. 기본은 꺼짐. `setConversionCache(폴더, 최대 크기, 보관 기간, 최소 여유 공간)`(기본 `java.io.tmpdir/s2-pdf-cache`, 1GB,
+  1일, 1GB), `resetConversionCache`, `clearConversionCache`. 정리는 별도 배치 없이 요청이 올 때 마지막 정리가 오늘 이전이거나 크기 상한을
+  넘으면 백그라운드에서 한 번만 합니다(보관 기간이 지난 것, 그다음 오래 안 쓴 것부터). 여유 공간이 부족하면 저장하지 않고, 폴더는 앱 실행
+  계정만 읽을 수 있습니다.
 - 워터마크: `MergeOptions.watermark(Watermark.of(이미지)...)`로 모든 쪽에 이미지를 찍습니다. 크기는 가로·세로 둘 다(`size`), 가로만
   (`width`, 세로는 비율대로), 세로만(`height`, 가로는 비율대로) 정할 수 있고, 위치는 가운데와 8방향(`Position`), 간격은 `offset(x, y)`
   (가장자리 기준이면 안쪽으로, 가운데 기준인 축은 x 오른쪽·y 아래로), 불투명도는 `opacity`. 단위는 pt. 이미지는 한 번만 넣어 모든 쪽이

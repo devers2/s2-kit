@@ -824,7 +824,7 @@ public class S2PdfUtil {
      * Renders a web page: through the browser when one is available, otherwise, or when the browser fails, with the
      * built-in renderer | 웹 페이지 변환. 브라우저가 있으면 브라우저로, 없거나 실패하면 내장 렌더러로
      */
-    private static void renderWebPageToPdfFile(Path target, String htmlContent, String staticResourceBasePath,
+    private static boolean renderWebPageToPdfFile(Path target, String htmlContent, String staticResourceBasePath,
             String cssPath, String fontPath, Class<?> clazz, String... convertCssBackgroundImageTargetSelectors)
             throws IOException {
         var command = browserEnabled ? resolveBrowserCommand() : null;
@@ -840,14 +840,20 @@ public class S2PdfUtil {
             }
             try {
                 printWithBrowser(command, doc.outerHtml(), target);
-                return;
+                return true;
             } catch (IOException e) {
                 // A broken or outdated browser must not stop the merge | 브라우저 문제로 병합이 멈추지 않도록
                 logger.warn("브라우저 변환에 실패해 내장 렌더러로 변환합니다: {}", e.getMessage());
             }
+            renderHtmlToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+                    convertCssBackgroundImageTargetSelectors);
+            // A fallback result is not cached, so the browser's is used once it works again
+            // | 대체 결과는 캐시하지 않음 (브라우저가 복구되면 브라우저 결과를 씀)
+            return false;
         }
         renderHtmlToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
                 convertCssBackgroundImageTargetSelectors);
+        return true;
     }
 
     private static void printWithBrowser(List<String> command, String html, Path target) throws IOException {
@@ -1703,6 +1709,7 @@ public class S2PdfUtil {
         private String title;
         private String author;
         private Watermark watermark;
+        private boolean cache;
 
         private MergeOptions() {
         }
@@ -1801,6 +1808,49 @@ public class S2PdfUtil {
             this.watermark = watermark;
             return this;
         }
+
+        /**
+         * 이 요청에서 변환 결과 캐시를 쓴다 (기본 false). 변환이 필요한 소스(문서, HTML, 웹 페이지, 이미지, 텍스트, SVG)의 변환 결과를 저장해 두었다가 같은
+         * 소스가 다시 오면 변환 없이 쓴다. PDF 소스는 변환이 없어 캐시하지 않는다. 저장 위치·한도는
+         * {@link S2PdfUtil#setConversionCache(Path, long, Duration, long)}.
+         * <p>
+         * 변환 결과가 디스크에 남으므로 개인정보가 든 문서라면 보관 기간을 짧게 두는 것이 안전하다.
+         * </p>
+         *
+         * @param cache 캐시 사용 여부
+         * @return 이 옵션
+         */
+        public MergeOptions cache(boolean cache) {
+            this.cache = cache;
+            return this;
+        }
+    }
+
+    /**
+     * 변환 결과 캐시의 위치와 한도를 정한다 ({@link MergeOptions#cache(boolean)}로 켠 요청에만 쓰임). 정리는 요청이 올 때 마지막 정리가 오늘 이전이면, 또는
+     * 크기 상한을 넘으면 백그라운드에서 한 번만 한다.
+     *
+     * @param directory    저장 폴더 (null 이면 {@code java.io.tmpdir/s2-pdf-cache}). 앱 실행 계정만 읽을 수 있게 만든다
+     * @param maxBytes     전체 최대 크기 (기본 1GB). 넘으면 오래 안 쓴 것부터 지운다
+     * @param maxAge       보관 기간 (기본 1일). 마지막으로 쓴 뒤 이 기간이 지나면 지운다
+     * @param minFreeBytes 디스크 최소 여유 공간 (기본 1GB). 저장 후 이보다 적어지면 저장하지 않는다
+     */
+    public static void setConversionCache(Path directory, long maxBytes, Duration maxAge, long minFreeBytes) {
+        S2PdfCache.configure(directory, maxBytes, maxAge, minFreeBytes);
+    }
+
+    /** 변환 결과 캐시 설정을 기본값으로 되돌린다 (저장된 항목은 지우지 않음). */
+    public static void resetConversionCache() {
+        S2PdfCache.configure(null, S2PdfCache.DEFAULT_MAX_BYTES, S2PdfCache.DEFAULT_MAX_AGE, S2PdfCache.DEFAULT_MIN_FREE_BYTES);
+    }
+
+    /**
+     * 변환 결과 캐시를 모두 지운다 (변환기나 폰트를 바꾼 뒤 바로 반영하고 싶을 때 등).
+     *
+     * @throws IOException 지울 수 없을 때
+     */
+    public static void clearConversionCache() throws IOException {
+        S2PdfCache.clear();
     }
 
     /**
@@ -2481,6 +2531,47 @@ public class S2PdfUtil {
      * @return 병합된 PDF 스트림 (S2ResourceInputStream - close 시 임시 파일 자동 정리)
      * @throws IOException 입출력 또는 변환 오류 시
      */
+    /** Writes a converted PDF; returns false when the result must not be cached (a fallback) | 변환 결과를 쓴다. 대체 결과면 false */
+    @FunctionalInterface
+    private interface PdfWriter {
+        boolean write(Path target) throws IOException;
+    }
+
+    /**
+     * Converts into a tracked temporary file, through the conversion cache when {@code cacheKey} is set | 변환해 임시 파일로.
+     * cacheKey 가 있으면 변환 결과 캐시를 거친다
+     */
+    private static File converted(String prefix, List<Path> temps, S2PdfCache.Key cacheKey, PdfWriter writer)
+            throws IOException {
+        var tempFile = createTrackedTempFile(prefix, ".pdf", temps);
+        var key = cacheKey != null ? cacheKey.hex() : null;
+        if (key != null && S2PdfCache.restore(key, tempFile)) {
+            return tempFile.toFile();
+        }
+        var cacheable = writer.write(tempFile);
+        if (key != null && cacheable) {
+            S2PdfCache.store(key, tempFile);
+        }
+        return tempFile.toFile();
+    }
+
+    /** Everything that shapes an HTML rendering | HTML 렌더링 결과를 정하는 모든 것 */
+    private static S2PdfCache.Key htmlKey(String kind, String html, String staticResourceBasePath, String cssPath,
+            String fontPath, Class<?> clazz, String[] selectors) throws IOException {
+        var font = resolveFont(clazz, fontPath);
+        var key = S2PdfCache.key(kind).add(html).add(staticResourceBasePath).add(cssPath).add(fontPath)
+                .add(clazz != null ? clazz.getName() : null)
+                .add(selectors != null ? String.join("\u0000", selectors) : null)
+                .add(font != null ? font.description() + ":" + font.bytes().length : "no-font")
+                .add(String.valueOf(isSvgSupported()));
+        // Classpath images, CSS and fonts can change with a redeploy: valid for this run only
+        // | 클래스패스 이미지·CSS·폰트는 재배포로 바뀔 수 있으므로 이번 실행 동안만 유효
+        if (S2Util.isNotEmpty(staticResourceBasePath) || S2Util.isNotEmpty(cssPath) || S2Util.isNotEmpty(fontPath)) {
+            key.add(S2PdfCache.RUN);
+        }
+        return key;
+    }
+
     public static InputStream merge(List<PdfSource> sources, MergeOptions options) throws IOException {
         Objects.requireNonNull(options, "options");
         if (sources == null || sources.isEmpty()) {
@@ -2535,20 +2626,20 @@ public class S2PdfUtil {
                             }
                         }
                         case HTML -> {
-                            var tempFile = createTrackedTempFile("html", ".pdf", intermediateTempFiles);
-                            renderHtmlToPdfFile(tempFile,
-                                    source.textOrHtmlContent,
-                                    source.staticResourceBasePath,
-                                    source.cssPath,
-                                    source.fontPath,
-                                    source.resourceClass != null ? source.resourceClass : S2PdfUtil.class,
-                                    source.cssSelectors);
-                            pdfFileToMerge = tempFile.toFile();
+                            var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
+                            var key = options.cache ? htmlKey("HTML", source.textOrHtmlContent, source.staticResourceBasePath,
+                                    source.cssPath, source.fontPath, clazz, source.cssSelectors) : null;
+                            pdfFileToMerge = converted("html", intermediateTempFiles, key, target -> {
+                                renderHtmlToPdfFile(target, source.textOrHtmlContent, source.staticResourceBasePath,
+                                        source.cssPath, source.fontPath, clazz, source.cssSelectors);
+                                return true;
+                            });
                         }
                         case IMAGE -> {
-                            var tempFile = createTrackedTempFile("img", ".pdf", intermediateTempFiles);
                             if (source.imageObj != null) {
+                                var tempFile = createTrackedTempFile("img", ".pdf", intermediateTempFiles);
                                 renderImageToPdfFile(source.imageObj, null, tempFile);
+                                pdfFileToMerge = tempFile.toFile();
                             } else {
                                 byte[] imageBytes;
                                 if (source.fileData != null) {
@@ -2560,26 +2651,52 @@ public class S2PdfUtil {
                                 } else {
                                     imageBytes = S2StreamUtil.streamToByteArray(source.inputStream, false, source.maxBytes);
                                 }
-                                renderImageToPdfFile(null, imageBytes, tempFile);
+                                var key = options.cache ? S2PdfCache.key("IMAGE").add(imageBytes) : null;
+                                pdfFileToMerge = converted("img", intermediateTempFiles, key, target -> {
+                                    renderImageToPdfFile(null, imageBytes, target);
+                                    return true;
+                                });
                             }
-                            pdfFileToMerge = tempFile.toFile();
                         }
                         case TEXT -> {
-                            var tempFile = createTrackedTempFile("txt", ".pdf", intermediateTempFiles);
-                            renderHtmlToPdfFile(tempFile, convertTextToHtml(source.textOrHtmlContent), null, null, null,
-                                    S2PdfUtil.class);
-                            pdfFileToMerge = tempFile.toFile();
+                            var html = convertTextToHtml(source.textOrHtmlContent);
+                            var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
+                            pdfFileToMerge = converted("txt", intermediateTempFiles, key, target -> {
+                                renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                                return true;
+                            });
                         }
                         case DOCUMENT -> {
-                            var tempFile = createTrackedTempFile("doc", ".pdf", intermediateTempFiles);
-                            convertDocumentToPdf(source, tempFile);
-                            pdfFileToMerge = tempFile.toFile();
+                            S2PdfCache.Key key = null;
+                            if (options.cache) {
+                                // A stream is kept in a file first so it can be hashed and then converted
+                                // | 스트림은 해시한 뒤 변환할 수 있도록 먼저 파일로
+                                if (source.pathData == null && source.byteData == null) {
+                                    var copy = createTrackedTempFile("doc_src", "." + S2FileUtil.getExtension(source.documentName, true),
+                                            intermediateTempFiles);
+                                    Files.copy(source.inputStream, copy, StandardCopyOption.REPLACE_EXISTING);
+                                    source.pathData = copy;
+                                }
+                                key = S2PdfCache.key("DOCUMENT").add(S2FileUtil.getExtension(source.documentName, true).toLowerCase(Locale.ROOT))
+                                        .add(S2PdfCache.commandIdentity(resolveOfficeCommand()));
+                                if (source.pathData != null) {
+                                    key.addFile(source.pathData);
+                                } else {
+                                    key.add(source.byteData);
+                                }
+                            }
+                            pdfFileToMerge = converted("doc", intermediateTempFiles, key, target -> {
+                                convertDocumentToPdf(source, target);
+                                return true;
+                            });
                         }
                         case SVG -> {
-                            var tempFile = createTrackedTempFile("svg", ".pdf", intermediateTempFiles);
-                            renderHtmlToPdfFile(tempFile, convertSvgToHtml(source.textOrHtmlContent), null, null, null,
-                                    S2PdfUtil.class);
-                            pdfFileToMerge = tempFile.toFile();
+                            var html = convertSvgToHtml(source.textOrHtmlContent);
+                            var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
+                            pdfFileToMerge = converted("svg", intermediateTempFiles, key, target -> {
+                                renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                                return true;
+                            });
                         }
                         case URL -> {
                             var future = urlFutures.get(i);
@@ -2611,34 +2728,39 @@ public class S2PdfUtil {
                                     var htmlContent = S2HtmlResources.inline(new String(fetched.data, responseCharset),
                                             fetched.uri, source.httpHeaders, source.timeout, source.maxBytes,
                                             ref -> classpathImageExists(ref, source.staticResourceBasePath));
-                                    var tempFile = createTrackedTempFile("url_html", ".pdf", intermediateTempFiles);
-                                    renderWebPageToPdfFile(tempFile,
-                                            htmlContent,
-                                            source.staticResourceBasePath,
-                                            source.cssPath,
-                                            source.fontPath,
-                                            source.resourceClass != null ? source.resourceClass : S2PdfUtil.class,
-                                            source.cssSelectors);
-                                    pdfFileToMerge = tempFile.toFile();
+                                    var clazz = source.resourceClass != null ? source.resourceClass : S2PdfUtil.class;
+                                    // The page as fetched, with its images and CSS, decides the key: a changed page is
+                                    // converted again | 받아 온 페이지(이미지·CSS 포함)가 키. 페이지가 바뀌면 다시 변환
+                                    var key = options.cache ? htmlKey("WEB", htmlContent, source.staticResourceBasePath,
+                                            source.cssPath, source.fontPath, clazz, source.cssSelectors)
+                                            .add(browserEnabled ? S2PdfCache.commandIdentity(resolveBrowserCommand()) : "no-browser")
+                                            : null;
+                                    pdfFileToMerge = converted("url_html", intermediateTempFiles, key,
+                                            target -> renderWebPageToPdfFile(target, htmlContent, source.staticResourceBasePath,
+                                                    source.cssPath, source.fontPath, clazz, source.cssSelectors));
                                 }
                                 case IMAGE -> {
-                                    var tempFile = createTrackedTempFile("url_img", ".pdf", intermediateTempFiles);
-                                    renderImageToPdfFile(null, fetched.data, tempFile);
-                                    pdfFileToMerge = tempFile.toFile();
+                                    var key = options.cache ? S2PdfCache.key("IMAGE").add(fetched.data) : null;
+                                    pdfFileToMerge = converted("url_img", intermediateTempFiles, key, target -> {
+                                        renderImageToPdfFile(null, fetched.data, target);
+                                        return true;
+                                    });
                                 }
                                 case SVG -> {
-                                    var svgContent = new String(fetched.data, responseCharset);
-                                    var tempFile = createTrackedTempFile("url_svg", ".pdf", intermediateTempFiles);
-                                    renderHtmlToPdfFile(tempFile, convertSvgToHtml(svgContent), null, null, null,
-                                            S2PdfUtil.class);
-                                    pdfFileToMerge = tempFile.toFile();
+                                    var html = convertSvgToHtml(new String(fetched.data, responseCharset));
+                                    var key = options.cache ? htmlKey("SVG", html, null, null, null, S2PdfUtil.class, null) : null;
+                                    pdfFileToMerge = converted("url_svg", intermediateTempFiles, key, target -> {
+                                        renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                                        return true;
+                                    });
                                 }
                                 case TEXT -> {
-                                    var textContent = new String(fetched.data, responseCharset);
-                                    var tempFile = createTrackedTempFile("url_txt", ".pdf", intermediateTempFiles);
-                                    renderHtmlToPdfFile(tempFile, convertTextToHtml(textContent), null, null, null,
-                                            S2PdfUtil.class);
-                                    pdfFileToMerge = tempFile.toFile();
+                                    var html = convertTextToHtml(new String(fetched.data, responseCharset));
+                                    var key = options.cache ? htmlKey("TEXT", html, null, null, null, S2PdfUtil.class, null) : null;
+                                    pdfFileToMerge = converted("url_txt", intermediateTempFiles, key, target -> {
+                                        renderHtmlToPdfFile(target, html, null, null, null, S2PdfUtil.class);
+                                        return true;
+                                    });
                                 }
                                 default -> throw new IOException("URL 콘텐츠의 타입을 처리할 수 없습니다: " + source.urlString);
                             }

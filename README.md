@@ -174,6 +174,8 @@ S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.tt
 var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("Report");
 // Skip the cover and contents (first 2 pages) and the appendix (last page), numbering the rest "1 / N":
 // MergeOptions.create().pageNumbers(2, 1)
+// Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
+//   MergeOptions.create().cache(true)
 // Watermark (points, A4 = 595 x 842): 200 wide with the height in ratio, centered, 20% opaque
 //   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
 // A 60 x 60 seal 40 and 30 in from the bottom-right corner
