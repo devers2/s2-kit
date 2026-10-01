@@ -1831,9 +1831,10 @@ public class S2PdfUtil {
      * 쓴다. 정리는 요청이 올 때 마지막 정리가 오늘 이전이면, 또는 크기 상한을 넘으면 백그라운드에서 한 번만 한다.
      *
      * @param directory    저장 폴더 (null 이면 {@code java.io.tmpdir/s2-pdf-cache}). 앱 실행 계정만 읽을 수 있게 만든다
-     * @param maxBytes     전체 최대 크기 (기본 1GB). 넘으면 오래 안 쓴 것부터 지운다
+     * @param maxBytes     캐시 폴더의 최대 크기. 넘으면 오래 안 쓴 것부터 지운다. 0 이하이면 기본값(최소 여유 공간의 50%)
      * @param maxAge       보관 기간 (기본 1일 = 24시간). 마지막으로 쓴 뒤 이 시간이 지나면 쓰지 않고, 다음 정리 때 지운다
-     * @param minFreeBytes 디스크 최소 여유 공간. 저장 후 이보다 적어지면 저장하지 않는다. 0 이하이면 기본값(디스크 용량의 10% 와 10GB 중 작은 값)
+     * @param minFreeBytes 디스크 전체에 남길 최소 여유 공간. 저장 후 이보다 적어지면 저장하지 않는다. 0 이하이면 기본값(디스크 용량의 20% 와 20GB 중
+     *                     작은 값)
      */
     public static void setConversionCache(Path directory, long maxBytes, Duration maxAge, long minFreeBytes) {
         S2PdfCache.configure(directory, maxBytes, maxAge, minFreeBytes);
@@ -2532,10 +2533,12 @@ public class S2PdfUtil {
      * @throws IOException 입출력 또는 변환 오류 시
      */
     private static volatile int conversionParallelism = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+    /** Shared by every merge, so the limit holds for the whole server | 모든 병합이 함께 써서 서버 전체 한도가 됨 */
+    private static volatile java.util.concurrent.Semaphore conversionSlots = new java.util.concurrent.Semaphore(conversionParallelism, true);
 
     /**
-     * 병합 한 건에서 동시에 변환할 소스 수 (기본: CPU 수와 4 중 작은 값). 문서·웹 페이지 변환은 건마다 컨테이너(LibreOffice·Chromium, 수백 MB 메모리)를
-     * 띄우므로 서버 메모리에 맞춰 정한다. 1 이면 차례로 변환한다.
+     * 서버 전체에서 동시에 실행할 변환 수 (기본: CPU 수와 4 중 작은 값). 요청이 몇 건이 오든 이 수만큼만 동시에 변환하고 나머지는 차례를 기다린다. 문서·웹
+     * 페이지 변환은 건마다 컨테이너(LibreOffice·Chromium, 수백 MB 메모리)를 띄우므로 서버 메모리에 맞춰 정한다. 1 이면 한 번에 하나씩 변환한다.
      *
      * @param parallelism 1 이상
      */
@@ -2544,6 +2547,7 @@ public class S2PdfUtil {
             throw new IllegalArgumentException("동시 변환 수는 1 이상이어야 합니다: " + parallelism);
         }
         conversionParallelism = parallelism;
+        conversionSlots = new java.util.concurrent.Semaphore(parallelism, true);
     }
 
     /** Writes a converted PDF; returns false when the result must not be cached (a fallback) | 변환 결과를 쓴다. 대체 결과면 false */
@@ -2787,7 +2791,7 @@ public class S2PdfUtil {
         var cancelled = new AtomicBoolean();
         var parallelism = conversionParallelism;
         var converters = S2ThreadUtil.newExecutor(parallelism);
-        var slots = new java.util.concurrent.Semaphore(parallelism);
+        var slots = conversionSlots;
         var prepared = new ArrayList<CompletableFuture<File>>();
         try {
             for (int i = 0; i < sources.size(); i++) {

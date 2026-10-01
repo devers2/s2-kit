@@ -294,9 +294,17 @@ class S2PdfCacheTest {
     }
 
     @Test
-    void settingsAreChecked() {
-        assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 0, Duration.ofDays(1), 0));
+    void settingsAreChecked() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 1, Duration.ZERO, 0));
+        // 0 = defaults: reserve min(20% of disk, 20GB), size limit half of it | 0 = 기본값
+        S2PdfUtil.setConversionCache(cache, 0, Duration.ofDays(1), 0);
+        Files.createDirectories(cache);
+        var total = Files.getFileStore(cache).getTotalSpace();
+        assertEquals(Math.min(total / 5, 20L << 30) / 2, S2PdfCache.maxBytes());
+        S2PdfUtil.setConversionCache(cache, 0, Duration.ofDays(1), 4L << 30);
+        assertEquals(2L << 30, S2PdfCache.maxBytes(), "half of a configured reserve");
+        S2PdfUtil.setConversionCache(cache, 123, Duration.ofDays(1), 0);
+        assertEquals(123, S2PdfCache.maxBytes());
     }
 
     @Test

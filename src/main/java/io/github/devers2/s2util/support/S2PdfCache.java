@@ -68,11 +68,12 @@ final class S2PdfCache {
     private static final S2Logger logger = S2LogManager.getLogger(S2PdfCache.class);
 
     static final Path DEFAULT_DIRECTORY = Path.of(System.getProperty("java.io.tmpdir"), "s2-pdf-cache");
-    static final long DEFAULT_MAX_BYTES = 1024L * 1024 * 1024;
+    /** 0 or less: half of the free-space reserve | 0 이하: 최소 여유 공간의 50% */
+    static final long DEFAULT_MAX_BYTES = 0;
     static final Duration DEFAULT_MAX_AGE = Duration.ofDays(1);
-    /** 0 or less: the smaller of 10% of the disk and 10GB | 0 이하: 디스크 용량의 10% 와 10GB 중 작은 값 */
+    /** 0 or less: the smaller of 20% of the disk and 20GB | 0 이하: 디스크 용량의 20% 와 20GB 중 작은 값 */
     static final long DEFAULT_MIN_FREE_BYTES = 0;
-    private static final long MIN_FREE_CAP = 10L * 1024 * 1024 * 1024;
+    private static final long MIN_FREE_CAP = 20L * 1024 * 1024 * 1024;
 
     /** Changes with every application run; part of keys whose result depends on classpath resources | 앱 실행마다 바뀌는 값 */
     static final String RUN = UUID.randomUUID().toString();
@@ -99,7 +100,7 @@ final class S2PdfCache {
     }
 
     static void configure(Path directory, long maxBytes, Duration maxAge, long minFreeBytes) {
-        if (maxBytes < 1 || maxAge == null || maxAge.isNegative() || maxAge.isZero()) {
+        if (maxAge == null || maxAge.isNegative() || maxAge.isZero()) {
             throw new IllegalArgumentException("캐시 설정이 올바르지 않습니다: 최대 크기 " + maxBytes + ", 보관 기간 " + maxAge
                     + ", 최소 여유 공간 " + minFreeBytes);
         }
@@ -112,6 +113,24 @@ final class S2PdfCache {
 
     static Path directory() {
         return directory;
+    }
+
+    /** Free space to keep on the cache's disk | 캐시 디스크에 남길 여유 공간 */
+    private static long minFree(java.nio.file.FileStore store) throws IOException {
+        return minFreeBytes > 0 ? minFreeBytes : Math.min(MIN_FREE_CAP, store.getTotalSpace() / 5);
+    }
+
+    /** Size limit of the cache: as configured, or half of the free-space reserve | 캐시 최대 크기: 지정값 또는 최소 여유 공간의 50% */
+    static long maxBytes() {
+        if (maxBytes > 0) {
+            return maxBytes;
+        }
+        try {
+            var root = Files.isDirectory(directory) ? directory : directory.getParent();
+            return Math.max(1, minFree(Files.getFileStore(root)) / 2);
+        } catch (IOException | RuntimeException e) {
+            return 1024L * 1024 * 1024;
+        }
     }
 
     // ------------------------------------------------------------------ keys
@@ -250,7 +269,7 @@ final class S2PdfCache {
             var size = Files.size(pdf);
             var store = Files.getFileStore(parent);
             var free = store.getUsableSpace();
-            var required = minFreeBytes > 0 ? minFreeBytes : Math.min(MIN_FREE_CAP, store.getTotalSpace() / 10);
+            var required = minFree(store);
             if (free - size < required) {
                 logger.info("디스크 여유 공간({} bytes)이 기준({} bytes)보다 적어 변환 결과를 캐시하지 않습니다.", free, required);
                 return;
@@ -260,7 +279,7 @@ final class S2PdfCache {
             Files.copy(pdf, partial, StandardCopyOption.REPLACE_EXISTING);
             Files.move(partial, entry, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             partial = null;
-            if (knownSize.get() >= 0 && knownSize.addAndGet(size) > maxBytes) {
+            if (knownSize.get() >= 0 && knownSize.addAndGet(size) > maxBytes()) {
                 startCleanup();
             }
         } catch (IOException | RuntimeException e) {
@@ -301,7 +320,7 @@ final class S2PdfCache {
         try {
             if (Files.isRegularFile(marker)) {
                 var last = LocalDate.ofInstant(Files.getLastModifiedTime(marker).toInstant(), ZoneId.systemDefault());
-                if (!last.isBefore(LocalDate.now()) && knownSize.get() >= 0 && knownSize.get() <= maxBytes) {
+                if (!last.isBefore(LocalDate.now()) && knownSize.get() >= 0 && knownSize.get() <= maxBytes()) {
                     return;
                 }
             } else if (!Files.isDirectory(directory)) {
@@ -364,10 +383,11 @@ final class S2PdfCache {
                     }
                 }
             }
-            if (total > maxBytes) {
+            var limit = maxBytes();
+            if (total > limit) {
                 // Down to 80% so the next stores do not start another cleanup at once | 80% 까지 줄여 곧바로 다시 정리하지 않게 함
                 entries.sort(Comparator.comparing(S2PdfCache::modifiedOrEpoch));
-                var target = maxBytes * 8 / 10;
+                var target = limit * 8 / 10;
                 for (var file : entries) {
                     if (total <= target) {
                         break;

@@ -93,12 +93,14 @@ before upgrading.
   9.6 s → 0.12 s). Keys are the SHA-256 of the content and of the settings that shape the result (CSS and fonts,
   converter version, library version), so nobody can forge a key to get another user's result, and changing the
   converter converts again. A browser fallback is not kept. Off by default. `setConversionCache(folder, max size,
-  max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, 1GB, 24 hours since last use,
-  the smaller of 10% of the disk and 10GB), `resetConversionCache`, `clearConversionCache`. An entry past its age is not
+  max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, a size limit of half the
+  free-space reserve, 24 hours since last use, a reserve of the smaller of 20% of the disk and 20GB; 0 means the
+  default), `resetConversionCache`, `clearConversionCache`. An entry past its age is not
   served even before a cleanup removes it. Cleanup needs no batch job: a request starts it in the background, once, when the last one
   was before today or the size limit is exceeded (expired entries, then the least recently used). Nothing is stored
   when disk space is short, and the folder is readable only by the application account.
-- Merge sources are converted concurrently (`setConversionParallelism`, default the smaller of the CPU count and 4).
+- Merge sources are converted concurrently (`setConversionParallelism`, default the smaller of the CPU count and 4; a
+  server-wide limit, so under load only that many conversions run at once and the rest wait).
   The order and the error message (the first failing source in order) stay the same; the first request for 4
   documents went from 9.8 s to 4.8 s (the slowest one). Conversions run on a pool made for each merge, so they never
   block the shared pool the URL downloads use.

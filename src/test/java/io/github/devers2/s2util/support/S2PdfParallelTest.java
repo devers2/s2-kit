@@ -83,9 +83,13 @@ class S2PdfParallelTest {
     }
 
     private List<PdfSource> documents(String... contents) throws IOException {
+        return prefixedDocuments("", contents);
+    }
+
+    private List<PdfSource> prefixedDocuments(String prefix, String... contents) throws IOException {
         var sources = new ArrayList<PdfSource>();
         for (int i = 0; i < contents.length; i++) {
-            sources.add(PdfSource.ofDocument(Files.writeString(dir.resolve("doc" + i + ".docx"), contents[i])));
+            sources.add(PdfSource.ofDocument(Files.writeString(dir.resolve(prefix + "doc" + i + ".docx"), contents[i])));
         }
         return sources;
     }
@@ -127,6 +131,33 @@ class S2PdfParallelTest {
         S2PdfUtil.merge(documents("1", "1", "1")).close();
         assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() >= 3000);
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionParallelism(0));
+    }
+
+    @Test
+    void theLimitHoldsAcrossConcurrentMerges() throws Exception {
+        S2PdfUtil.setOfficeCommand(slowSoffice().toString());
+        S2PdfUtil.setConversionParallelism(2);
+        // Two merges of two documents each, at once: 4 conversions, 2 at a time | 문서 2건짜리 병합 2개 동시: 변환 4건을 2건씩
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var start = System.nanoTime();
+            var first = prefixedDocuments("a", "1", "1");
+            var second = prefixedDocuments("b", "2", "2");
+            var a = pool.submit(() -> {
+                S2PdfUtil.merge(first).close();
+                return null;
+            });
+            var b = pool.submit(() -> {
+                S2PdfUtil.merge(second).close();
+                return null;
+            });
+            a.get();
+            b.get();
+            var elapsed = Duration.ofNanos(System.nanoTime() - start).toMillis();
+            assertTrue(elapsed >= 2000, "no more than 2 conversions at once on the server: " + elapsed + "ms");
+        } finally {
+            pool.shutdown();
+        }
     }
 
     @Test
