@@ -309,6 +309,49 @@ class S2PdfCacheTest {
     }
 
     @Test
+    void preparedSourcesMakeTheFirstMergeFast() throws Exception {
+        S2PdfUtil.setOfficeCommand(fakeSoffice("soffice").toString());
+        var docx = Files.writeString(dir.resolve("uploaded.docx"), "uploaded");
+        var html = "<h1>note</h1>";
+        // Right after an upload | 업로드 직후
+        S2PdfUtil.prepare(List.of(PdfSource.ofDocument(docx), PdfSource.ofHtml(html)), null).get(30, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(1, calls());
+        assertEquals(2, entries().size());
+        // The first view uses the prepared results | 처음 볼 때 미리 변환한 결과를 씀
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofHtml(html), PdfSource.ofDocument(docx)),
+                MergeOptions.create().cache(true).pageNumbers(true)))) {
+            assertEquals(3, doc.getNumberOfPages());
+        }
+        assertEquals(1, calls(), "not converted again");
+    }
+
+    @Test
+    void preparingUsesTheImageSettingsOfTheLaterMerge() throws Exception {
+        var png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(3000, 2000, java.awt.image.BufferedImage.TYPE_INT_RGB),
+                "png", png);
+        var image = png.toByteArray();
+        S2PdfUtil.prepare(List.of(PdfSource.ofImage(image)), MergeOptions.create().imageDpi(150)).get(30,
+                java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(1, entries().size());
+        S2PdfUtil.merge(List.of(PdfSource.ofImage(image)), MergeOptions.create().imageDpi(150).cache(true)).close();
+        assertEquals(1, entries().size(), "same settings: reused");
+        S2PdfUtil.merge(List.of(PdfSource.ofImage(image)), CACHED).close();
+        assertEquals(2, entries().size(), "other settings: another result");
+    }
+
+    @Test
+    void aFailedPreparationDoesNotThrow() throws IOException {
+        S2PdfUtil.setOfficeCommand(dir.resolve("missing-soffice").toString());
+        var future = S2PdfUtil.prepare(PdfSource.ofDocument(Files.writeString(dir.resolve("a.docx"), "x")),
+                PdfSource.ofText("still prepared"));
+        var e = assertThrows(java.util.concurrent.ExecutionException.class,
+                () -> future.get(30, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(e.getCause().getMessage().contains("s2-office-converter"), e.getCause().getMessage());
+        assertEquals(1, entries().size(), "the other source was still prepared");
+    }
+
+    @Test
     void settingsAreChecked() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> S2PdfUtil.setConversionCache(cache, 1, Duration.ZERO, 0));
         // 0 = defaults: reserve min(10% of disk, 20GB), size limit half of it | 0 = 기본값

@@ -102,6 +102,11 @@ before upgrading.
   served even before a cleanup removes it. Cleanup needs no batch job: a request starts it in the background, once, when the last one
   was before today or the size limit is exceeded (expired entries, then the least recently used). Nothing is stored
   when disk space is short, and the folder is readable only by the application account.
+- Preparing: `S2PdfUtil.prepare(sources, options)` converts sources in the background right after an upload and keeps
+  the results in the cache, so a later merge with the same image settings and `cache(true)` is fast even the first
+  time. It does not merge, number or stamp; it shares the server-wide conversion limit with merges; a failure is
+  logged and completes the returned future exceptionally instead of throwing. It removes the first-view wait without
+  a resident converter service (LibreOffice/Chromium kept running).
 - Merge sources are converted concurrently (`setConversionParallelism`, default the smaller of the CPU count and 4; a
   server-wide limit, so under load only that many conversions run at once and the rest wait).
   The order and the error message (the first failing source in order) stay the same; the first request for 4

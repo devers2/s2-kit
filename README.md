@@ -176,6 +176,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // MergeOptions.create().pageNumbers(2, 1)
 // Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
 //   MergeOptions.create().cache(true)
+// Converting right after an upload, in the background, makes even the first view use the cache
+//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
 // Shrink photos and scans to a resolution for their page (images inside PDF sources too; default 0 = keep)
 //   MergeOptions.create().imageDpi(200).cache(true)        // images and PDFs
 //   MergeOptions.create().imageDpi(150, 0).cache(true)     // photos only, PDFs kept

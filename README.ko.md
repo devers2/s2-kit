@@ -175,6 +175,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
 // 변환 결과 캐시: 같은 문서·HTML 을 다시 병합하면 변환 없이 재사용 (요청마다 선택, 기본 꺼짐)
 //   MergeOptions.create().cache(true)
+// 업로드 직후 백그라운드에서 미리 변환해 두면 처음 볼 때도 캐시를 씀
+//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
 // 사진·스캔 이미지를 쪽 기준 해상도로 줄이기 (PDF 소스 안의 이미지 포함, 기본 0 = 원본 유지)
 //   MergeOptions.create().imageDpi(200).cache(true)        // 이미지·PDF 모두
 //   MergeOptions.create().imageDpi(150, 0).cache(true)     // 사진만 줄이고 PDF 는 원본
