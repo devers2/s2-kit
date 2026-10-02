@@ -102,7 +102,7 @@ dependencies {
 | 모듈 | 유형 및 좌표 | 주요 특징 및 기능 |
 | :--- | :--- | :--- |
 | **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.0.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
-| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '1.1.3'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
+| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.0.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
 | **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.0.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
 | **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:2.0.0` | **s2-kit 과 함께 쓰지 마십시오.**<br>• 번들은 `s2-core` 클래스를 JAR 안에 담고 있어, `s2-kit`이 가져오는 `s2-core`와 같은 클래스가 클래스패스에 두 번 올라갑니다.<br>• `s2-kit`과 함께라면 위의 개별 모듈(`s2-validator`, `s2-jpa`)을 추가하십시오. |
 
@@ -113,7 +113,7 @@ dependencies {
 plugins {
     id 'java'
     // [선택] S2Validator 빌드 시점 필드 정적 검증 플러그인 (Gradle 전용, 라이브러리와 별도 선언 필요)
-    id 'io.github.devers2.validator' version '1.1.3'
+    id 'io.github.devers2.validator' version '2.0.0'
 }
 
 dependencies {
