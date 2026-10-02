@@ -342,7 +342,7 @@ class S2PdfCacheTest {
         var docx = Files.writeString(dir.resolve("uploaded.docx"), "uploaded");
         var html = "<h1>note</h1>";
         // Right after an upload | 업로드 직후
-        S2PdfUtil.prepare(List.of(PdfSource.ofDocument(docx), PdfSource.ofHtml(html)), null).get(30, java.util.concurrent.TimeUnit.SECONDS);
+        S2PdfUtil.prepare(List.of(PdfSource.ofDocument(docx), PdfSource.ofHtml(html)), CACHED).get(30, java.util.concurrent.TimeUnit.SECONDS);
         assertEquals(1, calls());
         assertEquals(2, entries().size());
         // The first view uses the prepared results | 처음 볼 때 미리 변환한 결과를 씀
@@ -359,7 +359,7 @@ class S2PdfCacheTest {
         javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(3000, 2000, java.awt.image.BufferedImage.TYPE_INT_RGB),
                 "png", png);
         var image = png.toByteArray();
-        S2PdfUtil.prepare(List.of(PdfSource.ofImage(image)), MergeOptions.create().imageDpi(150)).get(30,
+        S2PdfUtil.prepare(List.of(PdfSource.ofImage(image)), MergeOptions.create().imageDpi(150).cache(true)).get(30,
                 java.util.concurrent.TimeUnit.SECONDS);
         assertEquals(1, entries().size());
         S2PdfUtil.merge(List.of(PdfSource.ofImage(image)), MergeOptions.create().imageDpi(150).cache(true)).close();
@@ -369,10 +369,30 @@ class S2PdfCacheTest {
     }
 
     @Test
+    void preparingFollowsTheCacheOptionLikeMerge() throws Exception {
+        S2OfficeConverter.setCommand(fakeSoffice("soffice").toString());
+        var closed = new java.util.concurrent.atomic.AtomicBoolean();
+        var upload = new ByteArrayInputStream("sensitive".getBytes(StandardCharsets.UTF_8)) {
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+        // A sensitive document: the options without the cache leave nothing on disk | 민감 문서: 캐시 없는 옵션이면 디스크에 남지 않음
+        var future = S2PdfUtil.prepare(List.of(PdfSource.ofDocument(upload, "보안.docx"), PdfSource.ofText("secret")),
+                MergeOptions.create());
+        assertTrue(future.isDone());
+        future.get();
+        assertEquals(List.of(), entries());
+        assertEquals(0, calls(), "not even converted");
+        assertTrue(closed.get(), "sources are closed as after a merge");
+    }
+
+    @Test
     void aFailedPreparationDoesNotThrow() throws IOException {
         S2OfficeConverter.setCommand(dir.resolve("missing-soffice").toString());
-        var future = S2PdfUtil.prepare(PdfSource.ofDocument(Files.writeString(dir.resolve("a.docx"), "x")),
-                PdfSource.ofText("still prepared"));
+        var future = S2PdfUtil.prepare(List.of(PdfSource.ofDocument(Files.writeString(dir.resolve("a.docx"), "x")),
+                PdfSource.ofText("still prepared")), CACHED);
         var e = assertThrows(java.util.concurrent.ExecutionException.class,
                 () -> future.get(30, java.util.concurrent.TimeUnit.SECONDS));
         assertTrue(e.getCause().getMessage().contains("s2-office-converter"), e.getCause().getMessage());

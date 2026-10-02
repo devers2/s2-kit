@@ -219,8 +219,8 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // 마크다운 (선택 의존성 org.commonmark:commonmark 와 확장 필요): 같은 폴더의 이미지 포함, 원격 이미지는 가져오지 않음
 //   S2PdfUtil.PdfSource.ofMarkdown(Path.of("연구노트.md"))
 //   웹 화면용 HTML: S2MarkdownUtil.toHtml(markdown) (마크다운 안의 HTML 은 글자로 보여 XSS 안전)
-// 업로드 직후 백그라운드에서 미리 변환해 두면 처음 볼 때도 캐시를 씀
-//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
+// 업로드 직후 백그라운드에서 미리 변환해 두면 처음 볼 때도 캐시를 씀 (병합과 같은 옵션. cache(false)면 아무것도 하지 않음)
+//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create().cache(true));
 // 사진·스캔 이미지를 쪽 기준 해상도로 줄이기 (PDF 소스 안의 이미지 포함, 기본 0 = 원본 유지)
 //   MergeOptions.create().imageDpi(200).cache(true)        // 이미지·PDF 모두
 //   MergeOptions.create().imageDpi(150, 0).cache(true)     // 사진만 줄이고 PDF 는 원본

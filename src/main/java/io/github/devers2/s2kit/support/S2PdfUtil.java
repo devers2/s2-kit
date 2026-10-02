@@ -1729,7 +1729,7 @@ public class S2PdfUtil {
             return imageDpi(dpi, dpi);
         }
 
-        /** The same conversion settings with the cache on | 같은 변환 설정에 캐시를 켠 사본 */
+        /** Only the conversion settings, without merge-only work | 변환 설정만 담은 사본 (병합 전용 작업 제외) */
         private MergeOptions forPreparing() {
             var copy = new MergeOptions();
             copy.cache = true;
@@ -3011,35 +3011,49 @@ public class S2PdfUtil {
 
     /**
      * Converts the sources in the background and keeps the results in the conversion cache, so a later
-     * {@code merge} with {@code cache(true)} and the same image settings is fast even the first time it is viewed.
-     * Call it right after an upload; it does not merge, number or stamp anything.
+     * {@code merge} with the same options is fast even the first time it is viewed. Like {@code merge}, it uses the
+     * cache only when the options say {@code cache(true)}; otherwise it does nothing. Call it right after an upload; it
+     * does not merge, number or stamp anything.
      * <p>
      * <b>[한국어 설명]</b>
      * </p>
-     * 소스를 백그라운드에서 변환해 변환 결과 캐시에 넣어 둔다. 나중에 {@code cache(true)}와 같은 이미지 설정으로 {@code merge}하면 처음 볼 때도 빠르다.
+     * 소스를 백그라운드에서 변환해 변환 결과 캐시에 넣어 둔다. 나중에 같은 옵션으로 {@code merge}하면 처음 볼 때도 빠르다. {@code merge}와 같이
+     * 옵션이 {@code cache(true)}일 때만 캐시를 쓰며, 아니면 아무것도 하지 않는다 (민감 문서는 {@code cache(false)} 하나로 디스크에 남지 않음).
      * 업로드 직후에 호출하며, 병합·쪽 번호·워터마크는 하지 않는다.
      * <ul>
-     * <li>{@code options}에서는 이미지 설정({@link MergeOptions#imageDpi(int, int)})만 쓰고 캐시는 항상 켠다. 미리보기용과 다운로드용 설정이 다르면 각각
-     * 호출한다.</li>
+     * <li>{@code options}에서는 캐시 여부와 이미지 설정({@link MergeOptions#imageDpi(int, int)})만 쓴다. 나중에 병합할 옵션을 그대로 넘기면 된다.
+     * 미리보기용과 다운로드용 이미지 설정이 다르면 각각 호출한다.</li>
      * <li>변환은 서버 전체 동시 변환 한도({@link #setConversionParallelism(int)})를 병합과 함께 쓴다.</li>
      * <li>실패해도 예외를 던지지 않고 경고 로그를 남기며, 돌려준 Future 가 그 예외로 끝난다 (업로드 처리에 영향 없음).</li>
      * <li>소스는 끝난 뒤 닫힌다 ({@code merge}와 같음). 변환이 없는 소스(PDF, JPEG)는 건너뛴다.</li>
      * </ul>
      *
      * <pre>{@code
+     * // 병합과 같은 옵션 (민감 문서면 cache(false) → prepare 는 아무것도 하지 않음)
+     * var options = MergeOptions.create().cache(!sensitive).imageDpi(150, 0);
      * // 업로드 처리 직후
-     * S2PdfUtil.prepare(List.of(PdfSource.ofDocument(saved)), MergeOptions.create());
+     * S2PdfUtil.prepare(List.of(PdfSource.ofDocument(saved)), options);
      * // 나중에 미리보기 → 캐시에서 바로
-     * S2PdfUtil.merge(sources, MergeOptions.create().cache(true));
+     * S2PdfUtil.merge(sources, options);
      * }</pre>
      *
      * @param sources 미리 변환할 소스
-     * @param options 이미지 설정 (null 이면 원본 유지)
-     * @return 모든 변환이 끝나면 완료되는 Future
+     * @param options 나중에 병합할 옵션 (캐시 여부, 이미지 설정)
+     * @return 모든 변환이 끝나면 완료되는 Future ({@code cache(false)}이면 바로 완료)
      */
     public static CompletableFuture<Void> prepare(List<PdfSource> sources, MergeOptions options) {
         Objects.requireNonNull(sources, "sources");
-        var settings = (options != null ? options : MergeOptions.create()).forPreparing();
+        Objects.requireNonNull(options, "options");
+        if (!options.cache) {
+            // The same rule as merge: nothing is kept without cache(true) | merge 와 같은 규칙: cache(true) 없이는 남기지 않음
+            sources.forEach(source -> {
+                if (source != null) {
+                    source.close();
+                }
+            });
+            return CompletableFuture.completedFuture(null);
+        }
+        var settings = options.forPreparing();
         var temps = java.util.Collections.synchronizedList(new ArrayList<Path>());
         var executor = S2ThreadUtil.newExecutor(S2OfficeConverter.parallelism());
         var slots = S2OfficeConverter.slots();
@@ -3073,16 +3087,6 @@ public class S2PdfUtil {
                 }
             }
         });
-    }
-
-    /**
-     * 소스를 백그라운드에서 원본 해상도로 미리 변환해 캐시에 넣어 둔다 ({@link #prepare(List, MergeOptions)} 참고).
-     *
-     * @param sources 미리 변환할 소스
-     * @return 모든 변환이 끝나면 완료되는 Future
-     */
-    public static CompletableFuture<Void> prepare(PdfSource... sources) {
-        return prepare(Arrays.asList(Objects.requireNonNull(sources, "sources")), null);
     }
 
     public static InputStream merge(List<PdfSource> sources, MergeOptions options) throws IOException {

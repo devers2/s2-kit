@@ -114,8 +114,8 @@ compatibility, so check the ⚠️ items before upgrading. See "Moving from s2-s
   disk the least recently used entries are removed to give the space back. The folder is readable only by the
   application account.
 - Preparing: `S2PdfUtil.prepare(sources, options)` converts sources in the background right after an upload and keeps
-  the results in the cache, so a later merge with the same image settings and `cache(true)` is fast even the first
-  time. It does not merge, number or stamp; it shares the server-wide conversion limit with merges; a failure is
+  the results in the cache, so a later merge with the same options is fast even the first time. Like `merge`, it
+  works only with `cache(true)`, so `cache(false)` alone keeps a sensitive document off the disk. It does not merge, number or stamp; it shares the server-wide conversion limit with merges; a failure is
   logged and completes the returned future exceptionally instead of throwing. It removes the first-view wait without
   a resident converter service (LibreOffice/Chromium kept running).
 - Merge sources are converted concurrently (`setConversionParallelism`, default the smaller of the CPU count and 4; a

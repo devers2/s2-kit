@@ -222,8 +222,9 @@ var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).
 // Markdown (needs the optional org.commonmark:commonmark and extensions): images from the same folder, no remote ones
 //   S2PdfUtil.PdfSource.ofMarkdown(Path.of("note.md"))
 //   HTML for a web page: S2MarkdownUtil.toHtml(markdown) (HTML in the Markdown is shown as text, safe from XSS)
-// Converting right after an upload, in the background, makes even the first view use the cache
-//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create());
+// Converting right after an upload, in the background, makes even the first view use the cache (the merge options;
+// does nothing without cache(true))
+//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create().cache(true));
 // Shrink photos and scans to a resolution for their page (images inside PDF sources too; default 0 = keep)
 //   MergeOptions.create().imageDpi(200).cache(true)        // images and PDFs
 //   MergeOptions.create().imageDpi(150, 0).cache(true)     // photos only, PDFs kept
