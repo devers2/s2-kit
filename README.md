@@ -309,7 +309,7 @@ This library is provided under the **Apache License 2.0**. You are free to use, 
 
 ---
 
-s2-kit Version: 1.0.0 (2026-09-30)
+s2-kit Version: 1.0.0 (2026-10-02)
 
 [//]: # 'S2_DEPS_INFO_START'
 
@@ -333,9 +333,9 @@ dependencies {
     implementation 'org.commonmark:commonmark-ext-heading-anchor:0.30.0'
     implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
     implementation 'org.commonmark:commonmark:0.30.0'
+    implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87'
     implementation 'org.commonmark:commonmark-ext-autolink:0.30.0'
     implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'
-    implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85'
     implementation 'org.commonmark:commonmark-ext-task-list-items:0.30.0'
 }
 ```

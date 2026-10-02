@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Run inside the s2-kit checkout so settings.gradle.kts finds ../s2-util as a sibling. | settings.gradle.kts 가 ../s2-util 을 형제 폴더로 찾도록 s2-kit 체크아웃 안에서 실행
+    # Checked out into s2-kit/ with no sibling s2-util, so s2-core comes from Maven Central | 형제 s2-util 없이 s2-kit/ 에 체크아웃하므로 s2-core 는 Maven Central 에서 받음
     defaults:
       run:
         working-directory: s2-kit
@@ -25,13 +25,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: s2-kit
-      # s2-core 2.0.0 is not on Maven Central yet, so build against s2-util main via the composite build. | s2-core 2.0.0 이 아직 Maven Central 에 없으므로 composite build 로 s2-util main 소스를 참조
-      - name: Checkout s2-util (sibling for composite build)
-        uses: actions/checkout@v7
-        with:
-          repository: devers2/s2-util
-          ref: main
-          path: s2-util
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v6
         with:

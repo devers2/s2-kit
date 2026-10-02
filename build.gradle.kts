@@ -187,7 +187,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
                 "configuration" to "compileOnly",
                 "group" to "io.github.openhtmltopdf",
                 "name" to "openhtmltopdf-pdfbox",
-                "version" to "1.1.85"
+                "version" to "1.1.87"
             )
         ),
         "licenses" to listOf("README-LGPL-2.1-PDF.md")
@@ -393,8 +393,8 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.s2.core)
     testImplementation("org.jsoup:jsoup:1.23.2")
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85")
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.85") // optional SVG drawing | 선택: SVG 그리기
+    testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87")
+    testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.87") // optional SVG drawing | 선택: SVG 그리기
     // Optional Markdown (S2MarkdownUtil) | 선택: 마크다운
     for (module in listOf("commonmark", "commonmark-ext-gfm-tables", "commonmark-ext-gfm-strikethrough", "commonmark-ext-autolink",
             "commonmark-ext-task-list-items", "commonmark-ext-heading-anchor")) {

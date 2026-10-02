@@ -4,7 +4,7 @@
 
 All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `s2-support` 1.x history continues in this file.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-10-02
 
 The successor of `s2-support` 1.1.5 and the first release under the name `s2-kit`. Changes are against 1.1.5 and break
 compatibility, so check the ⚠️ items before upgrading. See "Moving from s2-support" in the README.

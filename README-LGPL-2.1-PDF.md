@@ -28,7 +28,7 @@ This S2Util Library uses the OpenHTMLToPDF library via the **`compileOnly`** met
 dependencies {
   // Essential runtime dependencies for S2PdfUtil functionality
   implementation 'org.jsoup:jsoup:1.23.2'
-  implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85'
+  implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87'
 }
 ```
 
