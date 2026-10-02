@@ -58,8 +58,8 @@ import io.github.devers2.s2util.log.S2Logger;
  * <ul>
  * <li>SHA-256: 여러 사용자가 함께 쓰는 캐시라, 같은 해시를 갖는 다른 파일을 만들어 남의 결과를 받아 보는 일이 없도록 위조할 수 없는 해시를 쓴다.</li>
  * <li>정리: 요청이 올 때 마지막 정리가 오늘 이전이면, 또는 크기 상한을 넘으면 백그라운드에서 한 번만 정리한다 (별도 배치 불필요). 보관 기간이 지난 것을
- * 지우고, 그래도 크면 오래 안 쓴 것부터 지운다.</li>
- * <li>디스크 여유 공간이 기준보다 적으면 저장하지 않는다 (변환은 그대로 됨).</li>
+ * 지우고, 그래도 크면 오래 안 쓴 것부터 상한의 80% 까지 지운다.</li>
+ * <li>디스크 여유 공간이 기준보다 적으면 저장하지 않고 (변환은 그대로 됨), 정리할 때 기준을 되찾을 때까지 오래 안 쓴 것부터 지운다.</li>
  * <li>폴더는 앱 실행 계정만 읽을 수 있게 만든다 (POSIX).</li>
  * </ul>
  */
@@ -70,7 +70,8 @@ final class S2PdfCache {
     static final Path DEFAULT_DIRECTORY = Path.of(System.getProperty("java.io.tmpdir"), "s2-pdf-cache");
     /** 0 or less: half of the free-space reserve | 0 이하: 최소 여유 공간의 50% */
     static final long DEFAULT_MAX_BYTES = 0;
-    static final Duration DEFAULT_MAX_AGE = Duration.ofDays(1);
+    /** A week plus a day, so documents looked at once a week stay | 일주일에 한 번 보는 문서가 남도록 일주일 + 하루 */
+    static final Duration DEFAULT_MAX_AGE = Duration.ofDays(8);
     /** 0 or less: the smaller of 10% of the disk and 20GB | 0 이하: 디스크 용량의 10% 와 20GB 중 작은 값 */
     static final long DEFAULT_MIN_FREE_BYTES = 0;
     private static final long MIN_FREE_CAP = 20L * 1024 * 1024 * 1024;
@@ -305,6 +306,10 @@ final class S2PdfCache {
             var required = minFree(store);
             if (free - size < required) {
                 logger.info("디스크 여유 공간({} bytes)이 기준({} bytes)보다 적어 변환 결과를 캐시하지 않습니다.", free, required);
+                // Gives the space back when other files filled the disk | 다른 파일이 디스크를 채웠다면 캐시를 줄여 공간을 돌려줌
+                if (free < required) {
+                    startCleanup();
+                }
                 return;
             }
             // Written aside, then renamed, so concurrent requests never see a partial file | 다른 이름으로 쓴 뒤 바꿔 반쯤 쓴 파일이 보이지 않게 함
@@ -416,18 +421,22 @@ final class S2PdfCache {
                     }
                 }
             }
+            // Over the limit: down to 80%, so the next stores do not start another cleanup at once. Short of free space:
+            // until the reserve is back | 상한 초과: 80% 까지 줄여 곧바로 다시 정리하지 않게 함. 여유 공간 부족: 기준을 되찾을 때까지
             var limit = maxBytes();
-            if (total > limit) {
-                // Down to 80% so the next stores do not start another cleanup at once | 80% 까지 줄여 곧바로 다시 정리하지 않게 함
+            var store = Files.getFileStore(root);
+            var toFree = Math.max(total > limit ? total - limit * 8 / 10 : 0, minFree(store) - store.getUsableSpace());
+            if (toFree > 0) {
                 entries.sort(Comparator.comparing(S2PdfCache::modifiedOrEpoch));
-                var target = limit * 8 / 10;
+                var freed = 0L;
                 for (var file : entries) {
-                    if (total <= target) {
+                    if (freed >= toFree) {
                         break;
                     }
                     var size = Files.size(file);
                     if (Files.deleteIfExists(file)) {
                         total -= size;
+                        freed += size;
                         removed++;
                     }
                 }

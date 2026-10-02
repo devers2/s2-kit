@@ -104,13 +104,15 @@ compatibility, so check the ⚠️ items before upgrading. See "Moving from s2-s
   converter version, library version), so nobody can forge a key to get another user's result, and changing the
   converter converts again. A browser fallback is not kept. Off by default. `setConversionCache(folder, max size,
   max age, min free space)` (once at startup; default `java.io.tmpdir/s2-pdf-cache`, a size limit of half the
-  free-space reserve, 24 hours since last use, a reserve of the smaller of 10% of the disk and 20GB, so 20GB and a 10GB
+  free-space reserve, 8 days since last use (a week plus a day, so documents looked at weekly stay), a reserve of the smaller of 10% of the disk and 20GB, so 20GB and a 10GB
   cache (about 10,000 results at 1MB) on disks of 200GB or more; 0 means the default), one-at-a-time
   `setConversionCacheDirectory`, `setConversionCacheMaxBytes`, `setConversionCacheMaxAge` and
   `setConversionCacheMinFreeBytes`, `resetConversionCache`, `clearConversionCache`. An entry past its age is not
   served even before a cleanup removes it. Cleanup needs no batch job: a request starts it in the background, once, when the last one
-  was before today or the size limit is exceeded (expired entries, then the least recently used). Nothing is stored
-  when disk space is short, and the folder is readable only by the application account.
+  was before today or the size limit is exceeded (expired entries, then the least recently used down to 80% of the
+  limit; about 0.3 seconds for 5,000 entries). Nothing is stored when disk space is short, and when other files fill the
+  disk the least recently used entries are removed to give the space back. The folder is readable only by the
+  application account.
 - Preparing: `S2PdfUtil.prepare(sources, options)` converts sources in the background right after an upload and keeps
   the results in the cache, so a later merge with the same image settings and `cache(true)` is fast even the first
   time. It does not merge, number or stamp; it shares the server-wide conversion limit with merges; a failure is

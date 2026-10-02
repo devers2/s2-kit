@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
@@ -252,6 +253,33 @@ class S2PdfCacheTest {
         S2PdfCache.cleanup();
         assertEquals(List.of(stored.get(2)), entries(), "expired one and least recently used one removed");
         assertTrue(Files.exists(cache.resolve(".last-cleanup")));
+    }
+
+    @Test
+    void aDocumentLookedAtWeeklyStaysByDefault() throws IOException {
+        S2PdfUtil.setConversionCacheMaxAge(S2PdfCache.DEFAULT_MAX_AGE);
+        S2PdfUtil.merge(List.of(PdfSource.ofText("weekly")), CACHED).close();
+        var entry = entries().get(0);
+        // A marked PDF in its place tells a cache hit from a new conversion | 표식 PDF 로 바꿔 캐시 사용과 새 변환을 구별
+        try (var marked = S2PdfUtil.merge(List.of(PdfSource.ofText("from cache")))) {
+            Files.copy(marked, entry, StandardCopyOption.REPLACE_EXISTING);
+        }
+        // Last looked at a week ago, a little later in the day | 지난주 같은 요일, 조금 늦은 시각에 봄
+        Files.setLastModifiedTime(entry, FileTime.from(Instant.now().minus(Duration.ofDays(7).plusHours(2))));
+        try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofText("weekly")), CACHED))) {
+            assertTrue(new PDFTextStripper().getText(doc).contains("from cache"), "served from the cache, not converted again");
+        }
+        assertTrue(Files.getLastModifiedTime(entry).toInstant().isAfter(Instant.now().minusSeconds(60)), "marked as used");
+    }
+
+    @Test
+    void whenOtherFilesFillTheDiskTheCacheGivesSpaceBack() throws IOException {
+        S2PdfUtil.merge(List.of(PdfSource.ofText("a"), PdfSource.ofText("b")), CACHED).close();
+        assertEquals(2, entries().size());
+        // Far below the reserve, well under the size limit | 크기 상한 안이지만 여유 공간이 기준에 한참 못 미침
+        S2PdfUtil.setConversionCacheMinFreeBytes(Long.MAX_VALUE / 4);
+        S2PdfCache.cleanup();
+        assertEquals(List.of(), entries());
     }
 
     @Test
