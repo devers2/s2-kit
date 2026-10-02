@@ -8,7 +8,7 @@
   <tag>
     <description>Pagination Tag</description>
     <name>pagination</name>
-    <tag-class>io.github.devers2.s2util.pagination.S2PaginationTag</tag-class>
+    <tag-class>io.github.devers2.s2kit.pagination.S2PaginationTag</tag-class>
     <body-content>empty</body-content>
     <attribute>
       <name>paginationInfo</name>

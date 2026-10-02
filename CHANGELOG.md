@@ -2,15 +2,23 @@
 
 **English** | [한국어](./CHANGELOG.ko.md)
 
-All notable changes to `s2-support` are recorded here.
+All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `s2-support` 1.x history continues in this file.
 
-## [2.0.0] - Unreleased
+## [1.0.0] - Unreleased
 
-Compared with 1.1.5. This is a **major release** that does not keep backward compatibility; read the items marked ⚠️
-before upgrading.
+The successor of `s2-support` 1.1.5 and the first release under the name `s2-kit`. Changes are against 1.1.5 and break
+compatibility, so check the ⚠️ items before upgrading. See "Moving from s2-support" in the README.
 
 ### ⚠️ Compatibility
 
+- ⚠️ **Renamed to `s2-kit`.**
+  - Coordinates: `io.github.devers2.internal:s2-support` → `io.github.devers2.internal:s2-kit` (same group).
+  - Packages: `io.github.devers2.s2util.{support,file,pagination,spring,model}` → `io.github.devers2.s2kit.{...}`.
+    The `s2-core` packages (`io.github.devers2.s2util.core`, `.json`, `.log`, ...) are unchanged.
+  - Front-end resource paths: `/s2-util/js/`, `/s2-util/css/` → `/s2-kit/js/`, `/s2-kit/css/`. File names (`s2.util.js`, ...),
+    the JS API (`S2Util`, ...) and the JSP tag URIs are unchanged. `s2.validator.js` belongs to `s2-validator` and stays under
+    `/s2-util/js/`.
+  - Repository: `https://github.com/devers2/s2-kit` (the old address redirects).
 - **Requires `s2-core` 2.0.0.** `S2JsonUtil` was removed from `s2-support`; use `io.github.devers2.s2util.json.S2JsonUtil`
   in `s2-core`.
 - ⚠️ **SFTP (`S2SftpFileManagerImpl`, `JschSessionFactory`) verifies the server host key by default.** The key is checked

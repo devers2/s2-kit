@@ -2,14 +2,22 @@
 
 [English](./CHANGELOG.md) | **한국어**
 
-`s2-support`의 주요 변경 사항을 기록합니다.
+`s2-kit`(이전 이름 `s2-support`)의 주요 변경 사항을 기록합니다. `s2-support` 1.x 의 기록도 이 파일에 이어서 둡니다.
 
-## [2.0.0] - 미배포
+## [1.0.0] - 미배포
 
-1.1.5 대비 변경입니다. 하위 호환을 유지하지 않는 **메이저 버전**이므로 올리기 전에 ⚠️ 항목을 확인하십시오.
+`s2-support` 1.1.5 의 후속으로, 이름을 `s2-kit`으로 바꾼 첫 버전입니다. 1.1.5 대비 변경이며 하위 호환을 유지하지 않으므로
+올리기 전에 ⚠️ 항목을 확인하십시오. 옮기는 방법은 README 의 "s2-support 에서 옮기기"를 참고하십시오.
 
 ### ⚠️ 호환성
 
+- ⚠️ **이름이 `s2-kit`으로 바뀌었습니다.**
+  - 좌표: `io.github.devers2.internal:s2-support` → `io.github.devers2.internal:s2-kit` (그룹은 그대로).
+  - 패키지: `io.github.devers2.s2util.{support,file,pagination,spring,model}` → `io.github.devers2.s2kit.{...}`.
+    `s2-core` 패키지(`io.github.devers2.s2util.core`, `.json`, `.log` 등)는 그대로입니다.
+  - 프런트 자원 경로: `/s2-util/js/`, `/s2-util/css/` → `/s2-kit/js/`, `/s2-kit/css/`. 파일 이름(`s2.util.js` 등)과 JS API
+    (`S2Util` 등), JSP 태그 URI 는 그대로입니다. `s2.validator.js`는 `s2-validator`에 있으므로 `/s2-util/js/`에 그대로 있습니다.
+  - 저장소: `https://github.com/devers2/s2-kit` (옛 주소는 새 주소로 이동합니다).
 - **`s2-core` 2.0.0 이 필요합니다.** `s2-support`의 `S2JsonUtil`은 삭제되었습니다. `s2-core`의
   `io.github.devers2.s2util.json.S2JsonUtil`을 사용하십시오.
 - ⚠️ **SFTP(`S2SftpFileManagerImpl`, `JschSessionFactory`)가 기본으로 서버 호스트 키를 검증합니다.** `~/.ssh/known_hosts` 또는

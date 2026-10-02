@@ -43,8 +43,8 @@
   <function>
     <description>Pagination 의 Record 번호를 계산 (order: ASC|DESC)</description>
     <name>paginationRecordNo</name>
-    <function-class>io.github.devers2.s2util.pagination.S2PaginationInfo</function-class>
-    <function-signature>long getRecordNo(io.github.devers2.s2util.pagination.S2PaginationInfo, int, java.lang.String)</function-signature>
+    <function-class>io.github.devers2.s2kit.pagination.S2PaginationInfo</function-class>
+    <function-signature>long getRecordNo(io.github.devers2.s2kit.pagination.S2PaginationInfo, int, java.lang.String)</function-signature>
     <example>${s2fn:paginationRecordNo(S2PaginationInfo, int, String)}</example>
   </function>
 </taglib>

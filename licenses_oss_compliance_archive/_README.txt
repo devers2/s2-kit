@@ -3,7 +3,7 @@ OSS COMPLIANCE ARCHIVE - INTERNAL INSTRUCTIONS
 (오픈소스 규정 준수 아카이브 - 내부 지침)
 ================================================================================
 
-이 폴더는 배포된 제품(s2-support.jar, 버전 [1.1.5])에 포함된
+이 폴더는 배포된 제품(s2-kit.jar(이전 이름 s2-support.jar), 버전 [1.1.5])에 포함된
 LGPL(GNU Lesser General Public License) 라이선스 라이브러리에 대한 법적 의무를
 이행하기 위해 **내부적으로만** 관리되는 아카이브 폴더입니다.
 
@@ -15,7 +15,7 @@ LGPL(GNU Lesser General Public License) 라이선스 라이브러리에 대한 �
 
 본 아카이브의 목적은 LGPL 2.1 라이선스의 Section 6에서 요구하는 **"소스 코드 제공 서면 제안(Written Offer)"** 의무를 이행할 수 있도록 보장하는 것입니다.
 
-* **의무 발생:** s2-support.jar를 외부 고객에게 배포(Distribution)하는 시점부터 이 의무가 발생합니다.
+* **의무 발생:** s2-kit.jar를 외부 고객에게 배포(Distribution)하는 시점부터 이 의무가 발생합니다.
 * **보관 기간:** 소스 코드는 해당 제품의 배포일로부터 **최소 3년** 동안 보관되어야 합니다.
 
 ---

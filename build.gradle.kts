@@ -1,5 +1,5 @@
 /**
- * S2 Support Library
+ * S2 Kit Library
  *
  * Copyright 2020 - 2026 devers2 (이승수, Daejeon, Korea)
  * Contact: eseungsu.dev@gmail.com
@@ -67,11 +67,11 @@ import io.github.devers2.buildsupport.S2BuildUtils
  * 새 버전 번호와 실행 당일의 릴리즈 날짜(YYYY-MM-DD)로 함께 자동 갱신됩니다.
  */
 group = "io.github.devers2.internal"
-version = "2.0.0"
+version = "1.0.0"
 
 // Shadow Plugin - Relocation 패키지 설정
 // ⚠️ 이 값을 설정해도 위 plugins{} 블록의 shadow alias가 함께 켜져 있지 않으면 아무 효과가 없다 (둘 다 켜야 함).
-// extra["shadedPackagePrefix"] = "io.github.devers2.s2util.shaded"
+// extra["shadedPackagePrefix"] = "io.github.devers2.s2kit.shaded"
 
 // ========================================================================
 // ⭐ [사용자 설정 (User Configuration)]
@@ -157,7 +157,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
          * Office and Hangul documents through LibreOffice (an external program, not linked): PDF, HTML for web editors,
          * other formats. jsoup (MIT) cleans the HTML | LibreOffice(외부 프로그램, 링크하지 않음)로 오피스·한글 문서 변환. jsoup(MIT)으로 HTML 정리
          */
-        "sources" to listOf("io/github/devers2/s2util/support/S2OfficeConverter.java"),
+        "sources" to listOf("io/github/devers2/s2kit/support/S2OfficeConverter.java"),
         "dependencies" to listOf(
             mapOf("configuration" to "compileOnly", "group" to "org.jsoup", "name" to "jsoup", "version" to "1.23.2")
         )
@@ -171,10 +171,10 @@ extra["dynamicSourceInfoMap"] = mapOf(
         // Helpers used only by S2PdfUtil leave with it (S2HtmlResources needs jsoup)
         // | S2PdfUtil 전용 보조 클래스도 함께 빠짐 (S2HtmlResources 는 jsoup 사용)
         "sources" to listOf(
-            "io/github/devers2/s2util/support/S2PdfUtil.java",
-            "io/github/devers2/s2util/support/S2HtmlResources.java",
-            "io/github/devers2/s2util/support/S2PdfCache.java",
-            "io/github/devers2/s2util/support/S2FontCmap.java"
+            "io/github/devers2/s2kit/support/S2PdfUtil.java",
+            "io/github/devers2/s2kit/support/S2HtmlResources.java",
+            "io/github/devers2/s2kit/support/S2PdfCache.java",
+            "io/github/devers2/s2kit/support/S2FontCmap.java"
         ),
         "dependencies" to listOf(
             mapOf( // (jsoup은 MIT이지만 openhtmltopdf와 함께 동작하므로 동일하게 처리)
@@ -199,7 +199,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
          * | commonmark-java(BSD 2-Clause), autolink-java(MIT): compileOnly 로 사용자가 추가하며 재배포하지 않음.
          * S2PdfUtil 은 S2MarkdownUtil 을 이름으로 호출하므로 두 기능은 따로 뺄 수 있음
          */
-        "sources" to listOf("io/github/devers2/s2util/support/S2MarkdownUtil.java"),
+        "sources" to listOf("io/github/devers2/s2kit/support/S2MarkdownUtil.java"),
         "dependencies" to listOf(
             mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark", "version" to "0.30.0"),
             mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-gfm-tables", "version" to "0.30.0"),
@@ -321,13 +321,13 @@ tasks.withType<Jar>().configureEach {
  * Javadoc/Sources JAR, "mavenJava" Publication(POM 라이선스/개발자/SCM 포함),
  * CentralPortal 리포지토리 등록(+서명)을 한 번에 처리한다.
  * [참고] GitHub Packages(s2-packages) 배포가 다시 필요해지면 아래 한 줄만 추가하면 된다:
- *   S2BuildUtils.configureGitHubPackagesRepository(project, "devers2", "s2-util")
+ *   S2BuildUtils.configureGitHubPackagesRepository(project, "devers2", "s2-kit")
  */
 S2BuildUtils.configureLibraryPublishing(
     project,
     project.name,
-    "S2Util Library - A comprehensive utility library for Java",
-    "https://github.com/devers2/s2-util"
+    "S2 Kit - Shared Java and web modules (documents, files, paging, front-end) built on s2-util",
+    "https://github.com/devers2/s2-kit"
 )
 
 // JUnit 5(Jupiter) 플랫폼 사용 + 테스트 JVM 인코딩 강화 (S2BuildUtils.configureTestDefaults)
@@ -370,7 +370,7 @@ dependencies {
 
     /**
      * api: 컴파일 및 런타임 시 모두 사용하며, 소비자 프로젝트에도 transitive dependency로 노출됨
-     * - s2-support 전체에서 핵심적으로 사용 (26개 파일, 80+ import)하므로 반드시 런타임에 필요함
+     * - s2-kit 전체에서 핵심적으로 사용 (26개 파일, 80+ import)하므로 반드시 런타임에 필요함
      * - api로 선언함으로써 소비자가 s2-core를 별도로 선언하지 않아도 자동으로 포함됨
      * - JAR 크기에는 영향 없음 (Shadow 플러그인 미사용 상태이므로 번들링 없이 POM에만 기록됨)
      */

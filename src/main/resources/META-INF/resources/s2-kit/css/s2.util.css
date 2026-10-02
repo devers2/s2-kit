@@ -1,0 +1,343 @@
+/**
+ * S2 Kit Library
+ *
+ * Copyright 2020 - 2026 devers2 (이승수, Daejeon, Korea)
+ * Contact: eseungsu.dev@gmail.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * For more information, please see the LICENSE file in the root directory.
+ */
+
+/* Step 1: HTML 요소에 기본 박스 모델 설정 */
+html {
+  box-sizing: border-box;
+}
+
+/* Step 2: 모든 요소와 가상 요소가 이를 상속받도록 설정 */
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+/* ===================================================================================================
+    Modal
+=================================================================================================== */
+.s2-modal {
+  position: fixed; /* 화면 전체를 덮도록 설정 */
+  z-index: 3000; /* 모달: 핸들 등 UI(~1000)보다 위, 로딩(8000)보다 아래 */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto; /* 필요에 따라 스크롤바 표시 */
+  background-color: rgb(0 0 0 / 50%);
+  display: flex; /* Flexbox 사용 */
+  justify-content: center; /* 수평 가운데 정렬 */
+  align-items: center; /* 수직 가운데 정렬 */
+}
+
+.s2-modal > .modal-content {
+  display: flex; /* Flexbox 사용 */
+  flex-direction: column; /* 수직 방향으로 요소 배치 */
+  max-height: 90vh; /* 브라우저 창 높이의 90%로 최대 높이 설정 */
+  background-color: #fff;
+  border-radius: 0.625rem;
+  box-shadow: 0.25rem 0.25rem 0.5rem 0.125rem #0000000f;
+  font-family: Pretendard, sans-serif;
+}
+
+.s2-modal > .modal-content > .modal-header {
+  display: flex;
+  position: relative;
+  padding: 0.625rem;
+  background-color: #1a5df4;
+  border-top-left-radius: 0.625rem;
+  border-top-right-radius: 0.625rem;
+  color: #fff;
+  align-items: center;
+}
+
+.s2-modal > .modal-content > .modal-header > .modal-title {
+  margin: 0.625rem 0 0.625rem 0.625rem;
+  font-size: 1.125rem;
+  font-weight: 400;
+  letter-spacing: -0.0625rem;
+}
+
+.s2-modal > .modal-content > .modal-header > .close-button {
+  position: absolute;
+  width: 1.875rem;
+  height: 1.875rem;
+  right: 0.9375rem;
+  font-size: 1.5625rem;
+  color: #fff;
+  cursor: pointer;
+  border: 0;
+  background-color: transparent;
+}
+
+.s2-modal > .modal-content > .modal-body {
+  padding: 1.25rem; /* body padding 추가 */
+  overflow-y: auto; /* body 부분만 스크롤 가능하도록 설정 */
+  flex-grow: 1; /* body가 남은 공간을 모두 차지하도록 설정 */
+}
+
+/* ===================================================================================================
+    Toast
+=================================================================================================== */
+.s2-toast {
+  position: fixed;
+  top: 4.5rem; /* 헤더 아래 여백 */
+  left: 50%;
+  transform: translate(-50%, 0);
+  width: 20rem;
+  background: #ffffff;
+  border-radius: 0.875rem;
+  box-shadow:
+    0 1rem 2.25rem rgba(15, 23, 42, 0.22),
+    0 0.25rem 0.75rem rgba(15, 23, 42, 0.12),
+    0 0 0.0625rem rgba(15, 23, 42, 0.18);
+  z-index: 9100; /* toast: 로딩보다 위, alert/confirm보다 아래 */
+  overflow: hidden;
+  border-left: 0.3125rem solid #2f6fde;
+  animation: toast-slide-in 0.42s cubic-bezier(0.1, 1, 0.1, 1);
+  transition:
+    opacity 0.28s ease,
+    transform 0.28s ease;
+}
+
+/* 헤더 영역 */
+.s2-toast .flex-sty04 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0.875rem 0.625rem 1rem;
+  background: #eff6ff; /* 연파랑 배경 */
+  border-bottom: 0.0625rem solid #bfdbfe;
+}
+
+.s2-toast .flex-sty04 strong {
+  font-size: 0.84375rem;
+  font-weight: 700;
+  color: #1d4ed8; /* 짙은 파란색 */
+  letter-spacing: -0.01em;
+}
+
+/* 닫기 링크 래퍼 */
+.s2-toast .fa-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  background: #bfdbfe;
+  color: #1d4ed8;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    color 0.18s;
+  flex-shrink: 0;
+}
+
+.s2-toast .fa-close:hover {
+  background: #2f6fde;
+  color: #fff;
+}
+
+/* 메시지 본문 */
+.s2-toast .ma-t15 {
+  padding: 0.75rem 1rem 0.875rem;
+  font-size: 0.84375rem;
+  color: #374151;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+/* 페이드 아웃 - 위쪽으로 올라가면서 페이드 아웃 */
+.s2-toast.fade-out {
+  opacity: 0;
+  transform: translate(-50%, -7.5rem) scale(0.9);
+}
+
+/* X 버튼 아이콘 (CSS로 그린 × 기호) */
+.s2-toast .close-btn {
+  position: relative;
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  cursor: pointer;
+}
+
+.s2-toast .close-btn::before,
+.s2-toast .close-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.625rem;
+  height: 0.09375rem;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-radius: 0.0625rem;
+}
+
+.s2-toast .close-btn::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -7.5rem) scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+/* ===================================================================================================
+    Common
+=================================================================================================== */
+.s2-c-hidden {
+  /* 해당 요소는 화면에서 완전히 사라지지만 스크린 리더기는 읽을 수 있도록 설정 */
+
+  /* eslint-disable css/no-important */
+  width: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: -0.125rem !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* ===================================================================================================
+    Alert & Confirm
+=================================================================================================== */
+#alert.s2,
+#confirm.s2 {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9200; /* alert/confirm: 로딩/toast보다 위 (최상위) */
+  width: 100%;
+  height: 100%;
+  background-color: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(0.25rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#alert.s2 > div,
+#confirm.s2 > div {
+  background-color: #fff;
+  padding: 1.5rem 1.75rem;
+  border-radius: 0.75rem;
+  box-shadow:
+    0 1.25rem 1.5625rem -0.3125rem rgba(0, 0, 0, 0.1),
+    0 0.5rem 0.625rem -0.375rem rgba(0, 0, 0, 0.1),
+    0 0.0625rem 0.1875rem rgba(47, 111, 222, 0.05);
+  min-width: 20rem;
+  max-width: min(30rem, 90vw); /* 최대 너비 30rem(480px) 고정 */
+  width: max-content; /* 내용 너비에 맞추되 max-width에서 잘림 */
+  border: 0.0625rem solid rgba(226, 232, 240, 0.8);
+}
+
+#alert-title,
+#confirm-title {
+  margin-bottom: 1.25rem;
+  font-size: 0.875rem;
+  color: #1e293b;
+  font-weight: 500;
+  line-height: 1.6;
+  word-break: keep-all;
+  text-align: center;
+}
+
+#alert-button,
+#confirm-button1,
+#confirm-button2 {
+  height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  font-size: 0.84375rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+
+#alert-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#alert-button {
+  background-color: #2f6fde;
+  color: #fff;
+  min-width: 6.25rem;
+  width: auto;
+  margin-top: 0.25rem;
+}
+
+#confirm-button-wrapper {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+#confirm-button1 {
+  background-color: #f1f5f9;
+  color: #475569;
+  min-width: 6.25rem; /* 고정 최소 너비 - flex:1 제거로 텍스트 기준 크기 유지 */
+  flex: none;
+}
+
+#confirm-button1:hover {
+  background-color: #e2e8f0;
+  color: #334155;
+}
+
+#confirm-button2 {
+  background-color: #2f6fde;
+  color: #fff;
+  min-width: 6.25rem; /* 고정 최소 너비 */
+  flex: none;
+}
+
+#alert-button:hover,
+#confirm-button2:hover {
+  background-color: #245fca;
+}
+
+#alert-button:active,
+#confirm-button1:active,
+#confirm-button2:active {
+  transform: scale(0.98);
+}

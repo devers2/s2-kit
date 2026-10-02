@@ -21,7 +21,7 @@ plugins {
 }
 
 // JAR 파일의 기본 이름(BaseName, artifactId를 의미) 지정
-rootProject.name = "s2-support"
+rootProject.name = "s2-kit"
 
 val s2BuildSupportDir = file("../s2-build-support")
 if (s2BuildSupportDir.exists()) {

@@ -5,8 +5,8 @@
 `S2PdfUtil` uses the OpenHTMLToPDF library (modules: openhtmltopdf-core, openhtmltopdf-pdfbox), which is licensed under the
 **GNU LGPL, version 2.1 or later**.
 
-s2-support **does not include or redistribute** OpenHTMLToPDF (see section 2): the application adds it as its own
-dependency from Maven Central, and s2-support only calls its public API. s2-support itself remains under the Apache
+s2-kit **does not include or redistribute** OpenHTMLToPDF (see section 2): the application adds it as its own
+dependency from Maven Central, and s2-kit only calls its public API. s2-kit itself remains under the Apache
 License 2.0, and the source code of OpenHTMLToPDF is available from its project:
 [https://github.com/openhtmltopdf/openhtmltopdf](https://github.com/openhtmltopdf/openhtmltopdf).
 

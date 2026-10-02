@@ -12,10 +12,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Run inside the s2-support checkout so settings.gradle.kts finds ../s2-util as a sibling. | settings.gradle.kts 가 ../s2-util 을 형제 폴더로 찾도록 s2-support 체크아웃 안에서 실행
+    # Run inside the s2-kit checkout so settings.gradle.kts finds ../s2-util as a sibling. | settings.gradle.kts 가 ../s2-util 을 형제 폴더로 찾도록 s2-kit 체크아웃 안에서 실행
     defaults:
       run:
-        working-directory: s2-support
+        working-directory: s2-kit
     strategy:
       fail-fast: false
       matrix:
@@ -24,7 +24,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v7
         with:
-          path: s2-support
+          path: s2-kit
       # s2-core 2.0.0 is not on Maven Central yet, so build against s2-util main via the composite build. | s2-core 2.0.0 이 아직 Maven Central 에 없으므로 composite build 로 s2-util main 소스를 참조
       - name: Checkout s2-util (sibling for composite build)
         uses: actions/checkout@v7
@@ -39,9 +39,9 @@ jobs:
           distribution: "temurin"
           cache: "gradle"
           cache-dependency-path: |
-            s2-support/**/*.gradle*
-            s2-support/**/gradle-wrapper.properties
-            s2-support/gradle/libs.versions.toml
+            s2-kit/**/*.gradle*
+            s2-kit/**/gradle-wrapper.properties
+            s2-kit/gradle/libs.versions.toml
       - name: Set up JDK 21 for Gradle Toolchain (if matrix is 17)
         if: matrix.java == '17'
         uses: actions/setup-java@v6
@@ -83,8 +83,8 @@ jobs:
         with:
           name: test-reports-java-${{ matrix.java }}
           path: |
-            s2-support/**/build/reports/tests/
-            s2-support/**/build/test-results/
-            s2-support/build.log
+            s2-kit/**/build/reports/tests/
+            s2-kit/**/build/test-results/
+            s2-kit/build.log
           retention-days: 7
           if-no-files-found: ignore

@@ -1,20 +1,61 @@
-# s2-support — Opinionated Application Utilities
+# s2-kit — Shared Java and Web Modules
 
 🌐 **English** | [한국어](README.ko.md)
 
-[![Java CI](https://github.com/devers2/s2-support/actions/workflows/ci.yml/badge.svg)](https://github.com/devers2/s2-support/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.devers2.internal/s2-support?color=brightgreen&label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.devers2.internal/s2-support)
+[![Java CI](https://github.com/devers2/s2-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/devers2/s2-kit/actions/workflows/ci.yml)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.devers2.internal/s2-kit?color=brightgreen&label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.devers2.internal/s2-kit)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-blue?logo=openjdk)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](./LICENSE)
 
-> An **opinionated companion library** providing a curated collection of helper classes and convenience utilities built on top of `s2-core` and `s2-validator`.
-> Primarily designed to streamline **personal development workflows** and support recurring application patterns across author-specific projects.
+> **Shared team modules** built on [s2-util](https://github.com/devers2/s2-util) (`s2-core`): document conversion and merging
+> (PDF, Office and Hangul, Markdown), files, pagination, Spring and servlet helpers, and front-end JS/CSS. Formerly `s2-support`.
 
 ---
 
 ## 📖 Overview
 
-`s2-support` consolidates frequently used helper modules and boilerplate reductions tailored to practical Java/Spring application development. It covers file management, pagination, Spring context utilities, JSON/encryption/image helpers, and more.
+`s2-kit` consolidates frequently used helper modules and boilerplate reductions tailored to practical Java/Spring application development. It covers file management, pagination, Spring context utilities, JSON/encryption/image helpers, and more.
+
+---
+
+## 🧭 About This Library
+
+- **What it is:** common modules shared across personal and team projects. The repository is public and the artifact is on
+  Maven Central, but it does not aim to support every environment like a general-purpose library. That is what `internal`
+  in the group ID means.
+- **Compatibility:** versions follow `major.minor.patch`. Patch releases fix, minor releases add features and stay compatible.
+  Breaking changes happen only in major releases and are listed in the [CHANGELOG](./CHANGELOG.md) with ⚠️ and how to move.
+- **Foundation:** brings in `s2-core` (s2-util). See the [s2-util CHANGELOG](https://github.com/devers2/s2-util/blob/main/CHANGELOG.md)
+  for its changes.
+- **What some features need:**
+  - Office and Hangul conversion (`S2OfficeConverter`, document sources in PDF merges): LibreOffice or s2-office-converter
+    (with H2Orestart, installable offline) on the server.
+  - Korean PDF output: a Korean TrueType font (e.g. NanumGothic).
+  - Optional dependencies (Spring, Servlet, SFTP, jsoup, OpenHTMLToPDF, CommonMark, ...): add only what you use. The list is at
+    the end of this document.
+- **Contact:** GitHub Issues or [eseungsu.dev@gmail.com](mailto:eseungsu.dev@gmail.com).
+
+### 🔀 Moving from s2-support
+
+Projects on `s2-support` 1.x change the following. `s2-support` 1.x stays on Maven Central but receives no more fixes.
+
+| Item | Before (`s2-support` 1.x) | Now (`s2-kit` 1.0.0) |
+| :--- | :--- | :--- |
+| Coordinates | `io.github.devers2.internal:s2-support` | `io.github.devers2.internal:s2-kit` |
+| Packages | `io.github.devers2.s2util.{support,file,pagination,spring,model}` | `io.github.devers2.s2kit.{...}` |
+| Front-end resources | `/s2-util/js/s2.util.js`, `/s2-util/css/...` | `/s2-kit/js/s2.util.js`, `/s2-kit/css/...` |
+
+- Unchanged: the `s2-core` packages (`io.github.devers2.s2util.core`, `.json`, `.log`, ...), class names, JS file names and API
+  (`S2Util`, ...), JSP tag URIs, and the `s2.validator.js` path (`/s2-util/js/`, part of `s2-validator`).
+- Packages and paths can be changed in one go:
+
+```bash
+grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(js/s2\.(util|date|loading|dropzone)|css/)' src \
+  | xargs sed -i -E 's/devers2\.s2util\.(support|file|pagination|spring|model)\b/devers2.s2kit.\1/g;
+                     s#/s2-util/(js/s2\.(util|date|loading|dropzone)\.js|css/)#/s2-kit/\1#g'
+```
+
+- For the other changes since 1.1.5 (including ⚠️ compatibility), see the [CHANGELOG](./CHANGELOG.md).
 
 ---
 
@@ -39,7 +80,7 @@ Add the following dependency to your `build.gradle` or `pom.xml`.
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-support:2.0.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
 }
 ```
 
@@ -48,15 +89,15 @@ dependencies {
 ```xml
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
-    <artifactId>s2-support</artifactId>
-    <version>2.0.0</version>
+    <artifactId>s2-kit</artifactId>
+    <version>1.0.0</version>
 </dependency>
 ```
 
 #### Optional Companion Modules (`s2-validator`, `s2-validator-plugin`, `s2-jpa`)
 
 > [!NOTE]
-> `s2-support` automatically includes **`s2-core`** as an `api` (transitive) dependency, so core reflection, caching, date/string, and thread utilities are immediately available out-of-the-box.
+> `s2-kit` automatically includes **`s2-core`** as an `api` (transitive) dependency, so core reflection, caching, date/string, and thread utilities are immediately available out-of-the-box.
 
 Depending on your application's requirements, you can optionally include companion modules from the **[s2-util suite](https://github.com/devers2/s2-util)**:
 
@@ -78,8 +119,8 @@ plugins {
 }
 
 dependencies {
-    // Base: s2-support (s2-core is included automatically)
-    implementation 'io.github.devers2.internal:s2-support:2.0.0'
+    // Base: s2-kit (s2-core is included automatically)
+    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
 
     // [Optional] Server & Client Unified Validation
     implementation 'io.github.devers2:s2-validator:2.0.0'
@@ -96,11 +137,11 @@ dependencies {
 **Example Dependency Setup (Maven):**
 
 ```xml
-<!-- Base: s2-support (s2-core is included automatically) -->
+<!-- Base: s2-kit (s2-core is included automatically) -->
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
-    <artifactId>s2-support</artifactId>
-    <version>2.0.0</version>
+    <artifactId>s2-kit</artifactId>
+    <version>1.0.0</version>
 </dependency>
 
 <!-- [Optional] s2-validator -->
@@ -240,7 +281,7 @@ public void audit(JoinPoint joinPoint, Audited audited) {
 
 #### JSON Helpers (`S2JsonUtil`, s2-core)
 
-Since 2.0.0, `S2JsonUtil` lives in `s2-core` (`io.github.devers2.s2util.json.S2JsonUtil`). `s2-support` brings `s2-core` along,
+Since `s2-core` 2.0.0, `S2JsonUtil` lives in `s2-core` (`io.github.devers2.s2util.json.S2JsonUtil`). `s2-kit` brings `s2-core` along,
 so no extra dependency is needed. See the "Lightweight JSON" section of the s2-util MANUAL for details.
 
 ```java
@@ -269,7 +310,7 @@ This library is provided under the **Apache License 2.0**. You are free to use, 
 
 ---
 
-s2-support Version: 2.0.0 (2026-09-30)
+s2-kit Version: 1.0.0 (2026-09-30)
 
 [//]: # 'S2_DEPS_INFO_START'
 
