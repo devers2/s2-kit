@@ -270,13 +270,26 @@ final class S2PdfCache {
             } catch (IOException | UnsupportedOperationException e) {
                 Files.copy(entry, target, StandardCopyOption.REPLACE_EXISTING);
             }
-            // Recently used entries are removed last | 최근에 쓴 항목은 나중에 지움
-            Files.setLastModifiedTime(entry, FileTime.from(Instant.now()));
-            return true;
         } catch (IOException | RuntimeException e) {
             logger.warn("변환 결과 캐시를 읽지 못해 다시 변환합니다: {} ({})", entry, e.getMessage());
+            // A leftover link would let the new conversion write into the cache entry, so target becomes a new empty file
+            // | 남은 링크로 새 변환이 캐시 항목에 쓰지 않도록 target 을 새 빈 파일로 바꿈
+            try {
+                Files.deleteIfExists(target);
+                Files.createFile(target);
+            } catch (IOException ignored) {
+                // The writer creates it | 변환 시 생성됨
+            }
             return false;
         }
+        // Recently used entries are kept longest; failing here only affects that order, so the hit stands
+        // | 최근에 쓴 항목을 가장 오래 둠. 실패해도 정리 순서에만 영향이 있으므로 캐시는 그대로 사용
+        try {
+            Files.setLastModifiedTime(entry, FileTime.from(Instant.now()));
+        } catch (IOException | RuntimeException e) {
+            logger.warn("변환 결과 캐시의 사용 시각을 갱신하지 못했습니다: {} ({})", entry, e.getMessage());
+        }
+        return true;
     }
 
     /** Stores a converted PDF; skipped (with a log) when space is short or writing fails | 변환한 PDF 를 저장 (공간 부족·실패 시 건너뜀) */
