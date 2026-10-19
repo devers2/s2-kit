@@ -130,7 +130,246 @@ const fillText = (pattern, data) =>
 /** Entities for S2Util.escapeHtml | escapeHtml 용 엔티티 */
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
+/**
+ * 조사 규칙 룩업 맵. Java S2StringUtil의 JOSA_RULES와 동일.
+ * batchim: 받침 있을 때 조사, noBatchim: 받침 없을 때 조사,
+ * rieulSpecial: ㄹ 받침 예외 적용 여부, dualForm: 판별 불가 시 병기형
+ */
+const JOSA_RULES = (() => {
+  const r = (b, n, rieul, dual) => ({
+    batchim: b,
+    noBatchim: n,
+    rieulSpecial: !!rieul,
+    dualForm: dual
+  });
+  const rules = {};
+  let rule;
+
+  rule = r('을', '를', false, '을(를)');
+  rules['을'] = rule;
+  rules['를'] = rule;
+  rule = r('이', '가', false, '이(가)');
+  rules['이'] = rule;
+  rules['가'] = rule;
+  rule = r('은', '는', false, '은(는)');
+  rules['은'] = rule;
+  rules['는'] = rule;
+  rule = r('과', '와', false, '과(와)');
+  rules['과'] = rule;
+  rules['와'] = rule;
+  rule = r('으로', '로', true, '(으)로');
+  rules['으로'] = rule;
+  rules['로'] = rule;
+  rule = r('이나', '나', false, '(이)나');
+  rules['이나'] = rule;
+  rules['나'] = rule;
+  rule = r('이란', '란', false, '(이)란');
+  rules['이란'] = rule;
+  rules['란'] = rule;
+  rule = r('아', '야', false, '아(야)');
+  rules['아'] = rule;
+  rules['야'] = rule;
+  rule = r('이어', '여', false, '이어(여)');
+  rules['이어'] = rule;
+  rules['여'] = rule;
+  rule = r('이에', '예', false, '이에(예)');
+  rules['이에'] = rule;
+  rules['예'] = rule;
+  rule = r('이며', '며', false, '(이)며');
+  rules['이며'] = rule;
+  rules['며'] = rule;
+  rule = r('이든', '든', false, '(이)든');
+  rules['이든'] = rule;
+  rules['든'] = rule;
+  rule = r('이라', '라', false, '(이)라');
+  rules['이라'] = rule;
+  rules['라'] = rule;
+  rule = r('의', '의', false, '의');
+  rules['의'] = rule;
+
+  return Object.freeze(rules);
+})();
+
 export const S2Util = {
+  _JOSA_RULES: JOSA_RULES,
+
+  /**
+   * 조사 결합을 위해 기준이 되는 마지막 음절/문자를 추출한다.
+   * 1. 앞뒤 공백을 trim 처리한다.
+   * 2. 닫는 괄호로 끝나는 경우:
+   *    - 괄호 안의 마지막 글자가 한글 또는 숫자이면 해당 글자 기준 (예: "프로젝트명 (한글)" → '글')
+   *    - 괄호 안이 영문/기호(예: "서버 (API)", "달성률 (%)")이면 괄호 앞의 단어 기준 (예: '버', '률')
+   * 3. 일반 단어인 경우 마지막 글자 기준
+   *
+   * @param {string} text 확인할 문자열
+   * @returns {object|null} { char, charCode, isKorean, isNumber, trimmedWord }
+   */
+  _resolveTargetChar(text) {
+    if (!text || typeof text !== 'string' || !text.trim()) return null;
+    const trimmed = text.trim();
+
+    // 닫는 괄호로 끝나는 경우: (...) 또는 [...]
+    const lastCh = trimmed.charAt(trimmed.length - 1);
+    if (lastCh === ')' || lastCh === ']' || lastCh === '）' || lastCh === '］') {
+      const isParen = lastCh === ')' || lastCh === '）';
+      const openIdx = isParen
+        ? Math.max(trimmed.lastIndexOf('('), trimmed.lastIndexOf('（'))
+        : Math.max(trimmed.lastIndexOf('['), trimmed.lastIndexOf('［'));
+
+      if (openIdx !== -1 && openIdx < trimmed.length - 1) {
+        const inside = trimmed.substring(openIdx + 1, trimmed.length - 1).trim();
+        if (inside) {
+          const insideLastChar = inside.charCodeAt(inside.length - 1);
+          const insideLastCh = inside.charAt(inside.length - 1);
+          const isKorean = insideLastChar >= 0xac00 && insideLastChar <= 0xd7a3;
+          const isNumber = insideLastCh >= '0' && insideLastCh <= '9';
+          if (isKorean || isNumber) {
+            return {
+              char: insideLastCh,
+              charCode: insideLastChar,
+              isKorean,
+              isNumber,
+              trimmedWord: trimmed
+            };
+          }
+        }
+        // 괄호 안이 한글/숫자가 아닌 경우: 괄호 앞 단어 검사 (공백 trim)
+        const before = trimmed.substring(0, openIdx).trim();
+        if (before) {
+          const beforeLastChar = before.charCodeAt(before.length - 1);
+          const beforeLastCh = before.charAt(before.length - 1);
+          const isKorean = beforeLastChar >= 0xac00 && beforeLastChar <= 0xd7a3;
+          const isNumber = beforeLastCh >= '0' && beforeLastCh <= '9';
+          if (isKorean || isNumber) {
+            return {
+              char: beforeLastCh,
+              charCode: beforeLastChar,
+              isKorean,
+              isNumber,
+              trimmedWord: trimmed
+            };
+          }
+        }
+      }
+    }
+
+    // 일반 단어
+    const lastChar = trimmed.charCodeAt(trimmed.length - 1);
+    const ch = trimmed.charAt(trimmed.length - 1);
+    const isKorean = lastChar >= 0xac00 && lastChar <= 0xd7a3;
+    const isNumber = ch >= '0' && ch <= '9';
+    return { char: ch, charCode: lastChar, isKorean, isNumber, trimmedWord: trimmed };
+  },
+
+  /**
+   * 문자에 한글 받침(종성)이 있는지 확인한다.
+   * 현대 한글 유니코드(AC00~D7A3) 공식에 따라 종성 인덱스를 계산하여 판별.
+   * 숫자(0~9)의 경우 받침이 있는 숫자(0,1,3,6,7,8)를 별도로 처리.
+   *
+   * @param {string} text 확인할 문자열
+   * @returns {boolean} 받침이 있으면 true
+   */
+  hasBatchim(text) {
+    const target = S2Util._resolveTargetChar(text);
+    if (!target || (!target.isKorean && !target.isNumber)) return false;
+    if (target.isKorean) return (target.charCode - 0xac00) % 28 > 0;
+    if (target.isNumber) return '013678'.indexOf(target.char) !== -1;
+    return false;
+  },
+
+  /**
+   * 단어 뒤에 붙을 한국어 조사를 마지막 글자의 받침 유무에 따라 자동으로 완성하여 결합한다.
+   * Java S2StringUtil.appendJosa()와 동일한 로직의 JavaScript 포팅.
+   *
+   * @param {string} word 대상 단어
+   * @param {string} josa 적용할 조사
+   * @returns {string} 조사가 결합된 문자열
+   */
+  appendJosa(word, josa) {
+    if (
+      !word ||
+      typeof word !== 'string' ||
+      !word.trim() ||
+      !josa ||
+      typeof josa !== 'string' ||
+      !josa.trim()
+    ) {
+      return word;
+    }
+
+    const target = S2Util._resolveTargetChar(word);
+    const trimmed = target ? target.trimmedWord : word.trim();
+    const rule = JOSA_RULES[josa];
+
+    if (target && (target.isKorean || target.isNumber)) {
+      const wordHasBatchim = target.isKorean
+        ? (target.charCode - 0xac00) % 28 > 0
+        : '013678'.indexOf(target.char) !== -1;
+
+      if (rule) {
+        let targetJosa = wordHasBatchim ? rule.batchim : rule.noBatchim;
+
+        if (rule.rieulSpecial && wordHasBatchim) {
+          const isRieul = target.isKorean
+            ? (target.charCode - 0xac00) % 28 === 8
+            : target.char === '1' || target.char === '7' || target.char === '8';
+          if (isRieul) {
+            targetJosa = rule.noBatchim;
+          }
+        }
+
+        return trimmed + targetJosa;
+      }
+
+      const slashIdx = josa.indexOf('/');
+      if (slashIdx !== -1) {
+        const first = josa.substring(0, slashIdx);
+        const second = josa.substring(slashIdx + 1);
+        const firstHasBatchim = S2Util.hasBatchim(first);
+        const picked = wordHasBatchim
+          ? firstHasBatchim
+            ? first
+            : second
+          : firstHasBatchim
+            ? second
+            : first;
+        return trimmed + picked;
+      }
+
+      return trimmed + josa;
+    }
+
+    // 판별 불가(영문/특수문자 등): 대괄호 없이 단어 뒤에 바로 병기형 결합
+    const dualForm = rule ? rule.dualForm : josa;
+    return trimmed + dualForm;
+  },
+
+  /**
+   * 메시지 템플릿의 인덱스({0}) 및 조사 자동 완성 구문({0|이}, {0|을}, {0|은}, {0|로} 등)을 분석하여 값을 치환한다.
+   * Java S2StringUtil.formatMessage()의 JavaScript 포팅.
+   *
+   * @param {string} template 템플릿 문자열
+   * @param {...*} args 치환할 인자들
+   * @returns {string} 치환된 문자열
+   */
+  formatMessage(template, ...args) {
+    if (!template || typeof template !== 'string' || args.length === 0) {
+      return template;
+    }
+    return template.replace(/\{(\d+)(?:\|([^}]+))?\}/g, (match, indexStr, josaPattern) => {
+      const index = parseInt(indexStr, 10);
+      if (index >= args.length) return match;
+      const value = args[index] == null ? '' : String(args[index]);
+      if (josaPattern && josaPattern.trim()) {
+        return S2Util.appendJosa(value, josaPattern.trim());
+      }
+      return value;
+    });
+  },
+
+  replaceJosa(template, ...args) {
+    return S2Util.formatMessage(template, ...args);
+  },
   /**
    * S2Util 내부 디버그 로그(예: fetch 요청 시작/종료 시각) 출력 여부.
    * 기본값은 false이며, 운영 환경 콘솔을 깨끗하게 유지한다. 필요할 때만 true로 켜서 사용한다.
@@ -935,9 +1174,13 @@ export const S2Util = {
 
           // 값 및 레이블 계산 로직 (기존 로직 유지)
           // Plain text, not HTML: value and textContent must not get "&amp;" | HTML 이 아닌 텍스트로 치환 ("&amp;" 방지)
-          const value = itemValue.match(/{{=([^}}]+)}}/) ? fillText(itemValue, item) : item[itemValue];
+          const value = itemValue.match(/{{=([^}}]+)}}/)
+            ? fillText(itemValue, item)
+            : item[itemValue];
           const label =
-            itemLabel && itemLabel.match(/{{=([^}}]+)}}/) ? fillText(itemLabel, item) : item[itemLabel];
+            itemLabel && itemLabel.match(/{{=([^}}]+)}}/)
+              ? fillText(itemLabel, item)
+              : item[itemLabel];
 
           // <option> 요소 생성
           const optionElement = document.createElement('option');
@@ -1014,7 +1257,9 @@ export const S2Util = {
    */
   pagination(paginationInfo, jsFunction, jsParams) {
     if (!/^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(String(jsFunction))) {
-      throw new Error(`S2Util.pagination: jsFunction 은 JavaScript 함수 이름이어야 합니다: ${jsFunction}`);
+      throw new Error(
+        `S2Util.pagination: jsFunction 은 JavaScript 함수 이름이어야 합니다: ${jsFunction}`
+      );
     }
     let pagination = '';
     let functionParamString = '';
@@ -1025,7 +1270,10 @@ export const S2Util = {
       }
       for (const param of jsParams) {
         // Numbers stay numbers; anything else becomes an escaped string literal | 숫자는 그대로, 그 외는 이스케이프된 문자열 리터럴
-        const literal = typeof param === 'number' && Number.isFinite(param) ? String(param) : JSON.stringify(String(param));
+        const literal =
+          typeof param === 'number' && Number.isFinite(param)
+            ? String(param)
+            : JSON.stringify(String(param));
         functionParamString += `${S2Util.escapeHtml(literal)}, `;
       }
     }
@@ -1295,7 +1543,17 @@ export const S2Util = {
     const messageArr = [];
 
     if (formElement) {
-      const errMsaSuf1 = window.g_errMsaSuf1 || '은(는) 필수 항목 입니다.';
+      // 조사 자동 선택 헬퍼: title에 appendJosa를 적용하고 suffix를 자연스럽게 결합한다.
+      const _josa = (title, josa, suffix) => {
+        if (!title) return suffix || '';
+        if (!suffix) return title;
+        if (!/[가-힣]/.test(suffix)) {
+          return `${title}${suffix.startsWith(' ') ? suffix : ' ' + suffix}`;
+        }
+        const cleanSuffix = suffix.replace(/^(?:은\(는\)|이\(가\)|을\(를\)|\(으\)로)\s*/, ' ');
+        return `${S2Util.appendJosa(title, josa)}${cleanSuffix}`;
+      };
+      const errMsaSuf1 = window.g_errMsaSuf1 || '은(는) 필수 항목입니다.';
       const errMsaSuf2 = window.g_errMsaSuf2 || '은(는) 유효하지 않은 값입니다.';
 
       formElement.querySelectorAll(`[data-form-error]`).forEach((element) => {
@@ -1356,7 +1614,7 @@ export const S2Util = {
 
                 if (!checkValid) {
                   valid = false;
-                  checkMessage = `[${title}]${errMsaSuf1}`;
+                  checkMessage = _josa(title, '은', errMsaSuf1);
                   S2Util.setFormErrorMessage(
                     checkMessage,
                     formElement.querySelector(`[data-form-error="${element.name}"]`),
@@ -1376,25 +1634,25 @@ export const S2Util = {
                     ).length;
                     if (check === 'length' && length !== checkedCount) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}개를 선택해야 합니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}개를 선택해야 합니다.`);
                     } else if (check === 'maxlength' && length < checkedCount) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}개를 초과할 수 없습니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}개를 초과할 수 없습니다.`);
                     } else if (check === 'minlength' && length > checkedCount) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}개 미만일 수 없습니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}개 미만일 수 없습니다.`);
                     }
                   } else {
                     const valueLength = element.value.trim().length;
                     if (check === 'length' && length !== valueLength) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}자리를 입력해야 합니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}자리를 입력해야 합니다.`);
                     } else if (check === 'maxlength' && length < valueLength) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}자리를 초과할 수 없습니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}자리를 초과할 수 없습니다.`);
                     } else if (check === 'minlength' && length > valueLength) {
                       checkValid = false;
-                      checkMessage = `[${title}]은(는) ${length}자리 미만일 수 없습니다.`;
+                      checkMessage = _josa(title, '은', ` ${length}자리 미만일 수 없습니다.`);
                     }
                   }
 
@@ -1432,7 +1690,7 @@ export const S2Util = {
 
                   if (value !== '$undefined' && minValue > value) {
                     valid = false;
-                    checkMessage = `[${title}]은(는) ${minValue}보다 적을수 없습니다.`;
+                    checkMessage = _josa(title, '은', ` ${minValue}보다 적을수 없습니다.`);
                     S2Util.setFormErrorMessage(
                       checkMessage,
                       formElement.querySelector(`[data-form-error="${element.name}"]`),
@@ -1541,7 +1799,7 @@ export const S2Util = {
 
                         if (errMsg) {
                           checkValid = false;
-                          checkMessage = `[${title}]은(는) ${errMsg}`;
+                          checkMessage = _josa(title, '은', ` ${errMsg}`);
                         } else {
                           // 날짜 범위 (start/end) 검사
                           if (dataTypeInfo[1] && dataTypeInfo[1].indexOf('start') === 0) {
@@ -1567,7 +1825,11 @@ export const S2Util = {
                                 s2StartDate.toDate() > s2EndDate.toDate()
                               ) {
                                 checkValid = false;
-                                checkMessage = `[${endDateElement.getAttribute('title')}]은(는) [${title}]보다 빠를수 없습니다.`;
+                                checkMessage = _josa(
+                                  endDateElement.getAttribute('title'),
+                                  '은',
+                                  ` ${title}보다 빠를수 없습니다.`
+                                );
                               }
                             }
                           }
