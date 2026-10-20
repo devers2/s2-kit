@@ -1,0 +1,52 @@
+version: 2
+updates:
+  # --------------------------------------------------------------------------
+  # 1. Gradle 의존성 및 플러그인 관리
+  # --------------------------------------------------------------------------
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
+    # [메이저 업그레이드 제한 규칙]
+    # s2-kit 라이브러리의 표준 플랫폼 규격(Java 21, Spring Framework 5/6 호환,
+    # Jakarta EE 10 및 javax 서블릿 호환)을 보존하기 위해 메이저 업그레이드를 차단하고
+    # 마이너/패치 보안 업데이트만 수신합니다.
+    ignore:
+      # Spring Framework 계열 세대 보존 (Spring 5 / Spring 6 고정, Spring 7 차단)
+      - dependency-name: "org.springframework:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.springframework.integration:*"
+        update-types: ["version-update:semver-major"]
+
+      # 서블릿 표준 스펙 보존 (Java EE javax 및 Jakarta EE 10 jakarta 스펙 고정)
+      - dependency-name: "javax.servlet:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "javax.servlet.jsp:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jakarta.servlet:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jakarta.servlet.jsp:*"
+        update-types: ["version-update:semver-major"]
+
+      # s2-util 기반 라이브러리 메이저 업그레이드 차단
+      - dependency-name: "io.github.devers2:*"
+        update-types: ["version-update:semver-major"]
+
+      # Gradle Wrapper 메이저 버전업 차단 (빌드 스크립트 호환성 보호)
+      - dependency-name: "gradle"
+        update-types: ["version-update:semver-major"]
+
+    # ※ 그 외 독립 라이브러리(caffeine, twelvemonkeys, jackson, lz4, uuid-creator,
+    #    commons-pool2, junit, jsch, sshd 등)는 메이저/마이너/패치 모두 정상 수신됩니다.
+
+  # --------------------------------------------------------------------------
+  # 2. GitHub Actions 버전 관리 (CI 도구 생태계)
+  # --------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # ※ CI 러너 환경(setup-java, checkout 등)의 최신 런타임 호환성과 보안 패치를 위해
+    #    공식 액션의 메이저 업그레이드를 항상 허용합니다.
