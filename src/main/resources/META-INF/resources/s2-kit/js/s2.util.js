@@ -195,11 +195,30 @@ export const S2Util = {
 
   /**
    * 조사 결합을 위해 기준이 되는 마지막 음절/문자를 추출한다.
+   *
+   * [국립국어원 어문 규범 및 문장부호 처리 원칙]
    * 1. 앞뒤 공백을 trim 처리한다.
-   * 2. 닫는 괄호로 끝나는 경우:
-   *    - 괄호 안의 마지막 글자가 한글 또는 숫자이면 해당 글자 기준 (예: "프로젝트명 (한글)" → '글')
-   *    - 괄호 안이 영문/기호(예: "서버 (API)", "달성률 (%)")이면 괄호 앞의 단어 기준 (예: '버', '률')
-   * 3. 일반 단어인 경우 마지막 글자 기준
+   *
+   * 2. 닫는 인용부호로 끝나는 경우:
+   *    - 대상: 큰따옴표(" ”), 작은따옴표(' ’), 홑낫표(「」), 겹낫표(『』), 홑화살괄호(〈〉, <>), 겹화살괄호(《》)
+   *    - 원리: 인용부호는 대화, 인용구뿐만 아니라 책의 제목, 법률/규정명, 소제목, 고유명사, 강조어를 감쌉니다.
+   *      문법적으로 부호 내부의 내용 전체가 하나의 주된 체언(단어/명사구)으로 기능하므로,
+   *      부호 바깥이 아닌 '부호 내부의 마지막 글자'의 받침을 기준으로 조사를 결정합니다.
+   *      (예: "수박"을, '사과'를, 「개인정보 처리방침」을, 『연구 가이드』를, 〈프로젝트 계획서〉를, 《삼국유사》를)
+   *
+   * 3. 닫는 괄호로 끝나는 경우:
+   *    - 대상: 소괄호((), （）), 대괄호([], ［］), 중괄호({}, ｛｝), 렌티큘러 괄호(【】), 귀괄호(〔〕)
+   *    - 원리: 괄호는 앞말에 대한 부가·보충 설명을 덧붙이는 부호입니다.
+   *      국립국어원 문법 규범에 따라 문장의 주된 뼈대가 되는 핵심 체언은 괄호 안의 부연 설명이 아니라
+   *      '괄호 앞의 본말(주요 명사)'입니다. 따라서 1순위로 '괄호 앞 단어의 마지막 글자'를 기준으로 조사를 결정합니다.
+   *      (괄호 생략 검증: 괄호 부분을 통째로 들어내도 문장이 문법적으로 성립해야 함.
+   *       예: "수임인(이승수)을" → "수임인을"[O] vs "수임인(이승수)를" → "수임인를"[X 비문]
+   *       예: "프로젝트 명(영어)을" → "프로젝트 명을"[O], "사용자(홍길동)를" → "사용자를"[O])
+   *    - 예외: 괄호 앞 단어가 전혀 없는 경우 (예: "[공지사항]", "(안내)", "(주)")
+   *      문자열 자체가 괄호로 시작할 때는 괄호 안의 내용이 주된 명사이므로 예외적으로 '괄호 내부의 마지막 글자'를 기준으로 판별합니다.
+   *      (예: "[공지사항]이", "[안내]가", "(작성 중)을")
+   *
+   * 4. 일반 단어인 경우: 마지막 글자 기준
    *
    * @param {string} text 확인할 문자열
    * @returns {object|null} { char, charCode, isKorean, isNumber, trimmedWord }
@@ -207,48 +226,133 @@ export const S2Util = {
   _resolveTargetChar(text) {
     if (!text || typeof text !== 'string' || !text.trim()) return null;
     const trimmed = text.trim();
-
-    // 닫는 괄호로 끝나는 경우: (...) 또는 [...]
     const lastCh = trimmed.charAt(trimmed.length - 1);
-    if (lastCh === ')' || lastCh === ']' || lastCh === '）' || lastCh === '］') {
-      const isParen = lastCh === ')' || lastCh === '）';
-      const openIdx = isParen
-        ? Math.max(trimmed.lastIndexOf('('), trimmed.lastIndexOf('（'))
-        : Math.max(trimmed.lastIndexOf('['), trimmed.lastIndexOf('［'));
 
-      if (openIdx !== -1 && openIdx < trimmed.length - 1) {
-        const inside = trimmed.substring(openIdx + 1, trimmed.length - 1).trim();
-        if (inside) {
+    let isQuote = false;
+    let openIdx = -1;
+
+    switch (lastCh) {
+      // === 인용부호 (Quotes / Title Marks) ===
+      // 내용 전체가 하나의 고유명사/작품명/강조어이므로 '부호 안쪽의 마지막 글자' 기준
+      case '"':
+      case '\u201D': // ”
+        isQuote = true;
+        openIdx = Math.max(
+          trimmed.lastIndexOf('"', trimmed.length - 2),
+          trimmed.lastIndexOf('\u201C') // “
+        );
+        break;
+      case "'":
+      case '\u2019': // ’
+        isQuote = true;
+        openIdx = Math.max(
+          trimmed.lastIndexOf("'", trimmed.length - 2),
+          trimmed.lastIndexOf('\u2018') // ‘
+        );
+        break;
+      case '\u300D': // 」
+        isQuote = true;
+        openIdx = trimmed.lastIndexOf('\u300C'); // 「
+        break;
+      case '\u300F': // 』
+        isQuote = true;
+        openIdx = trimmed.lastIndexOf('\u300E'); // 『
+        break;
+      case '\u3009': // 〉
+        isQuote = true;
+        openIdx = trimmed.lastIndexOf('\u3008'); // 〈
+        break;
+      case '>':
+        isQuote = true;
+        openIdx = trimmed.lastIndexOf('<');
+        break;
+      case '\u300B': // 》
+        isQuote = true;
+        openIdx = trimmed.lastIndexOf('\u300A'); // 《
+        break;
+
+      // === 괄호부호 (Parentheses / Brackets) ===
+      // 앞말에 대한 부가 설명이므로 '괄호 앞 본말' 기준 (단, 앞말 없을 때만 안쪽 기준)
+      case ')':
+      case '\uFF09': // ）
+        openIdx = Math.max(trimmed.lastIndexOf('('), trimmed.lastIndexOf('\uFF08'));
+        break;
+      case ']':
+      case '\uFF3D': // ］
+        openIdx = Math.max(trimmed.lastIndexOf('['), trimmed.lastIndexOf('\uFF3B'));
+        break;
+      case '}':
+      case '\uFF5D': // ｝
+        openIdx = Math.max(trimmed.lastIndexOf('{'), trimmed.lastIndexOf('\uFF5B'));
+        break;
+      case '\u3011': // 】
+        openIdx = trimmed.lastIndexOf('\u3010'); // 【
+        break;
+      case '\u3015': // 〕
+        openIdx = trimmed.lastIndexOf('\u3014'); // 〔
+        break;
+      default:
+        break;
+    }
+
+    if (openIdx !== -1 && openIdx < trimmed.length - 1) {
+      const inside = trimmed.substring(openIdx + 1, trimmed.length - 1).trim();
+      const before = trimmed.substring(0, openIdx).trim();
+
+      if (isQuote) {
+        // 인용부호: 부호 안쪽의 마지막 글자 우선 (안이 비었으면 앞말 검사)
+        if (inside.length > 0) {
           const insideLastChar = inside.charCodeAt(inside.length - 1);
           const insideLastCh = inside.charAt(inside.length - 1);
           const isKorean = insideLastChar >= 0xac00 && insideLastChar <= 0xd7a3;
           const isNumber = insideLastCh >= '0' && insideLastCh <= '9';
-          if (isKorean || isNumber) {
-            return {
-              char: insideLastCh,
-              charCode: insideLastChar,
-              isKorean,
-              isNumber,
-              trimmedWord: trimmed
-            };
-          }
+          return {
+            char: insideLastCh,
+            charCode: insideLastChar,
+            isKorean: isKorean,
+            isNumber: isNumber,
+            trimmedWord: trimmed
+          };
         }
-        // 괄호 안이 한글/숫자가 아닌 경우: 괄호 앞 단어 검사 (공백 trim)
-        const before = trimmed.substring(0, openIdx).trim();
-        if (before) {
+        if (before.length > 0) {
           const beforeLastChar = before.charCodeAt(before.length - 1);
           const beforeLastCh = before.charAt(before.length - 1);
           const isKorean = beforeLastChar >= 0xac00 && beforeLastChar <= 0xd7a3;
           const isNumber = beforeLastCh >= '0' && beforeLastCh <= '9';
-          if (isKorean || isNumber) {
-            return {
-              char: beforeLastCh,
-              charCode: beforeLastChar,
-              isKorean,
-              isNumber,
-              trimmedWord: trimmed
-            };
-          }
+          return {
+            char: beforeLastCh,
+            charCode: beforeLastChar,
+            isKorean: isKorean,
+            isNumber: isNumber,
+            trimmedWord: trimmed
+          };
+        }
+      } else {
+        // 괄호부호: 괄호 앞의 본말 우선 (앞말 없을 때만 안쪽 글자 검사)
+        if (before.length > 0) {
+          const beforeLastChar = before.charCodeAt(before.length - 1);
+          const beforeLastCh = before.charAt(before.length - 1);
+          const isKorean = beforeLastChar >= 0xac00 && beforeLastChar <= 0xd7a3;
+          const isNumber = beforeLastCh >= '0' && beforeLastCh <= '9';
+          return {
+            char: beforeLastCh,
+            charCode: beforeLastChar,
+            isKorean: isKorean,
+            isNumber: isNumber,
+            trimmedWord: trimmed
+          };
+        } else if (inside.length > 0) {
+          const insideLastChar = inside.charCodeAt(inside.length - 1);
+          const insideLastCh = inside.charAt(inside.length - 1);
+          const isKorean = insideLastChar >= 0xac00 && insideLastChar <= 0xd7a3;
+          const isNumber = insideLastCh >= '0' && insideLastCh <= '9';
+          return {
+            char: insideLastCh,
+            charCode: insideLastChar,
+            isKorean: isKorean,
+            isNumber: isNumber,
+            trimmedWord: trimmed
+          };
         }
       }
     }
@@ -258,7 +362,7 @@ export const S2Util = {
     const ch = trimmed.charAt(trimmed.length - 1);
     const isKorean = lastChar >= 0xac00 && lastChar <= 0xd7a3;
     const isNumber = ch >= '0' && ch <= '9';
-    return { char: ch, charCode: lastChar, isKorean, isNumber, trimmedWord: trimmed };
+    return { char: ch, charCode: lastChar, isKorean: isKorean, isNumber: isNumber, trimmedWord: trimmed };
   },
 
   /**
