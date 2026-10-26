@@ -20,6 +20,7 @@
  */
 package io.github.devers2.s2kit.support;
 
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -52,6 +53,8 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import javax.imageio.ImageIO;
@@ -76,8 +79,11 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.util.Matrix;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.DataNode;
 import org.jsoup.nodes.Document;
@@ -116,6 +122,7 @@ import io.github.devers2.s2util.log.S2Logger;
  *   </li>
  *   <li><b>PDF &rarr; 이미지 변환 (Preview / Thumbnail):</b> 고해상도 DPI 지정 및 다중 페이지 콜백 렌더링 지원</li>
  *   <li><b>페이지 번호 자동 각인 (Page Numbering):</b> 원하는 위치 및 TTF 폰트로 "1 / N" 형식 페이지 번호 일괄 삽입</li>
+ *   <li><b>PDF 스탬프 및 워터마크 (Stamping &amp; Watermarking):</b> 동적/고정 텍스트(제목, 헤더, 푸터), 페이지 번호, 이미지 워터마크, 회전 각도 및 바둑판 격자 반복 각인 통합 지원</li>
  * </ul>
  *
  * <h2>🚀 빠른 사용 예시 (Quick Start)</h2>
@@ -1511,14 +1518,217 @@ public class S2PdfUtil {
      */
     private static InputStream addPageNumbers(PDDocument document, int numberOfPagesToInsert, Integer fontSize,
             PDFont font) throws IOException {
-        var totalPages = document.getNumberOfPages();
-        if (numberOfPagesToInsert < 1 || numberOfPagesToInsert > totalPages) {
-            throw new IllegalArgumentException(
-                    "번호를 넣을 쪽 수는 1 이상, 전체 쪽 수(" + totalPages + ") 이하여야 합니다: " + numberOfPagesToInsert);
+        var options = StampOptions.builder()
+                .numberOfPagesToApply(numberOfPagesToInsert)
+                .pageNumber(PageNumber.of("%d / %d")
+                        .position(Position.BOTTOM_CENTER)
+                        .offset(0f, 20f)
+                        .fontSize(fontSize != null ? fontSize : 10f)
+                        .font(font))
+                .build();
+        return stamp(document, options);
+    }
+
+    // ========================================================================
+    // 📑 PDF Stamp API (Text, PageNumber, Watermark 통합 스탬프 기능)
+    // ========================================================================
+
+    /**
+     * PDF 문서에 스탬프(텍스트, 페이지 번호, 이미지 워터마크 등)를 적용한다.
+     *
+     * <p>사용 예시:
+     * <pre>{@code
+     * S2PdfUtil.StampOptions options = S2PdfUtil.StampOptions.builder()
+     *     .addText(S2PdfUtil.Text.of(pageNo -> "연구노트 제목 - " + pageNo)
+     *         .position(S2PdfUtil.Position.TOP_CENTER)
+     *         .offset(0, 20)      // 상단 중앙 가장자리에서 아래로 20pt
+     *         .fontSize(11)
+     *         .font(fontFile))
+     *     .pageNumber(S2PdfUtil.PageNumber.of("%d / %d")
+     *         .position(S2PdfUtil.Position.BOTTOM_CENTER)
+     *         .offset(0, 20)      // 하단 중앙 가장자리에서 위로 20pt
+     *         .fontSize(10))
+     *     .build();
+     *
+     * InputStream stampedPdf = S2PdfUtil.stamp(pdfFile, options);
+     * }</pre>
+     * </p>
+     *
+     * @param pdfFile 스탬프를 적용할 대상 PDF 파일
+     * @param options 스탬프 설정 옵션 (null인 경우 원본 유지)
+     * @return 스탬프가 적용된 PDF {@link InputStream}
+     * @throws IOException 파일 읽기/쓰기 오류 발생 시
+     */
+    public static InputStream stamp(Path pdfFile, StampOptions options) throws IOException {
+        try (var document = Loader.loadPDF(pdfFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+            return stamp(document, options);
         }
-        stampPageNumbers(document, totalPages - numberOfPagesToInsert, numberOfPagesToInsert,
-                fontSize != null ? fontSize : 10, font != null ? font : new PDType1Font(Standard14Fonts.FontName.HELVETICA),
-                "%d / %d");
+    }
+
+    /**
+     * PDF 문서에 스탬프(텍스트, 페이지 번호, 이미지 워터마크 등)를 적용한다.
+     *
+     * @param pdfFile 스탬프를 적용할 대상 PDF 파일
+     * @param options 스탬프 설정 옵션 (null인 경우 원본 유지)
+     * @return 스탬프가 적용된 PDF {@link InputStream}
+     * @throws IOException 파일 읽기/쓰기 오류 발생 시
+     */
+    public static InputStream stamp(File pdfFile, StampOptions options) throws IOException {
+        return stamp(pdfFile.toPath(), options);
+    }
+
+    /**
+     * PDF 문서에 스탬프(텍스트, 페이지 번호, 이미지 워터마크 등)를 적용한다.
+     *
+     * @param pdfData           스탬프를 적용할 대상 PDF {@link InputStream}
+     * @param options           스탬프 설정 옵션 (null인 경우 원본 유지)
+     * @param shouldCloseStream 작업 완료 후 전달받은 {@code pdfData} 스트림을 닫을지 여부
+     * @return 스탬프가 적용된 PDF {@link InputStream}
+     * @throws IOException 스트림 읽기/쓰기 오류 발생 시
+     */
+    public static InputStream stamp(InputStream pdfData, StampOptions options, boolean shouldCloseStream) throws IOException {
+        try {
+            return S2FileUtil.processStreamWithTempFile(pdfData, null, tempFile -> {
+                try (var document = Loader.loadPDF(tempFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+                    return stamp(document, options);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            }, shouldCloseStream);
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
+    /**
+     * PDF 문서에 스탬프(텍스트, 페이지 번호, 이미지 워터마크 등)를 적용한다.
+     *
+     * @param pdfData 스탬프를 적용할 대상 PDF 바이트 배열
+     * @param options 스탬프 설정 옵션 (null인 경우 원본 유지)
+     * @return 스탬프가 적용된 PDF {@link InputStream}
+     * @throws IOException PDF 파싱/저장 오류 발생 시
+     */
+    public static InputStream stamp(byte[] pdfData, StampOptions options) throws IOException {
+        try (var document = Loader.loadPDF(pdfData)) {
+            return stamp(document, options);
+        }
+    }
+
+    /**
+     * PDF 문서에 스탬프(텍스트, 페이지 번호, 워터마크)를 실제로 적용한다.
+     *
+     * @param document 대상 PDF 문서
+     * @param options  스탬프 종합 옵션
+     * @return 스탬프가 적용된 임시 파일 기반 {@link S2ResourceInputStream}
+     * @throws IOException PDF 조작 또는 임시 파일 저장 실패 시
+     */
+    public static InputStream stamp(PDDocument document, StampOptions options) throws IOException {
+        if (document == null) {
+            throw new S2RuntimeException("[stamp] PDF Document is null.");
+        }
+        if (options == null) {
+            return saveToResourceInputStream(document);
+        }
+
+        int totalPages = document.getNumberOfPages();
+        Integer applyCount = options.getNumberOfPagesToApply();
+        if (applyCount != null && (applyCount < 1 || applyCount > totalPages)) {
+            throw new IllegalArgumentException(
+                    "적용할 쪽 수는 1 이상, 전체 쪽 수(" + totalPages + ") 이하여야 합니다: " + applyCount);
+        }
+        int count = (applyCount != null) ? applyCount : totalPages;
+        int startIdx = totalPages - count;
+
+        // 1. 이미지 워터마크 사전 준비
+        PDImageXObject watermarkImage = null;
+        float[] watermarkSize = null;
+        var watermark = options.getWatermark();
+        if (watermark != null && watermark.getImageBytes() != null && watermark.getImageBytes().length > 0) {
+            try {
+                var bytes = watermark.getImageBytes();
+                if (isJpeg(bytes)) {
+                    checkImageSize(bytes);
+                    watermarkImage = JPEGFactory.createFromByteArray(document, bytes);
+                } else {
+                    watermarkImage = LosslessFactory.createFromImage(document, decodeImage(bytes));
+                }
+                float imgW = watermarkImage.getWidth();
+                float imgH = watermarkImage.getHeight();
+                var size = watermark.drawSize(imgW, imgH);
+                watermarkSize = size;
+            } catch (Exception e) {
+                logger.error("워터마크 이미지 변환 실패: ", e);
+            }
+        }
+
+        // 2. 폰트 캐시 (File -> PDFont 매핑 재사용)
+        Map<File, PDFont> fontCache = new HashMap<>();
+
+        // 3. 페이지 순회 및 스탬핑
+        int pageNum = 0;
+        for (int i = 0; i < totalPages; i++) {
+            if (i < startIdx) {
+                continue;
+            }
+            pageNum++; // 적용 대상 페이지 번호 (1-based index)
+
+            var page = document.getPage(i);
+            var box = page.getCropBox() != null ? page.getCropBox() : page.getMediaBox();
+            int rotation = ((page.getRotation() % 360) + 360) % 360;
+            boolean isQuarterTurn = rotation == 90 || rotation == 270;
+            float shownWidth = isQuarterTurn ? box.getHeight() : box.getWidth();
+            float shownHeight = isQuarterTurn ? box.getWidth() : box.getHeight();
+
+            try (var contentStream = new PDPageContentStream(
+                    document, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
+
+                // A. 이미지 워터마크 렌더링 (배경)
+                if (watermark != null && watermarkImage != null && watermarkSize != null) {
+                    contentStream.saveGraphicsState();
+                    try {
+                        contentStream.transform(shownToPage(box, rotation));
+                        if (watermark.getOpacity() < 1.0f) {
+                            var gs = new PDExtendedGraphicsState();
+                            gs.setNonStrokingAlphaConstant(watermark.getOpacity());
+                            gs.setStrokingAlphaConstant(watermark.getOpacity());
+                            contentStream.setGraphicsStateParameters(gs);
+                        }
+                        var shown = new PDRectangle(shownWidth, shownHeight);
+                        var origin = watermark.origin(shown, watermarkSize[0], watermarkSize[1]);
+                        contentStream.drawImage(watermarkImage, origin[0], origin[1], watermarkSize[0], watermarkSize[1]);
+                    } finally {
+                        contentStream.restoreGraphicsState();
+                    }
+                }
+
+                // B. 텍스트 스탬프 목록 렌더링
+                if (options.getTexts() != null) {
+                    for (var textOpt : options.getTexts()) {
+                        renderTextElement(document, contentStream, textOpt, textOpt.resolveText(pageNum, count),
+                                textOpt.getRotation(), textOpt.isRepeat(), textOpt.getRepeatGapX(), textOpt.getRepeatGapY(),
+                                shownWidth, shownHeight, box, rotation, fontCache);
+                    }
+                }
+
+                // C. 페이지 번호 렌더링
+                var pageNumber = options.getPageNumber();
+                if (pageNumber != null) {
+                    if (pageNumber.hasDistinctStyles() && pageNumber.getCustomFormatProvider() == null) {
+                        renderDistinctPageNumber(document, contentStream, pageNumber, pageNum, count, shownWidth, shownHeight, box, rotation, fontCache);
+                    } else {
+                        var pageText = pageNumber.resolveText(pageNum, count);
+                        renderTextElement(document, contentStream, pageNumber, pageText,
+                                0f, false, 0f, 0f,
+                                shownWidth, shownHeight, box, rotation, fontCache);
+                    }
+                }
+            }
+        }
+
+        return saveToResourceInputStream(document);
+    }
+
+    private static InputStream saveToResourceInputStream(PDDocument document) throws IOException {
         var tempFile = Files.createTempFile(S2Uuid.generateUuidV7() + "_", ".pdf");
         try {
             document.save(tempFile.toFile());
@@ -1530,15 +1740,1658 @@ public class S2PdfUtil {
     }
 
     /**
-     * PDF 에 페이지 번호를 추가한다.
-     *
-     * @param document              PDF 문서
-     * @param numberOfPagesToInsert 추가할 페이지 수 (PDF 전체 페이지 수보다 작은 경우 적은 페이지 만큼 비우고 페이지 번호를 추가한다.)
-     * @param fontSize              페이지 폰트 사이즈
-     * @param fontStream            페이지 폰트 InputStream (null 이면 기본 폰트 사용)
-     * @return 페이지 번호를 추가한 InputStream
-     * @throws IOException IOException
+     * 단일 텍스트 요소({@link BaseTextElement})를 지정된 좌표계 및 스타일에 맞춰 페이지에 렌더링한다.
      */
+    private static void renderTextElement(PDDocument document, PDPageContentStream contentStream,
+                                          BaseTextElement<?> element, String str, float rotationDegrees,
+                                          boolean repeat, float gapX, float gapY,
+                                          float shownWidth, float shownHeight, PDRectangle box,
+                                          int pageRotation, Map<File, PDFont> fontCache) throws IOException {
+        if (str == null || str.trim().isEmpty()) {
+            return;
+        }
+
+        var font = resolveFont(document, element.getFont(), element.getFontFile(), fontCache);
+        float fontSize = element.getFontSize();
+        float strokeWidth = element.getStrokeWidth() > 0f ? element.getStrokeWidth()
+                : (element.isBold() ? Math.max(0.3f, fontSize * 0.035f) : 0f);
+        float textWidth = getTextWidth(font, str, fontSize) + strokeWidth;
+        var lines = str.split("\\r?\\n");
+        float leading = fontSize * 1.2f;
+        float textHeight = (lines.length > 1 ? (lines.length - 1) * leading + fontSize : fontSize) + strokeWidth;
+
+        contentStream.saveGraphicsState();
+        try {
+            contentStream.transform(shownToPage(box, pageRotation));
+            if (element.getOpacity() < 1.0f) {
+                var gs = new PDExtendedGraphicsState();
+                gs.setNonStrokingAlphaConstant(element.getOpacity());
+                gs.setStrokingAlphaConstant(element.getOpacity());
+                contentStream.setGraphicsStateParameters(gs);
+            }
+            contentStream.setNonStrokingColor(element.getColor());
+
+            if (repeat) {
+                float actualGapX = gapX > 0 ? gapX : 150f;
+                float actualGapY = gapY > 0 ? gapY : 150f;
+                for (float curX = -shownWidth * 0.1f; curX < shownWidth * 1.2f; curX += actualGapX) {
+                    for (float curY = -shownHeight * 0.1f; curY < shownHeight * 1.2f; curY += actualGapY) {
+                        renderRotatedText(contentStream, font, fontSize, str, curX, curY, textWidth, textHeight, rotationDegrees, true, strokeWidth, element.getColor());
+                    }
+                }
+            } else {
+                float[] origin = calculateOrigin(element.getPosition(), shownWidth, shownHeight,
+                        textWidth, textHeight, element.getOffsetX(), element.getOffsetY());
+                boolean pivotCenter = (element.getPosition() == Position.CENTER);
+                renderRotatedText(contentStream, font, fontSize, str, origin[0], origin[1], textWidth, textHeight, rotationDegrees, pivotCenter, strokeWidth, element.getColor());
+            }
+        } finally {
+            contentStream.restoreGraphicsState();
+        }
+    }
+
+    private static class PageNumberPart {
+        final String text;
+        final PDFont font;
+        final float fontSize;
+        final float strokeWidth;
+        final Color color;
+        float width;
+        float height;
+
+        PageNumberPart(String text, PDFont font, float fontSize, float strokeWidth, Color color) {
+            this.text = text;
+            this.font = font;
+            this.fontSize = fontSize;
+            this.strokeWidth = strokeWidth;
+            this.color = color;
+        }
+    }
+
+    private static void addIfNotNull(List<PageNumberPart> list, PageNumberPart part) {
+        if (part != null) {
+            list.add(part);
+        }
+    }
+
+    private static PageNumberPart createPagePart(
+            String text, PDFont partFont, File partFontFile,
+            Float partFontSize, Boolean partBold, Float partStrokeWidth, Color partColor,
+            PageNumber base, PDDocument document, Map<File, PDFont> fontCache) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        var font = resolveFont(document,
+                partFont != null ? partFont : base.getFont(),
+                partFontFile != null ? partFontFile : base.getFontFile(),
+                fontCache);
+        float fontSize = partFontSize != null ? partFontSize : base.getFontSize();
+        Color color = partColor != null ? partColor : base.getColor();
+        float strokeWidth = 0f;
+        if (partStrokeWidth != null) {
+            strokeWidth = partStrokeWidth;
+        } else if (Boolean.TRUE.equals(partBold) || (partBold == null && base.isBold())) {
+            strokeWidth = Math.max(0.3f, fontSize * 0.035f);
+        } else {
+            strokeWidth = base.getStrokeWidth();
+        }
+        return new PageNumberPart(text, font, fontSize, strokeWidth, color);
+    }
+
+    private static void renderDistinctPageNumber(PDDocument document, PDPageContentStream contentStream,
+                                                 PageNumber pageNumber, int pageNum, int count,
+                                                 float shownWidth, float shownHeight, PDRectangle box,
+                                                 int rotation, Map<File, PDFont> fontCache) throws IOException {
+        var parts = new ArrayList<PageNumberPart>();
+
+        // 1. Prefix (접두사)
+        addIfNotNull(parts, createPagePart(pageNumber.getPrefix(),
+                pageNumber.getPrefixFont(), pageNumber.getPrefixFontFile(),
+                pageNumber.getPrefixFontSize(), pageNumber.isPrefixBold(), pageNumber.getPrefixStrokeWidth(),
+                pageNumber.getPrefixColor(), pageNumber, document, fontCache));
+
+        // 2. Current Page (현재 페이지 n)
+        addIfNotNull(parts, createPagePart(String.valueOf(pageNum),
+                pageNumber.getCurrentPageFont(), pageNumber.getCurrentPageFontFile(),
+                pageNumber.getCurrentPageFontSize(), pageNumber.isCurrentPageBold(), pageNumber.getCurrentPageStrokeWidth(),
+                pageNumber.getCurrentPageColor(), pageNumber, document, fontCache));
+
+        // 3. Separator (구분자) & Total Page (전체 페이지 m)
+        if (pageNumber.isShowTotalPage()) {
+            String sepText = pageNumber.getSeparator() != null ? pageNumber.getSeparator() : " / ";
+            addIfNotNull(parts, createPagePart(sepText,
+                    pageNumber.getSeparatorFont(), pageNumber.getSeparatorFontFile(),
+                    pageNumber.getSeparatorFontSize(), pageNumber.isSeparatorBold(), pageNumber.getSeparatorStrokeWidth(),
+                    pageNumber.getSeparatorColor(), pageNumber, document, fontCache));
+
+            addIfNotNull(parts, createPagePart(String.valueOf(count),
+                    pageNumber.getTotalPageFont(), pageNumber.getTotalPageFontFile(),
+                    pageNumber.getTotalPageFontSize(), pageNumber.isTotalPageBold(), pageNumber.getTotalPageStrokeWidth(),
+                    pageNumber.getTotalPageColor(), pageNumber, document, fontCache));
+        }
+
+        // 4. Suffix (접미사)
+        addIfNotNull(parts, createPagePart(pageNumber.getSuffix(),
+                pageNumber.getSuffixFont(), pageNumber.getSuffixFontFile(),
+                pageNumber.getSuffixFontSize(), pageNumber.isSuffixBold(), pageNumber.getSuffixStrokeWidth(),
+                pageNumber.getSuffixColor(), pageNumber, document, fontCache));
+
+        // 5. 너비 및 높이 계산
+        float totalWidth = 0f;
+        float maxHeight = 0f;
+        for (var part : parts) {
+            part.width = getTextWidth(part.font, part.text, part.fontSize) + part.strokeWidth;
+            part.height = part.fontSize + part.strokeWidth;
+            totalWidth += part.width;
+            if (part.height > maxHeight) {
+                maxHeight = part.height;
+            }
+        }
+        if (totalWidth <= 0f) {
+            return;
+        }
+
+        // 6. 위치 및 오프셋 계산
+        float[] origin = calculateOrigin(pageNumber.getPosition(), shownWidth, shownHeight,
+                totalWidth, maxHeight, pageNumber.getOffsetX(), pageNumber.getOffsetY());
+
+        contentStream.saveGraphicsState();
+        try {
+            contentStream.transform(shownToPage(box, rotation));
+            if (pageNumber.getOpacity() < 1.0f) {
+                var gs = new PDExtendedGraphicsState();
+                gs.setNonStrokingAlphaConstant(pageNumber.getOpacity());
+                gs.setStrokingAlphaConstant(pageNumber.getOpacity());
+                contentStream.setGraphicsStateParameters(gs);
+            }
+
+            float curX = origin[0];
+            float curY = origin[1];
+
+            for (var part : parts) {
+                renderRotatedText(contentStream, part.font, part.fontSize, part.text,
+                        curX, curY, part.width, part.height, 0f, false, part.strokeWidth, part.color);
+                curX += part.width;
+            }
+        } finally {
+            contentStream.restoreGraphicsState();
+        }
+    }
+
+    /**
+     * 기준 위치 및 상대 오프셋을 바탕으로 화면 좌표계 기준 좌측 하단 원점(origin x, y)을 계산한다.
+     *
+     * @param position    기준 위치
+     * @param shownWidth  화면상 가로 너비
+     * @param shownHeight 화면상 세로 높이
+     * @param itemWidth   요소 너비
+     * @param itemHeight  요소 높이
+     * @param offsetX     가로 상대 오프셋
+     * @param offsetY     세로 상대 오프셋
+     * @return float[2] {x, y}
+     */
+    private static float[] calculateOrigin(Position position, float shownWidth, float shownHeight,
+                                           float itemWidth, float itemHeight, float offsetX, float offsetY) {
+        var name = (position != null ? position : Position.CENTER).name();
+        float x;
+        if (name.endsWith("LEFT")) {
+            x = offsetX;
+        } else if (name.endsWith("RIGHT")) {
+            x = shownWidth - itemWidth - offsetX;
+        } else {
+            x = (shownWidth - itemWidth) / 2.0f + offsetX;
+        }
+
+        float y;
+        if (name.startsWith("TOP")) {
+            y = shownHeight - itemHeight - offsetY;
+        } else if (name.startsWith("BOTTOM")) {
+            y = offsetY;
+        } else {
+            y = (shownHeight - itemHeight) / 2.0f + offsetY;
+        }
+        return new float[]{x, y};
+    }
+
+    /**
+     * 폰트 객체를 결정하여 반환한다. (명시적 font -> fontFile 파일 로드 -> 기본 HELVETICA 순서)
+     */
+    private static PDFont resolveFont(PDDocument document, PDFont explicitFont, File fontFile, Map<File, PDFont> fontCache) {
+        if (explicitFont != null) {
+            return explicitFont;
+        }
+        if (fontFile != null) {
+            if (fontCache.containsKey(fontFile)) {
+                return fontCache.get(fontFile);
+            }
+            try {
+                var loaded = PDType0Font.load(document, fontFile);
+                fontCache.put(fontFile, loaded);
+                return loaded;
+            } catch (Exception e) {
+                logger.warn("폰트 파일 로드 실패, 기본 폰트로 대체: " + fontFile, e);
+            }
+        }
+        return new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+    }
+
+    /**
+     * 텍스트의 가로 너비를 계산한다.
+     */
+    private static float getTextWidth(PDFont font, String text, float fontSize) {
+        if (text == null || text.isEmpty()) {
+            return 0f;
+        }
+        var lines = text.split("\\r?\\n");
+        float maxWidth = 0f;
+        for (var line : lines) {
+            float w;
+            try {
+                w = font.getStringWidth(line) / 1000f * fontSize;
+            } catch (Exception e) {
+                w = line.length() * fontSize * 0.6f;
+            }
+            if (w > maxWidth) {
+                maxWidth = w;
+            }
+        }
+        return maxWidth;
+    }
+
+    /**
+     * 텍스트를 지정된 회전 각도와 위치에 안전하게 렌더링한다. (개행 문자 멀티라인 및 선 두께/볼드 렌더링 지원)
+     */
+    private static void renderRotatedText(PDPageContentStream contentStream, PDFont font, float fontSize,
+                                          String text, float x, float y, float textWidth, float textHeight,
+                                          float rotationDegrees, boolean pivotCenter, float strokeWidth,
+                                          Color color) throws IOException {
+        var lines = text.split("\\r?\\n");
+        float leading = fontSize * 1.2f;
+        float startY = lines.length > 1 ? y + (lines.length - 1) * leading : y;
+
+        if (color != null) {
+            contentStream.setNonStrokingColor(color);
+        }
+        if (strokeWidth > 0f) {
+            contentStream.setStrokingColor(color != null ? color : Color.BLACK);
+            contentStream.setLineWidth(strokeWidth);
+        }
+
+        contentStream.beginText();
+        contentStream.setFont(font, fontSize);
+        contentStream.setLeading(leading);
+        if (strokeWidth > 0f) {
+            contentStream.setRenderingMode(RenderingMode.FILL_STROKE);
+        } else {
+            contentStream.setRenderingMode(RenderingMode.FILL);
+        }
+        if (rotationDegrees != 0f) {
+            float rad = (float) Math.toRadians(rotationDegrees);
+            float cos = (float) Math.cos(rad);
+            float sin = (float) Math.sin(rad);
+            float tx = x;
+            float ty = startY;
+            if (pivotCenter) {
+                float cx = x + textWidth / 2f;
+                float cy = y + textHeight / 2f;
+                float x0 = -textWidth / 2f;
+                float y0 = (startY - y) - textHeight / 2f;
+                tx = cx + (x0 * cos - y0 * sin);
+                ty = cy + (x0 * sin + y0 * cos);
+            }
+            contentStream.setTextMatrix(new Matrix(cos, sin, -sin, cos, tx, ty));
+        } else {
+            contentStream.newLineAtOffset(x, startY);
+        }
+
+        for (int i = 0; i < lines.length; i++) {
+            try {
+                contentStream.showText(lines[i]);
+            } catch (IllegalArgumentException e) {
+                logger.error("PDF 텍스트 출력 실패(한글 등 지원 폰트 지정 필요): " + lines[i], e);
+            }
+            if (i < lines.length - 1) {
+                contentStream.newLine();
+            }
+        }
+        contentStream.endText();
+    }
+
+    private static void renderRotatedText(PDPageContentStream contentStream, PDFont font, float fontSize,
+                                          String text, float x, float y, float textWidth, float textHeight,
+                                          float rotationDegrees, boolean pivotCenter) throws IOException {
+        renderRotatedText(contentStream, font, fontSize, text, x, y, textWidth, textHeight, rotationDegrees, pivotCenter, 0f, null);
+    }
+
+    // ========================================================================
+    // 🏷️ StampOptions & Sub-Classes (Position, Text, PageNumber)
+    // ========================================================================
+
+    /**
+     * 스탬프 요소(워터마크, 텍스트, 페이지 번호)의 8방향 기준 위치 및 정중앙 Enum.
+     *
+     * <p>화면상 기준점 구분:
+     * <ul>
+     *   <li><b>4대 모서리 (Corner):</b> {@link #TOP_LEFT}, {@link #TOP_RIGHT}, {@link #BOTTOM_LEFT}, {@link #BOTTOM_RIGHT}</li>
+     *   <li><b>4대 가장자리 (Edge):</b> {@link #TOP_CENTER}(또는 {@link #TOP}), {@link #BOTTOM_CENTER}(또는 {@link #BOTTOM}),
+     *       {@link #CENTER_LEFT}(또는 {@link #LEFT}), {@link #CENTER_RIGHT}(또는 {@link #RIGHT})</li>
+     *   <li><b>페이지 정중앙 (Center):</b> {@link #CENTER}</li>
+     * </ul>
+     * </p>
+     */
+    public enum Position {
+        /** 좌측 상단 모서리 (Top-Left Corner) */
+        TOP_LEFT,
+        /** 상단 중앙 가장자리 (Top-Center Edge) */
+        TOP_CENTER,
+        /** 상단 중앙 (TOP_CENTER 동일) */
+        TOP,
+        /** 우측 상단 모서리 (Top-Right Corner) */
+        TOP_RIGHT,
+        /** 좌측 중앙 가장자리 (Center-Left Edge) */
+        CENTER_LEFT,
+        /** 좌측 중앙 (CENTER_LEFT 동일) */
+        LEFT,
+        /** 페이지 정중앙 (Center) */
+        CENTER,
+        /** 우측 중앙 가장자리 (Center-Right Edge) */
+        CENTER_RIGHT,
+        /** 우측 중앙 (CENTER_RIGHT 동일) */
+        RIGHT,
+        /** 좌측 하단 모서리 (Bottom-Left Corner) */
+        BOTTOM_LEFT,
+        /** 하단 중앙 가장자리 (Bottom-Center Edge) */
+        BOTTOM_CENTER,
+        /** 하단 중앙 (BOTTOM_CENTER 동일) */
+        BOTTOM,
+        /** 우측 하단 모서리 (Bottom-Right Corner) */
+        BOTTOM_RIGHT
+    }
+
+    /**
+     * PDF 텍스트 기반 스탬프 요소(텍스트 스탬프, 페이지 번호 등)의 공통 기반 추상 클래스.
+     *
+     * <p>위치(Position), 오프셋(Offset), 글자 크기, 글자 색상, 폰트 파일/객체, 불투명도, 선 두께/볼드 등의
+     * 공통 속성 및 플루언트(Fluent) 빌더 메서드를 제공합니다.</p>
+     *
+     * @param <T> 구체 하위 클래스 타입 (플루언트 체이닝 반환용)
+     */
+    public abstract static class BaseTextElement<T extends BaseTextElement<T>> {
+        protected Position position;
+        protected float offsetX = 0f;
+        protected float offsetY = 20f;
+        protected boolean customOffset = false;
+        protected float fontSize = 10f;
+        protected Color color = Color.BLACK;
+        protected File fontFile;
+        protected PDFont font;
+        protected float opacity = 1.0f;
+        protected float strokeWidth = 0f;
+        protected boolean bold = false;
+
+        protected BaseTextElement(Position defaultPosition) {
+            this.position = defaultPosition != null ? defaultPosition : Position.BOTTOM_CENTER;
+        }
+
+        @SuppressWarnings("unchecked")
+        protected T self() {
+            return (T) this;
+        }
+
+        /**
+         * 기준 위치를 설정한다.
+         *
+         * @param position 기준 위치
+         * @return this
+         */
+        public T position(Position position) {
+            this.position = position != null ? position : Position.BOTTOM_CENTER;
+            if (!this.customOffset) {
+                if (this.position == Position.CENTER || this.position == Position.CENTER_LEFT || this.position == Position.LEFT
+                        || this.position == Position.CENTER_RIGHT || this.position == Position.RIGHT) {
+                    this.offsetY = 0f;
+                } else {
+                    this.offsetY = 20f;
+                }
+            }
+            return self();
+        }
+
+        /**
+         * 기준 위치로부터의 가로/세로 상대 오프셋(pt)을 설정한다.
+         *
+         * @param x 가로 상대 오프셋 (pt)
+         * @param y 세로 상대 오프셋 (pt)
+         * @return this
+         */
+        public T offset(float x, float y) {
+            this.offsetX = x;
+            this.offsetY = y;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 좌측 하단(BOTTOM_LEFT)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 좌측으로부터의 여백(pt)
+         * @param offsetY 하단으로부터의 여백(pt)
+         * @return this
+         */
+        public T bottomLeft(float offsetX, float offsetY) {
+            this.position = Position.BOTTOM_LEFT;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 좌측 하단(BOTTOM_LEFT, 기본 여백: 좌 20pt, 하 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T bottomLeft() {
+            return bottomLeft(20f, 20f);
+        }
+
+        /**
+         * 하단 중앙(BOTTOM_CENTER)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 중앙으로부터의 가로 오프셋(pt)
+         * @param offsetY 하단으로부터의 세로 여백(pt)
+         * @return this
+         */
+        public T bottomCenter(float offsetX, float offsetY) {
+            this.position = Position.BOTTOM_CENTER;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 하단 중앙(BOTTOM_CENTER, 기본 여백: 하 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T bottomCenter() {
+            return bottomCenter(0f, 20f);
+        }
+
+        /**
+         * 우측 하단(BOTTOM_RIGHT)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 우측으로부터의 여백(pt)
+         * @param offsetY 하단으로부터의 여백(pt)
+         * @return this
+         */
+        public T bottomRight(float offsetX, float offsetY) {
+            this.position = Position.BOTTOM_RIGHT;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 우측 하단(BOTTOM_RIGHT, 기본 여백: 우 20pt, 하 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T bottomRight() {
+            return bottomRight(20f, 20f);
+        }
+
+        /**
+         * 좌측 상단(TOP_LEFT)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 좌측으로부터의 여백(pt)
+         * @param offsetY 상단으로부터의 여백(pt)
+         * @return this
+         */
+        public T topLeft(float offsetX, float offsetY) {
+            this.position = Position.TOP_LEFT;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 좌측 상단(TOP_LEFT, 기본 여백: 좌 20pt, 상 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T topLeft() {
+            return topLeft(20f, 20f);
+        }
+
+        /**
+         * 상단 중앙(TOP_CENTER)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 중앙으로부터의 가로 오프셋(pt)
+         * @param offsetY 상단으로부터의 여백(pt)
+         * @return this
+         */
+        public T topCenter(float offsetX, float offsetY) {
+            this.position = Position.TOP_CENTER;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 상단 중앙(TOP_CENTER, 기본 여백: 상 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T topCenter() {
+            return topCenter(0f, 20f);
+        }
+
+        /**
+         * 우측 상단(TOP_RIGHT)을 기준으로 상대 오프셋을 지정한다.
+         *
+         * @param offsetX 우측으로부터의 여백(pt)
+         * @param offsetY 상단으로부터의 여백(pt)
+         * @return this
+         */
+        public T topRight(float offsetX, float offsetY) {
+            this.position = Position.TOP_RIGHT;
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 우측 상단(TOP_RIGHT, 기본 여백: 우 20pt, 상 20pt)에 배치한다.
+         *
+         * @return this
+         */
+        public T topRight() {
+            return topRight(20f, 20f);
+        }
+
+        /**
+         * 페이지 정중앙(CENTER)에 배치한다.
+         *
+         * @return this
+         */
+        public T center() {
+            this.position = Position.CENTER;
+            this.offsetX = 0f;
+            this.offsetY = 0f;
+            this.customOffset = true;
+            return self();
+        }
+
+        /**
+         * 폰트 크기(pt)를 설정한다. (기본값: 10)
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public T fontSize(float fontSize) {
+            this.fontSize = fontSize;
+            return self();
+        }
+
+        /**
+         * 글자 색상을 설정한다. (기본값: {@link Color#BLACK})
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public T color(Color color) {
+            if (color != null) this.color = color;
+            return self();
+        }
+
+        /**
+         * 글자 색상을 RGB 정수 값(0~255)으로 설정한다.
+         *
+         * @param r Red (0-255)
+         * @param g Green (0-255)
+         * @param b Blue (0-255)
+         * @return this
+         */
+        public T color(int r, int g, int b) {
+            this.color = new Color(r, g, b);
+            return self();
+        }
+
+        /**
+         * 한글/특수문자 등을 출력하기 위한 폰트 파일(TTF/OTF)을 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public T font(File fontFile) {
+            this.fontFile = fontFile;
+            return self();
+        }
+
+        /**
+         * 한글/특수문자 등을 출력하기 위한 폰트 경로(TTF/OTF)를 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public T font(Path fontPath) {
+            this.fontFile = fontPath != null ? fontPath.toFile() : null;
+            return self();
+        }
+
+        /**
+         * 사전에 로드된 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public T font(PDFont font) {
+            this.font = font;
+            return self();
+        }
+
+        /**
+         * 불투명도를 설정한다. (0.0f 완전 투명 ~ 1.0f 완전 불투명, 기본값: 1.0f)
+         *
+         * @param opacity 불투명도
+         * @return this
+         */
+        public T opacity(float opacity) {
+            this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
+            return self();
+        }
+
+        /**
+         * 선 두께(굵기)를 설정한다. (0보다 크면 외곽선을 채움과 동시에 선을 그어 볼드/두께 효과를 냄)
+         *
+         * @param thickness 텍스트 두께/선 굵기 (pt 단위, 예: 0.3f, 0.5f 등)
+         * @return this
+         */
+        public T thickness(float thickness) {
+            this.strokeWidth = Math.max(0f, thickness);
+            this.bold = this.strokeWidth > 0f;
+            return self();
+        }
+
+        /**
+         * 선 굵기(strokeWidth)를 설정한다. ({@link #thickness(float)}와 동일)
+         *
+         * @param strokeWidth 선 굵기 (pt 단위)
+         * @return this
+         */
+        public T strokeWidth(float strokeWidth) {
+            return thickness(strokeWidth);
+        }
+
+        /**
+         * 볼드(굵게) 처리할지 여부를 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public T bold(boolean bold) {
+            this.bold = bold;
+            return self();
+        }
+
+        /**
+         * 볼드(굵게) 처리한다.
+         *
+         * @return this
+         */
+        public T bold() {
+            return bold(true);
+        }
+
+        public Position getPosition() { return position; }
+        public float getOffsetX() { return offsetX; }
+        public float getOffsetY() { return offsetY; }
+        public float getFontSize() { return fontSize; }
+        public Color getColor() { return color; }
+        public File getFontFile() { return fontFile; }
+        public PDFont getFont() { return font; }
+        public float getOpacity() { return opacity; }
+        public float getThickness() { return strokeWidth; }
+        public float getStrokeWidth() { return strokeWidth; }
+        public boolean isBold() { return bold; }
+    }
+
+    /**
+     * PDF 페이지에 표시할 텍스트 스탬프 설정 (연구노트 제목, 헤더, 푸터, 보안등급, 텍스트 워터마크 등).
+     *
+     * <p>고정 문자열({@link #of(String)}) 또는 페이지별 동적 문자열 함수({@link #of(Function)}, {@link #of(BiFunction)})를 지원하며,
+     * 폰트, 크기, 색상, 투명도, 회전 각도, 격자 반복(워터마크) 기능을 제공합니다.</p>
+     */
+    public static class Text extends BaseTextElement<Text> {
+        private String text;
+        private Function<Integer, String> textProvider; // pageNo (1-based) -> String
+        private BiFunction<Integer, Integer, String> pageTextProvider; // (pageNo, totalPages) -> String
+        private float rotation = 0f;
+        private boolean repeat = false;
+        private float repeatGapX = 150f;
+        private float repeatGapY = 150f;
+
+        public Text() {
+            super(Position.TOP_CENTER);
+        }
+
+        /**
+         * 모든 대상 페이지에 동일하게 출력할 고정 문자열로 텍스트 스탬프를 생성한다.
+         *
+         * @param text 출력할 텍스트 문자열
+         * @return Text 설정 객체
+         */
+        public static Text of(String text) {
+            var t = new Text();
+            t.text = text;
+            return t;
+        }
+
+        /**
+         * 페이지 번호(1-based)에 따라 동적으로 다른 문자열을 출력하는 함수형 인터페이스로 텍스트 스탬프를 생성한다.
+         *
+         * @param textProvider 페이지 번호(1-based)를 받아 해당 페이지에 표시할 텍스트를 반환하는 함수
+         * @return Text 설정 객체
+         */
+        public static Text of(Function<Integer, String> textProvider) {
+            var t = new Text();
+            t.textProvider = textProvider;
+            return t;
+        }
+
+        /**
+         * 현재 페이지 번호와 전체 페이지 수((currentPage, totalPages) -> String)에 따라 동적으로 문자열을 생성하는 함수형 인터페이스로 텍스트 스탬프를 생성한다.
+         *
+         * @param pageTextProvider 현재 페이지(1-based)와 전체 페이지 수를 받아 해당 페이지에 표시할 텍스트를 반환하는 함수
+         * @return Text 설정 객체
+         */
+        public static Text of(BiFunction<Integer, Integer, String> pageTextProvider) {
+            var t = new Text();
+            t.pageTextProvider = pageTextProvider;
+            return t;
+        }
+
+        /**
+         * 현재 페이지 번호와 전체 페이지 수((currentPage, totalPages) -> String)에 따라 동적으로 문자열을 생성하는 함수를 설정한다.
+         *
+         * @param pageTextProvider 현재 페이지와 전체 페이지 수를 받아 해당 페이지에 표시할 텍스트를 반환하는 함수
+         * @return this
+         */
+        public Text text(BiFunction<Integer, Integer, String> pageTextProvider) {
+            this.pageTextProvider = pageTextProvider;
+            return this;
+        }
+
+        /**
+         * 텍스트 회전 각도를 설정한다. (도 단위, 시계 반대 방향 회전, 기본값: 0도)
+         *
+         * @param rotation 회전 각도 (도)
+         * @return this
+         */
+        public Text rotation(float rotation) {
+            this.rotation = rotation;
+            return this;
+        }
+
+        /**
+         * 페이지 전체에 일정한 간격(기본 150pt)으로 바둑판(격자) 반복 패턴으로 텍스트를 출력할지 여부를 설정한다.
+         *
+         * @param repeat 반복 활성화 여부
+         * @return this
+         */
+        public Text repeat(boolean repeat) {
+            this.repeat = repeat;
+            return this;
+        }
+
+        /**
+         * 페이지 전체에 지정된 간격으로 바둑판(격자) 반복 패턴으로 텍스트를 출력한다.
+         *
+         * @param repeat 반복 활성화 여부
+         * @param gapX   가로 반복 간격(pt)
+         * @param gapY   세로 반복 간격(pt)
+         * @return this
+         */
+        public Text repeat(boolean repeat, float gapX, float gapY) {
+            this.repeat = repeat;
+            this.repeatGapX = gapX;
+            this.repeatGapY = gapY;
+            return this;
+        }
+
+        public String resolveText(int pageNo, int totalPages) {
+            if (pageTextProvider != null) {
+                return pageTextProvider.apply(pageNo, totalPages);
+            }
+            if (textProvider != null) {
+                return textProvider.apply(pageNo);
+            }
+            return text;
+        }
+
+        public String resolveText(int pageNo) {
+            return resolveText(pageNo, pageNo);
+        }
+
+        public float getRotation() { return rotation; }
+        public boolean isRepeat() { return repeat; }
+        public float getRepeatGapX() { return repeatGapX; }
+        public float getRepeatGapY() { return repeatGapY; }
+    }
+
+    /**
+     * PDF 페이지에 표시할 페이지 번호 스탬프 설정.
+     */
+    public static class PageNumber extends BaseTextElement<PageNumber> {
+        private String format = "%d / %d";
+        private String prefix;
+        private String suffix;
+        private String separator; // null 이면 기본 " / "
+        private boolean showTotalPage = true;
+        private BiFunction<Integer, Integer, String> customFormatProvider;
+
+        // 현재 페이지(n) 전용 스타일
+        private Float currentPageFontSize;
+        private Color currentPageColor;
+        private Float currentPageStrokeWidth;
+        private Boolean currentPageBold;
+        private File currentPageFontFile;
+        private PDFont currentPageFont;
+
+        // 전체 페이지(m) 전용 스타일
+        private Float totalPageFontSize;
+        private Color totalPageColor;
+        private Float totalPageStrokeWidth;
+        private Boolean totalPageBold;
+        private File totalPageFontFile;
+        private PDFont totalPageFont;
+
+        // 구분자(/) 전용 스타일
+        private Float separatorFontSize;
+        private Color separatorColor;
+        private Float separatorStrokeWidth;
+        private Boolean separatorBold;
+        private File separatorFontFile;
+        private PDFont separatorFont;
+
+        // 접두사/접미사 전용 스타일
+        private Float prefixFontSize;
+        private Color prefixColor;
+        private Float prefixStrokeWidth;
+        private Boolean prefixBold;
+        private File prefixFontFile;
+        private PDFont prefixFont;
+
+        private Float suffixFontSize;
+        private Color suffixColor;
+        private Float suffixStrokeWidth;
+        private Boolean suffixBold;
+        private File suffixFontFile;
+        private PDFont suffixFont;
+
+        public PageNumber() {
+            super(Position.BOTTOM_CENTER);
+        }
+
+        /**
+         * 기본 포맷("%d / %d")의 페이지 번호 설정 객체를 생성한다.
+         *
+         * @return PageNumber 설정 객체
+         */
+        public static PageNumber of() {
+            return new PageNumber();
+        }
+
+        /**
+         * 지정된 포맷의 페이지 번호 설정 객체를 생성한다. (예: "%d / %d", "- %d -", "Page %d of %d")
+         *
+         * @param format {@link String#format} 형식의 포맷 문자열
+         * @return PageNumber 설정 객체
+         */
+        public static PageNumber of(String format) {
+            var p = new PageNumber();
+            if (format != null) p.format = format;
+            return p;
+        }
+
+        /**
+         * 동적 포맷터 함수((currentPage, totalPages) -> String)를 사용하여 페이지 번호 설정 객체를 생성한다.
+         *
+         * @param customFormatProvider 현재 페이지(1-based)와 전체 페이지 수를 받아 포맷팅된 문자열을 반환하는 함수
+         * @return PageNumber 설정 객체
+         */
+        public static PageNumber of(BiFunction<Integer, Integer, String> customFormatProvider) {
+            var p = new PageNumber();
+            p.customFormatProvider = customFormatProvider;
+            return p;
+        }
+
+        /**
+         * 현재 페이지 및 전체 페이지 번호를 기반으로 표시할 문자열을 계산한다.
+         */
+        public String resolveText(int pageNo, int totalPages) {
+            if (customFormatProvider != null) {
+                return customFormatProvider.apply(pageNo, totalPages);
+            }
+            return String.format(format, pageNo, totalPages);
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 폰트 크기(pt)를 개별 설정한다.
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public PageNumber currentPageFontSize(float fontSize) {
+            this.currentPageFontSize = fontSize;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 글자 색상을 개별 설정한다.
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public PageNumber currentPageColor(Color color) {
+            this.currentPageColor = color;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 글자 색상을 RGB 정수 값(0~255)으로 설정한다.
+         *
+         * @param r Red (0-255)
+         * @param g Green (0-255)
+         * @param b Blue (0-255)
+         * @return this
+         */
+        public PageNumber currentPageColor(int r, int g, int b) {
+            return currentPageColor(new Color(r, g, b));
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 볼드(굵게) 처리 여부를 개별 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public PageNumber currentPageBold(boolean bold) {
+            this.currentPageBold = bold;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)를 볼드(굵게) 처리한다.
+         *
+         * @return this
+         */
+        public PageNumber currentPageBold() {
+            return currentPageBold(true);
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 선 두께(굵기)를 설정한다.
+         *
+         * @param thickness 두께 (pt 단위)
+         * @return this
+         */
+        public PageNumber currentPageThickness(float thickness) {
+            this.currentPageStrokeWidth = Math.max(0f, thickness);
+            this.currentPageBold = this.currentPageStrokeWidth > 0f;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 선 굵기를 설정한다.
+         *
+         * @param strokeWidth 선 굵기 (pt 단위)
+         * @return this
+         */
+        public PageNumber currentPageStrokeWidth(float strokeWidth) {
+            return currentPageThickness(strokeWidth);
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 폰트 파일을 개별 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public PageNumber currentPageFont(File fontFile) {
+            this.currentPageFontFile = fontFile;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 폰트 경로를 개별 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public PageNumber currentPageFont(Path fontPath) {
+            this.currentPageFontFile = fontPath != null ? fontPath.toFile() : null;
+            return this;
+        }
+
+        /**
+         * 현재 페이지 번호(n)의 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public PageNumber currentPageFont(PDFont font) {
+            this.currentPageFont = font;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 폰트 크기(pt)를 개별 설정한다.
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public PageNumber totalPageFontSize(float fontSize) {
+            this.totalPageFontSize = fontSize;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 글자 색상을 개별 설정한다.
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public PageNumber totalPageColor(Color color) {
+            this.totalPageColor = color;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 글자 색상을 RGB 정수 값(0~255)으로 설정한다.
+         *
+         * @param r Red (0-255)
+         * @param g Green (0-255)
+         * @param b Blue (0-255)
+         * @return this
+         */
+        public PageNumber totalPageColor(int r, int g, int b) {
+            return totalPageColor(new Color(r, g, b));
+        }
+
+        /**
+         * 전체 페이지 수(m)의 볼드(굵게) 처리 여부를 개별 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public PageNumber totalPageBold(boolean bold) {
+            this.totalPageBold = bold;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)를 볼드(굵게) 처리한다.
+         *
+         * @return this
+         */
+        public PageNumber totalPageBold() {
+            return totalPageBold(true);
+        }
+
+        /**
+         * 전체 페이지 수(m)의 선 두께(굵기)를 설정한다.
+         *
+         * @param thickness 두께 (pt 단위)
+         * @return this
+         */
+        public PageNumber totalPageThickness(float thickness) {
+            this.totalPageStrokeWidth = Math.max(0f, thickness);
+            this.totalPageBold = this.totalPageStrokeWidth > 0f;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 선 굵기를 설정한다.
+         *
+         * @param strokeWidth 선 굵기 (pt 단위)
+         * @return this
+         */
+        public PageNumber totalPageStrokeWidth(float strokeWidth) {
+            return totalPageThickness(strokeWidth);
+        }
+
+        /**
+         * 전체 페이지 수(m)의 폰트 파일을 개별 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public PageNumber totalPageFont(File fontFile) {
+            this.totalPageFontFile = fontFile;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 폰트 경로를 개별 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public PageNumber totalPageFont(Path fontPath) {
+            this.totalPageFontFile = fontPath != null ? fontPath.toFile() : null;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m)의 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public PageNumber totalPageFont(PDFont font) {
+            this.totalPageFont = font;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자 문자열을 설정한다. (기본값: " / ")
+         *
+         * @param separator 구분자 (예: " / ", " | ", " of ", "-")
+         * @return this
+         */
+        public PageNumber separator(String separator) {
+            this.separator = separator;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 폰트 크기(pt)를 개별 설정한다.
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public PageNumber separatorFontSize(float fontSize) {
+            this.separatorFontSize = fontSize;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 글자 색상을 개별 설정한다.
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public PageNumber separatorColor(Color color) {
+            this.separatorColor = color;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 글자 색상을 RGB 정수 값(0~255)으로 설정한다.
+         *
+         * @param r Red (0-255)
+         * @param g Green (0-255)
+         * @param b Blue (0-255)
+         * @return this
+         */
+        public PageNumber separatorColor(int r, int g, int b) {
+            return separatorColor(new Color(r, g, b));
+        }
+
+        /**
+         * 페이지 번호 구분자의 볼드(굵게) 처리 여부를 개별 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public PageNumber separatorBold(boolean bold) {
+            this.separatorBold = bold;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자를 볼드(굵게) 처리한다.
+         *
+         * @return this
+         */
+        public PageNumber separatorBold() {
+            return separatorBold(true);
+        }
+
+        /**
+         * 페이지 번호 구분자의 선 두께(굵기)를 설정한다.
+         *
+         * @param thickness 두께 (pt 단위)
+         * @return this
+         */
+        public PageNumber separatorThickness(float thickness) {
+            this.separatorStrokeWidth = Math.max(0f, thickness);
+            this.separatorBold = this.separatorStrokeWidth > 0f;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 선 굵기를 설정한다.
+         *
+         * @param strokeWidth 선 굵기 (pt 단위)
+         * @return this
+         */
+        public PageNumber separatorStrokeWidth(float strokeWidth) {
+            return separatorThickness(strokeWidth);
+        }
+
+        /**
+         * 페이지 번호 구분자의 폰트 파일을 개별 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public PageNumber separatorFont(File fontFile) {
+            this.separatorFontFile = fontFile;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 폰트 경로를 개별 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public PageNumber separatorFont(Path fontPath) {
+            this.separatorFontFile = fontPath != null ? fontPath.toFile() : null;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 구분자의 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public PageNumber separatorFont(PDFont font) {
+            this.separatorFont = font;
+            return this;
+        }
+
+        /**
+         * 전체 페이지 수(m) 표시 여부를 설정한다. (false로 설정 시 현재 페이지 n만 단독 표시)
+         *
+         * @param show 전체 페이지 표시 여부 (기본값: true)
+         * @return this
+         */
+        public PageNumber showTotalPage(boolean show) {
+            this.showTotalPage = show;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 앞에 붙는 접두사(Prefix)를 설정한다. (예: "[", "Page ")
+         *
+         * @param prefix 접두사 문자열
+         * @return this
+         */
+        public PageNumber prefix(String prefix) {
+            this.prefix = prefix;
+            return this;
+        }
+
+        /**
+         * 페이지 번호 뒤에 붙는 접미사(Suffix)를 설정한다. (예: "]", " 쪽")
+         *
+         * @param suffix 접미사 문자열
+         * @return this
+         */
+        public PageNumber suffix(String suffix) {
+            this.suffix = suffix;
+            return this;
+        }
+
+        /**
+         * 접두사 글자 색상을 설정한다.
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public PageNumber prefixColor(Color color) {
+            this.prefixColor = color;
+            return this;
+        }
+
+        /**
+         * 접미사 글자 색상을 설정한다.
+         *
+         * @param color 글자 색상
+         * @return this
+         */
+        public PageNumber suffixColor(Color color) {
+            this.suffixColor = color;
+            return this;
+        }
+
+        /**
+         * 접두사 폰트 크기(pt)를 설정한다.
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public PageNumber prefixFontSize(float fontSize) {
+            this.prefixFontSize = fontSize;
+            return this;
+        }
+
+        /**
+         * 접미사 폰트 크기(pt)를 설정한다.
+         *
+         * @param fontSize 폰트 크기
+         * @return this
+         */
+        public PageNumber suffixFontSize(float fontSize) {
+            this.suffixFontSize = fontSize;
+            return this;
+        }
+
+        /**
+         * 접두사 볼드 여부를 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public PageNumber prefixBold(boolean bold) {
+            this.prefixBold = bold;
+            return this;
+        }
+
+        /**
+         * 접두사를 볼드 처리한다.
+         *
+         * @return this
+         */
+        public PageNumber prefixBold() {
+            return prefixBold(true);
+        }
+
+        /**
+         * 접미사 볼드 여부를 설정한다.
+         *
+         * @param bold 볼드 활성화 여부
+         * @return this
+         */
+        public PageNumber suffixBold(boolean bold) {
+            this.suffixBold = bold;
+            return this;
+        }
+
+        /**
+         * 접미사를 볼드 처리한다.
+         *
+         * @return this
+         */
+        public PageNumber suffixBold() {
+            return suffixBold(true);
+        }
+
+        /**
+         * 접두사 선 두께(pt)를 설정한다.
+         *
+         * @param thickness 두께 (pt 단위)
+         * @return this
+         */
+        public PageNumber prefixThickness(float thickness) {
+            this.prefixStrokeWidth = Math.max(0f, thickness);
+            this.prefixBold = this.prefixStrokeWidth > 0f;
+            return this;
+        }
+
+        /**
+         * 접미사 선 두께(pt)를 설정한다.
+         *
+         * @param thickness 두께 (pt 단위)
+         * @return this
+         */
+        public PageNumber suffixThickness(float thickness) {
+            this.suffixStrokeWidth = Math.max(0f, thickness);
+            this.suffixBold = this.suffixStrokeWidth > 0f;
+            return this;
+        }
+
+        /**
+         * 접두사 폰트 파일(TTF/OTF)을 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public PageNumber prefixFont(File fontFile) {
+            this.prefixFontFile = fontFile;
+            return this;
+        }
+
+        /**
+         * 접두사 폰트 경로를 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public PageNumber prefixFont(Path fontPath) {
+            this.prefixFontFile = fontPath != null ? fontPath.toFile() : null;
+            return this;
+        }
+
+        /**
+         * 접두사 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public PageNumber prefixFont(PDFont font) {
+            this.prefixFont = font;
+            return this;
+        }
+
+        /**
+         * 접미사 폰트 파일(TTF/OTF)을 설정한다.
+         *
+         * @param fontFile 폰트 파일
+         * @return this
+         */
+        public PageNumber suffixFont(File fontFile) {
+            this.suffixFontFile = fontFile;
+            return this;
+        }
+
+        /**
+         * 접미사 폰트 경로를 설정한다.
+         *
+         * @param fontPath 폰트 파일 경로
+         * @return this
+         */
+        public PageNumber suffixFont(Path fontPath) {
+            this.suffixFontFile = fontPath != null ? fontPath.toFile() : null;
+            return this;
+        }
+
+        /**
+         * 접미사 PDFont 객체를 직접 설정한다.
+         *
+         * @param font PDFont 객체
+         * @return this
+         */
+        public PageNumber suffixFont(PDFont font) {
+            this.suffixFont = font;
+            return this;
+        }
+
+        /**
+         * 동적 포맷터 함수((currentPage, totalPages) -> String)를 설정한다.
+         *
+         * @param customFormatProvider 현재 페이지와 전체 페이지 수를 받아 포맷팅된 문자열을 반환하는 함수
+         * @return this
+         */
+        public PageNumber format(BiFunction<Integer, Integer, String> customFormatProvider) {
+            this.customFormatProvider = customFormatProvider;
+            return this;
+        }
+
+        /**
+         * n, m, 구분자 또는 접두사/접미사에 개별 스타일이 적용되어 있는지 여부를 확인한다.
+         *
+         * @return 개별 스타일 적용 여부
+         */
+        public boolean hasDistinctStyles() {
+            return currentPageFontSize != null || totalPageFontSize != null || separatorFontSize != null
+                    || currentPageColor != null || totalPageColor != null || separatorColor != null
+                    || currentPageBold != null || totalPageBold != null || separatorBold != null
+                    || currentPageStrokeWidth != null || totalPageStrokeWidth != null || separatorStrokeWidth != null
+                    || currentPageFont != null || totalPageFont != null || separatorFont != null
+                    || currentPageFontFile != null || totalPageFontFile != null || separatorFontFile != null
+                    || separator != null || prefix != null || suffix != null
+                    || prefixColor != null || suffixColor != null
+                    || prefixFontSize != null || suffixFontSize != null
+                    || prefixBold != null || suffixBold != null
+                    || prefixStrokeWidth != null || suffixStrokeWidth != null
+                    || prefixFont != null || suffixFont != null
+                    || prefixFontFile != null || suffixFontFile != null
+                    || !showTotalPage;
+        }
+
+        public String getFormat() { return format; }
+        public String getPrefix() { return prefix; }
+        public String getSuffix() { return suffix; }
+        public String getSeparator() { return separator; }
+        public boolean isShowTotalPage() { return showTotalPage; }
+        public BiFunction<Integer, Integer, String> getCustomFormatProvider() { return customFormatProvider; }
+
+        public Float getCurrentPageFontSize() { return currentPageFontSize; }
+        public Color getCurrentPageColor() { return currentPageColor; }
+        public Float getCurrentPageStrokeWidth() { return currentPageStrokeWidth; }
+        public Boolean isCurrentPageBold() { return currentPageBold; }
+        public File getCurrentPageFontFile() { return currentPageFontFile; }
+        public PDFont getCurrentPageFont() { return currentPageFont; }
+
+        public Float getTotalPageFontSize() { return totalPageFontSize; }
+        public Color getTotalPageColor() { return totalPageColor; }
+        public Float getTotalPageStrokeWidth() { return totalPageStrokeWidth; }
+        public Boolean isTotalPageBold() { return totalPageBold; }
+        public File getTotalPageFontFile() { return totalPageFontFile; }
+        public PDFont getTotalPageFont() { return totalPageFont; }
+
+        public Float getSeparatorFontSize() { return separatorFontSize; }
+        public Color getSeparatorColor() { return separatorColor; }
+        public Float getSeparatorStrokeWidth() { return separatorStrokeWidth; }
+        public Boolean isSeparatorBold() { return separatorBold; }
+        public File getSeparatorFontFile() { return separatorFontFile; }
+        public PDFont getSeparatorFont() { return separatorFont; }
+
+        public Float getPrefixFontSize() { return prefixFontSize; }
+        public Color getPrefixColor() { return prefixColor; }
+        public Float getPrefixStrokeWidth() { return prefixStrokeWidth; }
+        public Boolean isPrefixBold() { return prefixBold; }
+        public File getPrefixFontFile() { return prefixFontFile; }
+        public PDFont getPrefixFont() { return prefixFont; }
+
+        public Float getSuffixFontSize() { return suffixFontSize; }
+        public Color getSuffixColor() { return suffixColor; }
+        public Float getSuffixStrokeWidth() { return suffixStrokeWidth; }
+        public Boolean isSuffixBold() { return suffixBold; }
+        public File getSuffixFontFile() { return suffixFontFile; }
+        public PDFont getSuffixFont() { return suffixFont; }
+    }
+
+    /**
+     * PDF 스탬프 종합 옵션 (페이지 번호, 텍스트 목록, 이미지 워터마크, 적용 대상 페이지 수 등).
+     *
+     * <p>빌더({@link #builder()})를 통해 필요한 스탬프 요소만 선택적으로 조합하여 생성할 수 있습니다.</p>
+     */
+    public static class StampOptions {
+        private Integer numberOfPagesToApply;
+        private PageNumber pageNumber;
+        private final List<Text> texts = new ArrayList<>();
+        private Watermark watermark;
+
+        public static StampOptions create() {
+            return new StampOptions();
+        }
+
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        public Integer getNumberOfPagesToApply() { return numberOfPagesToApply; }
+        public void setNumberOfPagesToApply(Integer numberOfPagesToApply) { this.numberOfPagesToApply = numberOfPagesToApply; }
+        public PageNumber getPageNumber() { return pageNumber; }
+        public void setPageNumber(PageNumber pageNumber) { this.pageNumber = pageNumber; }
+        public List<Text> getTexts() { return texts; }
+        public Watermark getWatermark() { return watermark; }
+        public void setWatermark(Watermark watermark) { this.watermark = watermark; }
+
+        /**
+         * {@link StampOptions} 생성을 위한 빌더 클래스.
+         */
+        public static class Builder {
+            private final StampOptions options = new StampOptions();
+
+            /**
+             * 스탬프를 적용할 페이지 수를 설정한다.
+             *
+             * @param numberOfPagesToApply 적용할 페이지 수 (null이면 전체 페이지 적용)
+             * @return this
+             */
+            public Builder numberOfPagesToApply(Integer numberOfPagesToApply) {
+                options.numberOfPagesToApply = numberOfPagesToApply;
+                return this;
+            }
+
+            /**
+             * 페이지 번호 스탬프를 설정한다.
+             *
+             * @param pageNumber 페이지 번호 설정 객체
+             * @return this
+             */
+            public Builder pageNumber(PageNumber pageNumber) {
+                options.pageNumber = pageNumber;
+                return this;
+            }
+
+            /**
+             * 텍스트 스탬프(제목, 헤더, 푸터, 보안문구 등)를 추가한다.
+             *
+             * @param text 추가할 텍스트 스탬프 설정 객체
+             * @return this
+             */
+            public Builder addText(Text text) {
+                if (text != null) {
+                    options.texts.add(text);
+                }
+                return this;
+            }
+
+            /**
+             * 이미지 워터마크를 설정한다.
+             *
+             * @param watermark 이미지 워터마크 설정 객체
+             * @return this
+             */
+            public Builder watermark(Watermark watermark) {
+                options.watermark = watermark;
+                return this;
+            }
+
+            /**
+             * 구성된 {@link StampOptions} 인스턴스를 반환한다.
+             *
+             * @return StampOptions 인스턴스
+             */
+            public StampOptions build() {
+                return options;
+            }
+        }
+    }
 
 
     // ========================================================================
@@ -1846,7 +3699,7 @@ public class S2PdfUtil {
          * 워터마크 기준 위치. 가장자리 기준이면 {@link #offset}만큼 안쪽으로 들어오고, 가운데 기준인 축은 가운데에서 x 는 오른쪽, y 는 아래쪽으로 옮긴다.
          */
         public enum Position {
-            TOP_LEFT, TOP, TOP_RIGHT, LEFT, CENTER, RIGHT, BOTTOM_LEFT, BOTTOM, BOTTOM_RIGHT
+            TOP_LEFT, TOP, TOP_CENTER, TOP_RIGHT, LEFT, CENTER_LEFT, CENTER, RIGHT, CENTER_RIGHT, BOTTOM_LEFT, BOTTOM, BOTTOM_CENTER, BOTTOM_RIGHT
         }
 
         private final byte[] image;
@@ -1862,6 +3715,15 @@ public class S2PdfUtil {
                 throw new IllegalArgumentException("워터마크 이미지가 비었습니다.");
             }
             this.image = image;
+        }
+
+        /**
+         * @param image 이미지 파일 (PNG, JPG, GIF, BMP, WebP 는 imageio-webp 추가 시)
+         * @return 워터마크 (가운데, 원래 크기, 불투명)
+         * @throws IOException 파일을 읽을 수 없을 때
+         */
+        public static Watermark of(File image) throws IOException {
+            return of(image.toPath());
         }
 
         /**
@@ -1944,6 +3806,16 @@ public class S2PdfUtil {
         }
 
         /**
+         * @param position 기준 위치 (기본 {@link Position#CENTER})
+         * @return 이 워터마크
+         */
+        public Watermark position(S2PdfUtil.Position position) {
+            Objects.requireNonNull(position, "position");
+            this.position = Position.valueOf(position.name());
+            return this;
+        }
+
+        /**
          * 기준 위치에서 옮길 거리. 왼쪽·오른쪽 기준이면 x 만큼, 위·아래 기준이면 y 만큼 그 가장자리에서 안쪽으로 들어온다. 가운데 기준인 축은 x 는 오른쪽,
          * y 는 아래쪽으로 옮긴다 (음수는 반대 방향).
          *
@@ -2010,6 +3882,34 @@ public class S2PdfUtil {
                 y = box.getLowerLeftY() + (box.getHeight() - h) / 2 - offsetY;
             }
             return new float[] { x, y };
+        }
+
+        public byte[] getImageBytes() {
+            return image == null ? null : image.clone();
+        }
+
+        public Float getWidth() {
+            return width;
+        }
+
+        public Float getHeight() {
+            return height;
+        }
+
+        public Position getPosition() {
+            return position;
+        }
+
+        public float getOffsetX() {
+            return offsetX;
+        }
+
+        public float getOffsetY() {
+            return offsetY;
+        }
+
+        public float getOpacity() {
+            return opacity;
         }
     }
 
