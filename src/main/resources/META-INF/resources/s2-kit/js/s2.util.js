@@ -128,7 +128,26 @@ const fillText = (pattern, data) =>
   });
 
 /** Entities for S2Util.escapeHtml | escapeHtml 용 엔티티 */
-const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const HTML_ESCAPES = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+  '/': '&#x2F;',
+  '`': '&#x60;',
+  '=': '&#x3D;'
+};
+
+/** Entities for S2Util.unescapeHtml | HTML_ESCAPES의 키와 값을 반전하여 자동 생성 */
+const HTML_UNESCAPES = Object.fromEntries(
+  Object.entries(HTML_ESCAPES).map(([char, entity]) => [entity, char])
+);
+
+/** HTML escape regex patterns | escape/unescape 용 사전 컴파일 정규식 */
+const REGEX_ESCAPE_BASIC = /[&<>"']/g;
+const REGEX_ESCAPE_STRICT = /[&<>"'`=/]/g;
+const REGEX_UNESCAPE = new RegExp(Object.values(HTML_ESCAPES).join('|'), 'g');
 
 /**
  * 조사 규칙 룩업 맵. Java S2StringUtil의 JOSA_RULES와 동일.
@@ -362,7 +381,13 @@ export const S2Util = {
     const ch = trimmed.charAt(trimmed.length - 1);
     const isKorean = lastChar >= 0xac00 && lastChar <= 0xd7a3;
     const isNumber = ch >= '0' && ch <= '9';
-    return { char: ch, charCode: lastChar, isKorean: isKorean, isNumber: isNumber, trimmedWord: trimmed };
+    return {
+      char: ch,
+      charCode: lastChar,
+      isKorean: isKorean,
+      isNumber: isNumber,
+      trimmedWord: trimmed
+    };
   },
 
   /**
@@ -483,19 +508,40 @@ export const S2Util = {
    */
   debug: false,
   /**
-   * HTML 특수문자(&, <, >, ", ')를 엔티티로 바꾼다. 신뢰할 수 없는 값을 HTML 문자열에 넣을 때 사용한다.
+   * HTML 특수문자를 엔티티로 변환한다. 신뢰할 수 없는 값을 HTML 문자열에 넣을 때 사용한다.
+   * 기본적으로 일반적인 XSS 공격을 방어하는 5개 특수문자(&, <, >, ", ')를 변환하며,
+   * strict 가 true 인 경우 속성값/템플릿 리터럴 주입 방어를 위한 /, `, = 까지 포함하여 총 8개 문자를 변환한다.
    *
    * @param {*} value - 이스케이프할 값 (null/undefined 는 빈 문자열)
+   * @param {boolean} [strict = false] - true 이면 슬래시(/), 백틱(`), 등호(=)까지 포함하여 엄격하게 변환
    * @returns {string} 이스케이프된 문자열
    *
    * @example
-   * S2Util.escapeHtml('<img src=x onerror=alert(1)>'); // → '&lt;img src=x onerror=alert(1)&gt;'
+   * S2Util.escapeHtml('<img src="x" onerror="alert(1)">'); // → '&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;'
+   * S2Util.escapeHtml('a / b = c', true); // → 'a &#x2F; b &#x3D; c'
    */
-  escapeHtml(value) {
+  escapeHtml(value, strict = false) {
     if (value === null || value === undefined) {
       return '';
     }
-    return String(value).replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]);
+    const regex = strict ? REGEX_ESCAPE_STRICT : REGEX_ESCAPE_BASIC;
+    return String(value).replace(regex, (ch) => HTML_ESCAPES[ch]);
+  },
+  /**
+   * HTML 엔티티를 특수문자로 역변환한다.
+   *
+   * @param {*} value - 역변환할 값 (null/undefined 는 빈 문자열)
+   * @returns {string} 역변환된 문자열
+   *
+   * @example
+   * S2Util.unescapeHtml('&lt;img&gt;'); // → '<img>'
+   * S2Util.unescapeHtml('a &#x2F; b &#x3D; c'); // → 'a / b = c'
+   */
+  unescapeHtml(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).replace(REGEX_UNESCAPE, (entity) => HTML_UNESCAPES[entity]);
   },
   /**
    * 요소에 메시지를 채운다. 문자열은 텍스트로 넣고 줄바꿈(\n)은 <br>로 바꾼다. HTML 이 필요하면 Node(요소, DocumentFragment)를 넘긴다.
@@ -3016,6 +3062,47 @@ export const S2Util = {
     }
   },
   /**
+   * 다음 페이지 로드 시 표시할 토스트 메시지를 sessionStorage 에 저장한다.
+   *
+   * @param {string|Node} message - 토스트 본문에 표시할 메시지
+   * @param {object} [option] - 토스트 설정 옵션 객체
+   * @returns {void}
+   *
+   * @example
+   * S2Util.setSessionToast('저장되었습니다.');
+   */
+  setSessionToast(message, option) {
+    try {
+      sessionStorage.setItem(
+        's2_pending_toast',
+        JSON.stringify({ message: message, option: option })
+      );
+    } catch {
+      // sessionStorage not available (e.g. private browsing mode)
+    }
+  },
+  /**
+   * sessionStorage 에 저장된 대기 중인 토스트 메시지를 표시하고 세션에서 삭제한다.
+   *
+   * @returns {void}
+   *
+   * @requires S2Util.showToast
+   */
+  showSessionToast() {
+    try {
+      const item = sessionStorage.getItem('s2_pending_toast');
+      if (item) {
+        sessionStorage.removeItem('s2_pending_toast');
+        const data = JSON.parse(item);
+        if (data && data.message) {
+          S2Util.showToast(data.message, data.option);
+        }
+      }
+    } catch {
+      // sessionStorage not available (e.g. private browsing mode)
+    }
+  },
+  /**
    * 바이트(Byte) 값을 B, KB, MB, GB, TB, PB로 자동 변환하고 단위 정보를 반환한다.
    *
    * @param {number} bytes - 변환할 파일 크기 (바이트 단위).
@@ -3347,6 +3434,9 @@ let g_s2DomEventsInitialized = false;
 export const initializeS2DomEvents = () => {
   if (!g_s2DomEventsInitialized) {
     g_s2DomEventsInitialized = true;
+
+    // 세션 스토리지에 대기 중인 토스트 표시
+    S2Util.showSessionToast();
 
     document.body.addEventListener('click', (event) => {
       const element = event.target;
