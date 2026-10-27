@@ -390,4 +390,24 @@ class S2PdfStampTest {
             assertFalse(p1.contains("/"), "Should not contain separator");
         }
     }
+
+    @Test
+    void testEncryptedPdfProtection() throws IOException {
+        var encryptedPdf = dir.resolve("restricted.pdf");
+        try (var doc = new PDDocument()) {
+            doc.addPage(new org.apache.pdfbox.pdmodel.PDPage());
+            var ap = new org.apache.pdfbox.pdmodel.encryption.AccessPermission();
+            ap.setCanExtractContent(false);
+            var spp = new org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy("ownerPass", "", ap);
+            doc.protect(spp);
+            doc.save(encryptedPdf.toFile());
+        }
+
+        var options = StampOptions.builder().pageNumber(PageNumber.of()).build();
+        var ex = assertThrows(IOException.class, () -> S2PdfUtil.stamp(encryptedPdf, options));
+        assertTrue(ex.getMessage().contains("암호화 또는 권한 제한"), ex.getMessage());
+
+        var mergeEx = assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofPdf(encryptedPdf)));
+        assertTrue(mergeEx.getMessage().contains("암호화 또는 권한 제한"), mergeEx.getMessage());
+    }
 }

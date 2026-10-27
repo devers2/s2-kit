@@ -90,4 +90,15 @@ class S2ServletUtilTest {
         assertEquals(2, ids.size());
         assertTrue(ids.containsAll(List.of("p1", "c1")));
     }
+
+    @Test
+    void contentDispositionFormattingAndParsing() {
+        var header = S2FileUtil.formatContentDisposition("보고서.pdf");
+        assertTrue(header.startsWith("attachment; filename=\"___.pdf\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf"));
+        assertEquals("보고서.pdf", S2FileUtil.parseContentDispositionFilename(header));
+
+        var inlineHeader = S2FileUtil.formatContentDisposition("inline", "sample document.pdf");
+        assertTrue(inlineHeader.startsWith("inline; filename=\"sample document.pdf\"; filename*=UTF-8''sample%20document.pdf"));
+        assertEquals("sample document.pdf", S2FileUtil.parseContentDispositionFilename(inlineHeader));
+    }
 }

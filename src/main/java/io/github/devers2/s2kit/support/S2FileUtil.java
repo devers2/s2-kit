@@ -1413,6 +1413,12 @@ public class S2FileUtil {
     private static final class FileSignature {
 
         private static final byte[] PDF = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+        private static final byte[] OLE_HWP = "HwpSummaryInformation".getBytes(StandardCharsets.UTF_16LE);
+        private static final byte[] OLE_HWP_HEADER = "FileHeader".getBytes(StandardCharsets.UTF_16LE);
+        private static final byte[] OLE_WORD = "WordDocument".getBytes(StandardCharsets.UTF_16LE);
+        private static final byte[] OLE_WORKBOOK = "Workbook".getBytes(StandardCharsets.UTF_16LE);
+        private static final byte[] OLE_BOOK = "Book".getBytes(StandardCharsets.UTF_16LE);
+        private static final byte[] OLE_POWERPOINT = "PowerPoint Document".getBytes(StandardCharsets.UTF_16LE);
 
         private FileSignature() {
         }
@@ -1486,7 +1492,7 @@ public class S2FileUtil {
             if (names.contains("ppt/")) {
                 return "pptx";
             }
-            if (names.contains("Contents/section")) {
+            if (names.contains("Contents/section") || names.contains("Contents/content.hpf") || names.contains("version.xml")) {
                 return "hwpx";
             }
             return "zip";
@@ -1494,11 +1500,6 @@ public class S2FileUtil {
 
         /** Word, Excel, PowerPoint 97-2003 and HWP 5 by stream names (UTF-16) | 스트림 이름(UTF-16)으로 구분 */
         static String fromOle(InputStream in) throws IOException {
-            var hwp = "HwpSummaryInformation".getBytes(StandardCharsets.UTF_16LE);
-            var word = "WordDocument".getBytes(StandardCharsets.UTF_16LE);
-            var workbook = "Workbook".getBytes(StandardCharsets.UTF_16LE);
-            var book = "Book".getBytes(StandardCharsets.UTF_16LE);
-            var powerPoint = "PowerPoint Document".getBytes(StandardCharsets.UTF_16LE);
             var buffer = new byte[64 * 1024];
             var carry = new byte[0];
             boolean sawWord = false, sawSheet = false, sawSlides = false;
@@ -1508,12 +1509,12 @@ public class S2FileUtil {
                 var chunk = new byte[carry.length + read];
                 System.arraycopy(carry, 0, chunk, 0, carry.length);
                 System.arraycopy(buffer, 0, chunk, carry.length, read);
-                if (indexOf(chunk, hwp) >= 0) {
+                if (indexOf(chunk, OLE_HWP) >= 0 || indexOf(chunk, OLE_HWP_HEADER) >= 0) {
                     return "hwp";
                 }
-                sawWord |= indexOf(chunk, word) >= 0;
-                sawSheet |= indexOf(chunk, workbook) >= 0 || indexOf(chunk, book) >= 0;
-                sawSlides |= indexOf(chunk, powerPoint) >= 0;
+                sawWord |= indexOf(chunk, OLE_WORD) >= 0;
+                sawSheet |= indexOf(chunk, OLE_WORKBOOK) >= 0 || indexOf(chunk, OLE_BOOK) >= 0;
+                sawSlides |= indexOf(chunk, OLE_POWERPOINT) >= 0;
                 carry = java.util.Arrays.copyOfRange(chunk, Math.max(0, chunk.length - 64), chunk.length);
             }
             return sawWord ? "doc" : sawSlides ? "ppt" : sawSheet ? "xls" : "";
@@ -1630,6 +1631,11 @@ public class S2FileUtil {
         }
     }
 
+    private static final Pattern CONTENT_DISPOSITION_EXTENDED_PATTERN = Pattern
+            .compile("(?i)(?:^|;)\\s*filename\\*\\s*=\\s*([^']*)'[^']*'([^;\\s]*)");
+    private static final Pattern CONTENT_DISPOSITION_PLAIN_PATTERN = Pattern
+            .compile("(?i)(?:^|;)\\s*filename\\s*=\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([^;]*))");
+
     /**
      * Content-Disposition 헤더에서 파일명을 꺼낸다. RFC 6266 에 따라 {@code filename*}(RFC 5987 인코딩)를 {@code filename}보다
      * 우선하며, 따옴표와 이스케이프를 풀고 경로 부분({@code ../}, 디렉토리)은 버린다.
@@ -1643,24 +1649,55 @@ public class S2FileUtil {
      * }</pre>
      */
     public static String parseContentDispositionFilename(String contentDisposition) {
-        if (contentDisposition == null || contentDisposition.isBlank()) {
+        if (S2Util.isEmpty(contentDisposition)) {
             return "";
         }
-        var extended = Pattern.compile("(?i)(?:^|;)\\s*filename\\*\\s*=\\s*([^']*)'[^']*'([^;\\s]*)").matcher(contentDisposition);
+        var extended = CONTENT_DISPOSITION_EXTENDED_PATTERN.matcher(contentDisposition);
         if (extended.find()) {
             try {
-                var charset = extended.group(1).isBlank() ? StandardCharsets.UTF_8 : Charset.forName(extended.group(1).trim());
+                var charset = S2Util.isEmpty(extended.group(1)) ? StandardCharsets.UTF_8 : Charset.forName(extended.group(1).trim());
                 return lastPathSegment(percentDecode(extended.group(2), charset));
             } catch (IllegalArgumentException e) {
                 // Unknown charset or bad encoding: fall back to filename= | 알 수 없는 문자셋·잘못된 인코딩이면 filename= 사용
             }
         }
-        var plain = Pattern.compile("(?i)(?:^|;)\\s*filename\\s*=\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([^;]*))").matcher(contentDisposition);
+        var plain = CONTENT_DISPOSITION_PLAIN_PATTERN.matcher(contentDisposition);
         if (plain.find()) {
             var name = plain.group(1) != null ? plain.group(1).replaceAll("\\\\(.)", "$1") : plain.group(2).trim();
             return lastPathSegment(name);
         }
         return "";
+    }
+
+    /**
+     * RFC 6266 및 RFC 5987 규격에 맞추어 Content-Disposition 헤더 값을 생성한다.
+     * 한글이나 공백, 특수문자가 포함된 파일명이 브라우저에서 깨지지 않도록 US-ASCII 대체명(filename)과
+     * UTF-8 퍼센트 인코딩 확장명(filename*)을 함께 작성한다.
+     *
+     * @param filename 다운로드 파일명
+     * @return Content-Disposition 헤더 값 (예: {@code attachment; filename="report.pdf"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf})
+     * @see #formatContentDisposition(String, String)
+     */
+    public static String formatContentDisposition(String filename) {
+        return formatContentDisposition("attachment", filename);
+    }
+
+    /**
+     * RFC 6266 및 RFC 5987 규격에 맞추어 Content-Disposition 헤더 값을 생성한다.
+     *
+     * @param type     디스플레이 유형 (예: "attachment", "inline")
+     * @param filename 다운로드 파일명
+     * @return Content-Disposition 헤더 값
+     */
+    public static String formatContentDisposition(String type, String filename) {
+        var dispositionType = S2Util.isNotEmpty(type) ? type.trim() : "attachment";
+        if (S2Util.isEmpty(filename)) {
+            return dispositionType;
+        }
+        var name = lastPathSegment(filename);
+        var asciiFallback = name.replaceAll("[^\\x20-\\x7E]", "_").replace("\"", "\\\"");
+        var encoded = java.net.URLEncoder.encode(name, StandardCharsets.UTF_8).replace("+", "%20");
+        return dispositionType + "; filename=\"" + asciiFallback + "\"; filename*=UTF-8''" + encoded;
     }
 
     /** Percent-decoding without URLDecoder's '+' to space | URLDecoder 와 달리 '+'를 공백으로 바꾸지 않는 퍼센트 디코딩 */

@@ -26,15 +26,19 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Objects;
 
+import javax.crypto.Mac;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 
 import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
@@ -397,6 +401,97 @@ public class S2HashUtil {
      */
     public static String generateSHA256(byte[] input) {
         return generateHash(HASH_ALGORITHM_SHA256, input);
+    }
+
+    /**
+     * HMAC-SHA256 해시(메시지 인증 코드)를 생성한다.
+     *
+     * @param secret 비밀 키 문자열 (UTF-8)
+     * @param data   서명할 데이터 문자열 (UTF-8)
+     * @return 64자리 16진수 소문자 서명 문자열
+     */
+    public static String generateHmacSHA256(String secret, String data) {
+        Objects.requireNonNull(secret, "secret");
+        Objects.requireNonNull(data, "data");
+        return generateHmacSHA256(secret.getBytes(StandardCharsets.UTF_8), data.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * HMAC-SHA256 해시(메시지 인증 코드)를 생성한다.
+     *
+     * @param secret 비밀 키 바이트 배열
+     * @param data   서명할 데이터 바이트 배열
+     * @return 64자리 16진수 소문자 서명 문자열
+     */
+    public static String generateHmacSHA256(byte[] secret, byte[] data) {
+        Objects.requireNonNull(secret, "secret");
+        Objects.requireNonNull(data, "data");
+        try {
+            var mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+            return bytesToHex(mac.doFinal(data));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("HmacSHA256 을 지원하지 않는 JRE 입니다.", e);
+        } catch (InvalidKeyException e) {
+            throw new IllegalArgumentException("유효하지 않은 비밀 키입니다.", e);
+        }
+    }
+
+    /**
+     * 두 서명 값을 타이밍 공격(Timing Attack)에 안전하게 상수 시간(Constant-time)으로 비교한다.
+     *
+     * @param a 첫 번째 문자열
+     * @param b 두 번째 문자열
+     * @return 일치 여부
+     */
+    public static boolean timingSafeEqual(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 서비스 간 API 호출 시 변조 방지를 위한 표준 요청 서명(HMAC-SHA256)을 생성한다.
+     *
+     * @param secret       비밀 키
+     * @param timestampSec Unix 타임스탬프 (초)
+     * @param method       HTTP 메서드 (GET, POST 등)
+     * @param pathAndQuery 요청 경로 및 쿼리 문자열 (예: /api/convert?type=pdf)
+     * @param body         요청 본문 (null 또는 빈 배열 허용)
+     * @return 64자리 hex 서명 값
+     */
+    public static String signRequest(String secret, long timestampSec, String method, String pathAndQuery, byte[] body) {
+        var bodyHash = S2Util.isNotEmpty(body) ? generateSHA256(body) : generateSHA256(new byte[0]);
+        var m = S2Util.isNotEmpty(method) ? method.trim().toUpperCase(java.util.Locale.ROOT) : "GET";
+        var path = S2Util.isNotEmpty(pathAndQuery) ? pathAndQuery.trim() : "/";
+        var canonical = timestampSec + "\n" + m + "\n" + path + "\n" + bodyHash;
+        return generateHmacSHA256(secret, canonical);
+    }
+
+    /**
+     * API 요청 서명의 유효성을 검증한다 (타임스탬프 허용 오차 및 상수 시간 비교 적용).
+     *
+     * @param secret         비밀 키
+     * @param timestampSec   전달받은 요청 타임스탬프 (초)
+     * @param method         HTTP 메서드
+     * @param pathAndQuery   요청 경로 및 쿼리
+     * @param body           요청 본문
+     * @param signature      전달받은 서명 값
+     * @param maxSkewSeconds 허용할 최대 시간 오차 (초 단위, 예: 300초 = 5분)
+     * @return 서명 유효 여부
+     */
+    public static boolean verifyRequestSignature(String secret, long timestampSec, String method, String pathAndQuery,
+            byte[] body, String signature, long maxSkewSeconds) {
+        if (S2Util.isEmpty(secret) || S2Util.isEmpty(signature)) {
+            return false;
+        }
+        long nowSec = Instant.now().getEpochSecond();
+        if (Math.abs(nowSec - timestampSec) > maxSkewSeconds) {
+            return false;
+        }
+        String expected = signRequest(secret, timestampSec, method, pathAndQuery, body);
+        return timingSafeEqual(expected, signature);
     }
 
     /**

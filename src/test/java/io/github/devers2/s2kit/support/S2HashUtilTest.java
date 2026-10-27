@@ -317,4 +317,58 @@ class S2HashUtilTest {
                     S2HashUtil.generateXXHash64(0L, data));
         }
     }
+
+    @Nested
+    @DisplayName("HMAC-SHA256 및 API 요청 서명")
+    class HmacAndRequestSignature {
+
+        @Test
+        @DisplayName("HMAC-SHA256 해시 생성 및 결정론적 검증")
+        void hmacGeneration() {
+            String secret = "mySecretKey123";
+            String data = "ImportantMessageToSign";
+            String sig1 = S2HashUtil.generateHmacSHA256(secret, data);
+            String sig2 = S2HashUtil.generateHmacSHA256(secret, data);
+
+            assertNotNull(sig1);
+            assertEquals(64, sig1.length(), "HMAC-SHA256은 64자리 16진수여야 함");
+            assertEquals(sig1, sig2, "동일 입력 시 동일한 서명이 생성되어야 함");
+            assertNotEquals(sig1, S2HashUtil.generateHmacSHA256("otherKey", data));
+        }
+
+        @Test
+        @DisplayName("timingSafeEqual 검증")
+        void timingSafeEqualVerification() {
+            assertTrue(S2HashUtil.timingSafeEqual("abcdef", "abcdef"));
+            assertFalse(S2HashUtil.timingSafeEqual("abcdef", "abcdeg"));
+            assertFalse(S2HashUtil.timingSafeEqual("abcdef", null));
+            assertFalse(S2HashUtil.timingSafeEqual(null, "abcdef"));
+        }
+
+        @Test
+        @DisplayName("API 요청 서명 생성 및 검증 (시간 오차 내 정상 통과, 시간 초과/변조 시 차단)")
+        void requestSignatureVerification() {
+            String secret = "apiSharedSecret";
+            long nowSec = java.time.Instant.now().getEpochSecond();
+            byte[] body = "{\"name\":\"test\"}".getBytes(StandardCharsets.UTF_8);
+
+            String sig = S2HashUtil.signRequest(secret, nowSec, "POST", "/api/v1/convert?type=pdf", body);
+            assertNotNull(sig);
+
+            // 허용 시간 오차(300초) 내 정상 검증
+            assertTrue(S2HashUtil.verifyRequestSignature(secret, nowSec, "POST", "/api/v1/convert?type=pdf", body, sig, 300));
+
+            // 경로 변조 시 실패
+            assertFalse(S2HashUtil.verifyRequestSignature(secret, nowSec, "POST", "/api/v1/other", body, sig, 300));
+
+            // 바디 변조 시 실패
+            assertFalse(S2HashUtil.verifyRequestSignature(secret, nowSec, "POST", "/api/v1/convert?type=pdf", "tampered".getBytes(), sig, 300));
+
+            // 비밀 키 불일치 시 실패
+            assertFalse(S2HashUtil.verifyRequestSignature("wrongSecret", nowSec, "POST", "/api/v1/convert?type=pdf", body, sig, 300));
+
+            // 시간 오차(10초) 초과 시 실패
+            assertFalse(S2HashUtil.verifyRequestSignature(secret, nowSec - 20, "POST", "/api/v1/convert?type=pdf", body, sig, 10));
+        }
+    }
 }

@@ -718,11 +718,7 @@ public class S2PdfUtil {
             Path tempPdf = Files.createTempFile("s2_html_", ".pdf");
             try {
                 var command = resolveBrowserCommand();
-                var doc = Jsoup.parse(htmlContent);
-                doc.head().prependElement("style").appendChild(new DataNode(BROWSER_PAGE_CSS));
-                if (doc.selectFirst("meta[charset]") == null) {
-                    doc.head().prependElement("meta").attr("charset", "UTF-8");
-                }
+                var doc = prepareBrowserDocument(htmlContent);
                 printWithBrowser(command, doc.outerHtml(), tempPdf);
                 try (var in = Files.newInputStream(tempPdf)) {
                     in.transferTo(outputStream);
@@ -895,9 +891,19 @@ public class S2PdfUtil {
         return null;
     }
 
-    /** Browser print setup: A4, and backgrounds kept as on screen | 브라우저 인쇄 설정: A4, 배경은 화면처럼 유지 */
-    private static final String BROWSER_PAGE_CSS = "@page { size: A4; }\n"
-            + "html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n";
+    /** Browser print setup: A4, zero baseline margins, and backgrounds kept as on screen | 브라우저 인쇄 설정: A4, 기본 여백 초기화 및 배경 유지 */
+    private static final String BROWSER_PAGE_CSS = "@page { size: A4; margin: 0; }\n"
+            + "html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n";
+
+    /** Prepares an HTML document for browser printing | 브라우저 인쇄를 위한 HTML 문서 전처리 */
+    private static Document prepareBrowserDocument(String html) {
+        var doc = Jsoup.parse(html);
+        doc.head().prependElement("style").appendChild(new DataNode(BROWSER_PAGE_CSS));
+        if (doc.selectFirst("meta[charset]") == null) {
+            doc.head().prependElement("meta").attr("charset", "UTF-8");
+        }
+        return doc;
+    }
 
     /**
      * Renders a web page: through the browser when one is available, otherwise, or when the browser fails, with the
@@ -912,11 +918,7 @@ public class S2PdfUtil {
             var cssContent = S2Util.isNotEmpty(cssPath)
                     ? loadCssContent(clazz, cssPath, staticResourceBasePath, convertCssBackgroundImageTargetSelectors)
                     : "";
-            var doc = Jsoup.parse(composeHtml(htmlContent, htmlWithImages, cssContent));
-            doc.head().prependElement("style").appendChild(new DataNode(BROWSER_PAGE_CSS));
-            if (doc.selectFirst("meta[charset]") == null) {
-                doc.head().prependElement("meta").attr("charset", "UTF-8");
-            }
+            var doc = prepareBrowserDocument(composeHtml(htmlContent, htmlWithImages, cssContent));
             try {
                 printWithBrowser(command, doc.outerHtml(), target);
                 return true;
@@ -1719,6 +1721,7 @@ public class S2PdfUtil {
         if (document == null) {
             throw new S2RuntimeException("[stamp] PDF Document is null.");
         }
+        assertDocumentAccessible(document, "stamp");
         if (options == null) {
             return saveToResourceInputStream(document);
         }
@@ -4825,8 +4828,11 @@ public class S2PdfUtil {
                     Files.copy(source.inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
                     pdfFileToMerge = tempFile.toFile();
                 }
-                if (pdfFileToMerge != null && options.pdfImageDpi > 0) {
-                    pdfFileToMerge = withSmallerImages(pdfFileToMerge.toPath(), options, intermediateTempFiles);
+                if (pdfFileToMerge != null) {
+                    assertDocumentAccessible(pdfFileToMerge, source.describe());
+                    if (options.pdfImageDpi > 0) {
+                        pdfFileToMerge = withSmallerImages(pdfFileToMerge.toPath(), options, intermediateTempFiles);
+                    }
                 }
             }
             case HTML -> {
@@ -6299,6 +6305,38 @@ public class S2PdfUtil {
     }
 
     /**
+     * Check document encryption and access permissions | 문서 암호화 및 접근 권한 검사
+     */
+    private static void assertDocumentAccessible(File pdfFile, String sourceHint) throws IOException {
+        if (pdfFile == null || !pdfFile.exists()) {
+            return;
+        }
+        try (var doc = Loader.loadPDF(pdfFile, IOUtils.createTempFileOnlyStreamCache())) {
+            assertDocumentAccessible(doc, sourceHint);
+        } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
+            var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : pdfFile.getName();
+            throw new IOException("암호로 보호된 PDF 문서는 처리할 수 없습니다: " + name + " (암호를 해제한 후 다시 시도하십시오)", e);
+        }
+    }
+
+    /**
+     * Check PDDocument access permission | 열려 있는 PDDocument 권한 상태 검사
+     */
+    private static void assertDocumentAccessible(PDDocument document, String sourceHint) throws IOException {
+        if (document == null) {
+            return;
+        }
+        if (document.isEncrypted()) {
+            var permission = document.getCurrentAccessPermission();
+            if (permission != null && !permission.canExtractContent()) {
+                var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : "PDF 문서";
+                throw new IOException("암호화 또는 권한 제한으로 인해 처리할 수 없는 PDF 문서입니다: " + name
+                        + " (문서 보안 또는 인쇄/추출 제한을 해제한 후 다시 시도하십시오)");
+            }
+        }
+    }
+
+    /**
      * Copies a source PDF with one top-level bookmark to its first page; the PDF's own bookmarks move under it.
      * PDFMergerUtility appends each source's outline in order, so every source gets its own entry.
      * <p>
@@ -6309,6 +6347,7 @@ public class S2PdfUtil {
     private static File withBookmark(File pdf, String title, List<Path> trackingList) throws IOException {
         var copy = createTrackedTempFile("bookmarked", ".pdf", trackingList);
         try (var doc = Loader.loadPDF(pdf, IOUtils.createTempFileOnlyStreamCache())) {
+            assertDocumentAccessible(doc, title);
             var catalog = doc.getDocumentCatalog();
             var existing = catalog.getDocumentOutline();
             var item = new PDOutlineItem();

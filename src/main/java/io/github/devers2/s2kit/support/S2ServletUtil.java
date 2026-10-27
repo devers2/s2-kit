@@ -361,6 +361,29 @@ public class S2ServletUtil {
     }
 
     /**
+     * 응답 헤더에 RFC 6266 및 RFC 5987 규격의 Content-Disposition 을 설정한다.
+     *
+     * @param response HttpServletResponse 객체
+     * @param filename 다운로드 파일명
+     */
+    public static void setContentDisposition(HttpServletResponse response, String filename) {
+        setContentDisposition(response, "attachment", filename);
+    }
+
+    /**
+     * 응답 헤더에 RFC 6266 및 RFC 5987 규격의 Content-Disposition 을 설정한다.
+     *
+     * @param response HttpServletResponse 객체
+     * @param type     디스플레이 유형 (예: "attachment", "inline")
+     * @param filename 다운로드 파일명
+     */
+    public static void setContentDisposition(HttpServletResponse response, String type, String filename) {
+        if (response != null && filename != null) {
+            response.setHeader("Content-Disposition", S2FileUtil.formatContentDisposition(type, filename));
+        }
+    }
+
+    /**
      * AJAX 요청인지 확인한다.
      *
      * @param request HttpServletRequest 객체
