@@ -34,6 +34,10 @@ updates:
       - dependency-name: "io.github.devers2:*"
         update-types: ["version-update:semver-major"]
 
+      # Apache PDFBox 3.x 계열 유지 (PDFBox 4 메이저 업그레이드 차단)
+      - dependency-name: "org.apache.pdfbox:*"
+        update-types: ["version-update:semver-major"]
+
       # Gradle Wrapper 메이저 버전업 차단 (빌드 스크립트 호환성 보호)
       - dependency-name: "gradle"
         update-types: ["version-update:semver-major"]
