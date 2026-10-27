@@ -522,4 +522,40 @@ class S2PdfMergeTest {
         }
         assertThrows(IOException.class, () -> S2PdfUtil.addPageNumbers(dir.resolve("missing.pdf"), 1, 10, null));
     }
+
+    @Test
+    void testMergeWithCustomPageNumberAndStampOptions() throws IOException {
+        var sources = List.of(PdfSource.ofText("Page 1 Cover"), PdfSource.ofText("Page 2 Content"));
+
+        // 1. Merge with custom PageNumber in TOP_RIGHT position
+        var pageNumOpt = MergeOptions.create()
+                .pageNumber(S2PdfUtil.PageNumber.of("[%d / %d]")
+                        .topRight(20, 20)
+                        .fontSize(12));
+
+        try (var doc = load(S2PdfUtil.merge(sources, pageNumOpt))) {
+            assertEquals(2, doc.getNumberOfPages());
+            var p1 = pageText(doc, 1);
+            var p2 = pageText(doc, 2);
+            assertTrue(p1.contains("[1 / 2]"));
+            assertTrue(p2.contains("[2 / 2]"));
+        }
+
+        // 2. Merge with comprehensive StampOptions (Text + QR + PageNumber)
+        var stampOpt = S2PdfUtil.StampOptions.builder()
+                .addText(S2PdfUtil.Text.of("HEADER TITLE").topCenter(0, 15))
+                .addQr(S2PdfUtil.QrStamp.ofUrl("https://verify.example.com").bottomRight(15, 15).size(50))
+                .pageNumber(S2PdfUtil.PageNumber.of("%d of %d").bottomCenter(0, 15))
+                .build();
+
+        var mergeOptions = MergeOptions.create().stampOptions(stampOpt);
+        try (var doc = load(S2PdfUtil.merge(sources, mergeOptions))) {
+            assertEquals(2, doc.getNumberOfPages());
+            for (int i = 1; i <= 2; i++) {
+                var content = pageText(doc, i);
+                assertTrue(content.contains("HEADER TITLE"));
+                assertTrue(content.contains(i + " of 2"));
+            }
+        }
+    }
 }

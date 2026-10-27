@@ -143,7 +143,8 @@ S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.tt
 // 2. Multi-Format PDF Merging
 var options = MergeOptions.create()
         .bookmarks(true)          // Generate document outline bookmarks
-        .pageNumbers(true)        // Stamp centered bottom page numbers ("1 / N")
+        .pageNumber(S2PdfUtil.PageNumber.of("[%d / %d]").topRight(20, 20)) // 9-position custom page numbers (or .pageNumbers(true))
+        // .stampOptions(stampOptions) // Direct composite stamping (text, images, QR, watermark) during merge
         .title("Consolidated Report")
         .imageDpi(200)            // Resize embedded photos for file size optimization
         .cache(true);             // Reuse intermediate converted cache

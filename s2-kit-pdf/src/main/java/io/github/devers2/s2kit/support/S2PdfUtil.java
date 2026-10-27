@@ -1723,6 +1723,10 @@ public class S2PdfUtil {
                 watermarkSize = size;
             } catch (Exception e) {
                 logger.error("워터마크 이미지 변환 실패: ", e);
+                if (e instanceof IOException ioe) {
+                    throw ioe;
+                }
+                throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
             }
         }
 
@@ -1798,7 +1802,19 @@ public class S2PdfUtil {
                         }
                         var shown = new PDRectangle(shownWidth, shownHeight);
                         var origin = watermark.origin(shown, watermarkSize[0], watermarkSize[1]);
-                        contentStream.drawImage(watermarkImage, origin[0], origin[1], watermarkSize[0], watermarkSize[1]);
+                        float drawW = watermarkSize[0];
+                        float drawH = watermarkSize[1];
+                        float rot = watermark.getRotation();
+                        if (rot != 0f) {
+                            float cx = origin[0] + drawW / 2.0f;
+                            float cy = origin[1] + drawH / 2.0f;
+                            contentStream.transform(Matrix.getTranslateInstance(cx, cy));
+                            contentStream.transform(Matrix.getRotateInstance(Math.toRadians(rot), 0, 0));
+                            contentStream.transform(Matrix.getTranslateInstance(-drawW / 2.0f, -drawH / 2.0f));
+                            contentStream.drawImage(watermarkImage, 0, 0, drawW, drawH);
+                        } else {
+                            contentStream.drawImage(watermarkImage, origin[0], origin[1], drawW, drawH);
+                        }
                     } finally {
                         contentStream.restoreGraphicsState();
                     }
@@ -4094,6 +4110,8 @@ public class S2PdfUtil {
         private String title;
         private String author;
         private Watermark watermark;
+        private StampOptions stampOptions;
+        private PageNumber pageNumber;
         private boolean cache;
         private int imageDpi;
         private int pdfImageDpi;
@@ -4130,6 +4148,8 @@ public class S2PdfUtil {
             copy.title = title;
             copy.author = author;
             copy.watermark = watermark;
+            copy.stampOptions = stampOptions;
+            copy.pageNumber = pageNumber;
             copy.cache = cache;
             copy.imageDpi = imageDpi;
             copy.pdfImageDpi = pdfImageDpi;
@@ -4282,6 +4302,37 @@ public class S2PdfUtil {
             this.pdfImageDpi = pdfImageDpi;
             return this;
         }
+
+        /**
+         * 병합 결과에 적용할 종합 스탬프 옵션(다중 텍스트, 이미지, QR, 페이지 번호 등)을 설정한다.
+         *
+         * @param stampOptions 스탬프 종합 옵션
+         * @return 이 옵션
+         */
+        public MergeOptions stampOptions(StampOptions stampOptions) {
+            this.stampOptions = stampOptions;
+            return this;
+        }
+
+        /**
+         * 병합 결과에 적용할 페이지 번호 스탬프를 설정한다.
+         * <p>상단/하단/중앙 9방향 위치({@link Position}), 오프셋, 개별 글꼴 및 색상 스타일을 자유롭게 지정할 수 있습니다.</p>
+         *
+         * @param pageNumber 페이지 번호 설정 객체
+         * @return 이 옵션
+         */
+        public MergeOptions pageNumber(PageNumber pageNumber) {
+            this.pageNumber = pageNumber;
+            return this;
+        }
+
+        public StampOptions getStampOptions() {
+            return stampOptions;
+        }
+
+        public PageNumber getPageNumber() {
+            return pageNumber;
+        }
     }
 
     /**
@@ -4383,6 +4434,7 @@ public class S2PdfUtil {
         private float offsetX;
         private float offsetY;
         private float opacity = 1f;
+        private float rotation = 0f;
         private PageSelector pageSelector;
 
         private Watermark(byte[] image) {
@@ -4527,6 +4579,17 @@ public class S2PdfUtil {
             return this;
         }
 
+        /**
+         * 워터마크 회전 각도를 설정한다. (도 단위, 시계 반대 방향 회전, 기본값: 0도)
+         *
+         * @param rotation 회전 각도 (도)
+         * @return 이 워터마크
+         */
+        public Watermark rotation(float rotation) {
+            this.rotation = rotation;
+            return this;
+        }
+
         private static float positive(float value, String name) {
             if (!(value > 0f) || Float.isInfinite(value)) {
                 throw new IllegalArgumentException("워터마크 " + name + " 크기는 0 보다 커야 합니다: " + value);
@@ -4596,6 +4659,10 @@ public class S2PdfUtil {
 
         public float getOpacity() {
             return opacity;
+        }
+
+        public float getRotation() {
+            return rotation;
         }
 
         public PageSelector getPageSelector() {
@@ -5787,7 +5854,27 @@ public class S2PdfUtil {
                 // 힙 메모리 OOM 방지: 임시 파일 기반 디스크 스트림 캐시 사용
                 merger.mergeDocuments(IOUtils.createTempFileOnlyStreamCache());
             }
-            if (options.pageNumbers || options.watermark != null) {
+            if (options.stampOptions != null || options.pageNumber != null) {
+                var stampedTemp = createTrackedTempFile("stamped", ".pdf", intermediateTempFiles);
+                try (var doc = Loader.loadPDF(finalMergedTempFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
+                    StampOptions effStampOptions;
+                    if (options.stampOptions != null) {
+                        effStampOptions = options.stampOptions;
+                    } else {
+                        var builder = StampOptions.builder();
+                        if (options.watermark != null) {
+                            builder.watermark(options.watermark);
+                        }
+                        builder.pageNumber(options.pageNumber);
+                        effStampOptions = builder.build();
+                    }
+
+                    try (var stampedStream = stamp(doc, effStampOptions)) {
+                        Files.copy(stampedStream, stampedTemp, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                Files.move(stampedTemp, finalMergedTempFile, StandardCopyOption.REPLACE_EXISTING);
+            } else if (options.pageNumbers || options.watermark != null) {
                 var numbered = createTrackedTempFile("numbered", ".pdf", intermediateTempFiles);
                 try (var doc = Loader.loadPDF(finalMergedTempFile.toFile(), IOUtils.createTempFileOnlyStreamCache())) {
                     // Watermark first, so page numbers stay on top | 워터마크를 먼저 그려 쪽 번호가 위에 오게 함
@@ -6982,7 +7069,12 @@ public class S2PdfUtil {
         var state = new org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState();
         state.setNonStrokingAlphaConstant(watermark.opacity);
         state.setStrokingAlphaConstant(watermark.opacity);
+        int totalPages = document.getNumberOfPages();
+        int pageIdx = 0;
         for (var page : document.getPages()) {
+            if (!watermark.appliesToPage(pageIdx++, totalPages)) {
+                continue;
+            }
             var box = page.getCropBox();
             var rotation = ((page.getRotation() % 360) + 360) % 360;
             var quarter = rotation == 90 || rotation == 270;
@@ -6994,7 +7086,17 @@ public class S2PdfUtil {
                     true, true)) {
                 contentStream.setGraphicsStateParameters(state);
                 contentStream.transform(shownToPage(box, rotation));
-                contentStream.drawImage(image, origin[0], origin[1], size[0], size[1]);
+                float rot = watermark.getRotation();
+                if (rot != 0f) {
+                    float cx = origin[0] + size[0] / 2.0f;
+                    float cy = origin[1] + size[1] / 2.0f;
+                    contentStream.transform(Matrix.getTranslateInstance(cx, cy));
+                    contentStream.transform(Matrix.getRotateInstance(Math.toRadians(rot), 0, 0));
+                    contentStream.transform(Matrix.getTranslateInstance(-size[0] / 2.0f, -size[1] / 2.0f));
+                    contentStream.drawImage(image, 0, 0, size[0], size[1]);
+                } else {
+                    contentStream.drawImage(image, origin[0], origin[1], size[0], size[1]);
+                }
             }
         }
     }

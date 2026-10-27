@@ -144,7 +144,8 @@ S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.tt
 // 2. 다중 포맷 PDF 병합 (HTML, PDF, 이미지, 오피스, 한글, 웹 URL)
 var options = MergeOptions.create()
         .bookmarks(true)          // 문서별 북마크/목차 자동 생성
-        .pageNumbers(true)        // "1 / N" 하단 중앙 페이지 번호 각인
+        .pageNumber(S2PdfUtil.PageNumber.of("[%d / %d]").topRight(20, 20)) // 9방향 위치 지정 페이지 번호 (또는 .pageNumbers(true))
+        // .stampOptions(stampOptions) // 병합 시 다중 스탬프(텍스트/이미지/QR/워터마크) 동시 각인도 가능
         .title("통합 보고서")
         .imageDpi(200)            // 이미지 해상도 자동 리사이즈 (용량 최적화)
         .cache(true);             // 중간 변환 결과 디스크 캐싱 재사용
