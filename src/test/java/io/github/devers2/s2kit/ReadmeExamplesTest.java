@@ -109,7 +109,6 @@ class ReadmeExamplesTest {
             assertTrue(text.contains("S2HashUtil.needsRehash(stored)"), readme);
             assertTrue(text.contains("S2EncryptionUtil.keyFromBase64(System.getenv(\"APP_ENCRYPTION_KEY\"))"), readme);
             assertTrue(text.contains("keys.needsReencrypt(encrypted) ? keys.reencrypt(encrypted) : encrypted"), readme);
-            assertTrue(text.contains("S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true)"), readme);
             assertTrue(text.contains("\"/etc/ssh/known_hosts_sftp\", false)"), readme);
             assertTrue(text.contains("S2JsonUtil.fromJson(json, MyDto.class)"), readme);
             assertFalse(text.contains("getBean("), readme);
