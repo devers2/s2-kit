@@ -63,4 +63,8 @@ For more details, please refer to the 'LICENSE' file in the root directory.
     - License: MIT License (See 'LICENSE-AUTOLINK-MIT' for details)
     - URL: [https://github.com/robinst/autolink-java](https://github.com/robinst/autolink-java)
 
+15. QR Code Generator Library (io.nayuki.qrcodegen) (Bundled source; used for QR code stamp generation)
+    - License: MIT License (See 'LICENSE-NAYUKI-QR-MIT' for details)
+    - URL: [https://www.nayuki.io/page/qr-code-generator-library](https://www.nayuki.io/page/qr-code-generator-library)
+
 ---

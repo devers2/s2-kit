@@ -159,14 +159,26 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
     pdf.transferTo(response.getOutputStream());
 }
 
-// 3. 동적 워터마크 및 페이지 번호 스탬프
+// 3. 다중 스탬프 (텍스트, 전자직인 이미지, 진위확인 QR, 페이지 번호, 유연한 페이지 지정)
 var stampOptions = StampOptions.builder()
+        // 머리글 (첫 페이지 표지를 제외하고 2페이지부터 적용)
+        .addText(S2PdfUtil.Text.of("CONFIDENTIAL REPORT")
+                .position(S2PdfUtil.Position.TOP_CENTER)
+                .pages(S2PdfUtil.PageSelector.exceptFirst()))
+        // 회사 직인/인증 마크 (첫 페이지만 우측 상단에 배치)
+        .addImage(S2PdfUtil.ImageStamp.of(Path.of("seal.png"))
+                .topRight(25, 25)
+                .size(60, 60)
+                .opacity(0.85f)
+                .pages(S2PdfUtil.PageSelector.first()))
+        // 진위확인 QR 코드 (마지막 페이지만 우측 하단에 배치)
+        .addQr(S2PdfUtil.QrStamp.ofUrl("https://verify.example.com/doc/12345")
+                .bottomRight(20, 20)
+                .size(75f)
+                .pages(S2PdfUtil.PageSelector.last()))
+        // 페이지 번호 (하단 중앙)
         .pageNumber(S2PdfUtil.PageNumber.of("%d / %d")
                 .position(S2PdfUtil.Position.BOTTOM_CENTER))
-        .addText(S2PdfUtil.Text.of(pageNo -> "연구노트 - 페이지 " + pageNo)
-                .position(S2PdfUtil.Position.TOP_CENTER))
-        .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png"))
-                .width(200).opacity(0.2f))
         .build();
 
 try (InputStream stamped = S2PdfUtil.stamp(pdfStream, stampOptions)) {

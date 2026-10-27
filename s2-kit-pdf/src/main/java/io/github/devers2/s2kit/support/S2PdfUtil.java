@@ -82,6 +82,7 @@ import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.util.Matrix;
+import io.nayuki.qrcodegen.QrCode;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.DataNode;
 import org.jsoup.nodes.Document;
@@ -1725,10 +1726,48 @@ public class S2PdfUtil {
             }
         }
 
-        // 2. 폰트 캐시 (File -> PDFont 매핑 재사용)
+        // 2. 이미지 스탬프 사전 준비 (XObject 재사용 캐시)
+        Map<ImageStamp, PDImageXObject> imageCache = new HashMap<>();
+        Map<ImageStamp, float[]> imageSizeCache = new HashMap<>();
+        if (options.getImages() != null) {
+            for (var imgStamp : options.getImages()) {
+                if (imgStamp.getImageBytes() != null && imgStamp.getImageBytes().length > 0) {
+                    try {
+                        var bytes = imgStamp.getImageBytes();
+                        PDImageXObject xobj;
+                        if (isJpeg(bytes)) {
+                            checkImageSize(bytes);
+                            xobj = JPEGFactory.createFromByteArray(document, bytes);
+                        } else {
+                            xobj = LosslessFactory.createFromImage(document, decodeImage(bytes));
+                        }
+                        imageCache.put(imgStamp, xobj);
+                        imageSizeCache.put(imgStamp, imgStamp.drawSize(xobj.getWidth(), xobj.getHeight()));
+                    } catch (Exception e) {
+                        logger.error("이미지 스탬프 변환 실패: ", e);
+                    }
+                }
+            }
+        }
+
+        // 3. QR 코드 스탬프 사전 준비 (XObject 재사용 캐시)
+        Map<QrStamp, PDImageXObject> qrCache = new HashMap<>();
+        if (options.getQrCodes() != null) {
+            for (var qrStamp : options.getQrCodes()) {
+                try {
+                    var bytes = qrStamp.generateImageBytes();
+                    var xobj = LosslessFactory.createFromImage(document, decodeImage(bytes));
+                    qrCache.put(qrStamp, xobj);
+                } catch (Exception e) {
+                    logger.error("QR 스탬프 생성 실패: ", e);
+                }
+            }
+        }
+
+        // 4. 폰트 캐시 (File -> PDFont 매핑 재사용)
         Map<File, PDFont> fontCache = new HashMap<>();
 
-        // 3. 페이지 순회 및 스탬핑
+        // 5. 페이지 순회 및 스탬핑
         int pageNum = 0;
         for (int i = 0; i < totalPages; i++) {
             if (i < startIdx) {
@@ -1747,7 +1786,7 @@ public class S2PdfUtil {
                     document, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
 
                 // A. 이미지 워터마크 렌더링 (배경)
-                if (watermark != null && watermarkImage != null && watermarkSize != null) {
+                if (watermark != null && watermarkImage != null && watermarkSize != null && watermark.appliesToPage(i, totalPages)) {
                     contentStream.saveGraphicsState();
                     try {
                         contentStream.transform(shownToPage(box, rotation));
@@ -1765,18 +1804,49 @@ public class S2PdfUtil {
                     }
                 }
 
-                // B. 텍스트 스탬프 목록 렌더링
-                if (options.getTexts() != null) {
-                    for (var textOpt : options.getTexts()) {
-                        renderTextElement(document, contentStream, textOpt, textOpt.resolveText(pageNum, count),
-                                textOpt.getRotation(), textOpt.isRepeat(), textOpt.getRepeatGapX(), textOpt.getRepeatGapY(),
-                                shownWidth, shownHeight, box, rotation, fontCache);
+                // B. 이미지 스탬프 목록 렌더링
+                if (options.getImages() != null) {
+                    for (var imgStamp : options.getImages()) {
+                        if (imgStamp.appliesToPage(i, totalPages)) {
+                            var xobj = imageCache.get(imgStamp);
+                            var size = imageSizeCache.get(imgStamp);
+                            if (xobj != null && size != null) {
+                                renderImageElement(contentStream, imgStamp.getPosition(), imgStamp.getOffsetX(), imgStamp.getOffsetY(),
+                                        imgStamp.getOpacity(), imgStamp.getRotation(), xobj, size[0], size[1],
+                                        shownWidth, shownHeight, box, rotation);
+                            }
+                        }
                     }
                 }
 
-                // C. 페이지 번호 렌더링
+                // C. QR 코드 스탬프 목록 렌더링
+                if (options.getQrCodes() != null) {
+                    for (var qrStamp : options.getQrCodes()) {
+                        if (qrStamp.appliesToPage(i, totalPages)) {
+                            var xobj = qrCache.get(qrStamp);
+                            if (xobj != null) {
+                                renderImageElement(contentStream, qrStamp.getPosition(), qrStamp.getOffsetX(), qrStamp.getOffsetY(),
+                                        qrStamp.getOpacity(), qrStamp.getRotation(), xobj, qrStamp.getDisplayWidth(), qrStamp.getDisplayHeight(),
+                                        shownWidth, shownHeight, box, rotation);
+                            }
+                        }
+                    }
+                }
+
+                // D. 텍스트 스탬프 목록 렌더링
+                if (options.getTexts() != null) {
+                    for (var textOpt : options.getTexts()) {
+                        if (textOpt.appliesToPage(i, totalPages)) {
+                            renderTextElement(document, contentStream, textOpt, textOpt.resolveText(pageNum, count),
+                                    textOpt.getRotation(), textOpt.isRepeat(), textOpt.getRepeatGapX(), textOpt.getRepeatGapY(),
+                                    shownWidth, shownHeight, box, rotation, fontCache);
+                        }
+                    }
+                }
+
+                // E. 페이지 번호 렌더링
                 var pageNumber = options.getPageNumber();
-                if (pageNumber != null) {
+                if (pageNumber != null && pageNumber.appliesToPage(i, totalPages)) {
                     if (pageNumber.hasDistinctStyles() && pageNumber.getCustomFormatProvider() == null) {
                         renderDistinctPageNumber(document, contentStream, pageNumber, pageNum, count, shownWidth, shownHeight, box, rotation, fontCache);
                     } else {
@@ -1790,6 +1860,43 @@ public class S2PdfUtil {
         }
 
         return saveToResourceInputStream(document);
+    }
+
+    /**
+     * 이미지 객체({@link PDImageXObject})를 지정된 좌표, 크기, 회전 각도, 투명도에 맞춰 페이지에 렌더링한다.
+     */
+    private static void renderImageElement(PDPageContentStream contentStream,
+                                           Position position, float offsetX, float offsetY,
+                                           float opacity, float rotationDegrees,
+                                           PDImageXObject image, float drawW, float drawH,
+                                           float shownWidth, float shownHeight,
+                                           PDRectangle box, int pageRotation) throws IOException {
+        contentStream.saveGraphicsState();
+        try {
+            contentStream.transform(shownToPage(box, pageRotation));
+            if (opacity < 1.0f) {
+                var gs = new PDExtendedGraphicsState();
+                gs.setNonStrokingAlphaConstant(opacity);
+                gs.setStrokingAlphaConstant(opacity);
+                contentStream.setGraphicsStateParameters(gs);
+            }
+            var origin = calculateOrigin(position, shownWidth, shownHeight, drawW, drawH, offsetX, offsetY);
+            float x = origin[0];
+            float y = origin[1];
+
+            if (rotationDegrees != 0f) {
+                float cx = x + drawW / 2.0f;
+                float cy = y + drawH / 2.0f;
+                contentStream.transform(Matrix.getTranslateInstance(cx, cy));
+                contentStream.transform(Matrix.getRotateInstance(Math.toRadians(rotationDegrees), 0, 0));
+                contentStream.transform(Matrix.getTranslateInstance(-drawW / 2.0f, -drawH / 2.0f));
+                contentStream.drawImage(image, 0, 0, drawW, drawH);
+            } else {
+                contentStream.drawImage(image, x, y, drawW, drawH);
+            }
+        } finally {
+            contentStream.restoreGraphicsState();
+        }
     }
 
     private static InputStream saveToResourceInputStream(PDDocument document) throws IOException {
@@ -2128,8 +2235,138 @@ public class S2PdfUtil {
     }
 
     // ========================================================================
-    // 🏷️ StampOptions & Sub-Classes (Position, Text, PageNumber)
+    // 🏷️ StampOptions & Sub-Classes (Position, Text, PageNumber, ImageStamp, QrStamp)
     // ========================================================================
+
+    // ========================================================================
+    // 📌 페이지 선택기 (PageSelector) - 스탬프 적용 대상 페이지 지정
+    // ========================================================================
+
+    /**
+     * 스탬프를 적용할 페이지를 유연하게 지정하는 선택기.
+     *
+     * <p>정적 팩토리 메서드로 생성하며, {@code includes(int, int)} 메서드로 특정 페이지가 대상인지 확인한다.</p>
+     *
+     * <pre>{@code
+     * PageSelector.all()            // 전체 페이지
+     * PageSelector.first()          // 첫 페이지만
+     * PageSelector.last()           // 마지막 페이지만
+     * PageSelector.range(2, 5)      // 2~5 페이지 (1-based, 양 끝 포함)
+     * PageSelector.only(1, 3, 5)    // 특정 페이지만
+     * PageSelector.exceptFirst()    // 첫 페이지 제외
+     * PageSelector.exceptFirst(2)   // 앞 2페이지 제외
+     * PageSelector.exceptLast()     // 마지막 페이지 제외
+     * PageSelector.exceptLast(2)    // 뒤 2페이지 제외
+     * }</pre>
+     */
+    public static final class PageSelector {
+
+        /** 전체 페이지에 적용하는 싱글턴 인스턴스 */
+        private static final PageSelector ALL = new PageSelector(Type.ALL, 0, 0, null);
+
+        private enum Type { ALL, FIRST, LAST, RANGE, ONLY, EXCEPT_FIRST, EXCEPT_LAST }
+
+        private final Type type;
+        private final int from; // 1-based (inclusive)
+        private final int to;   // 1-based (inclusive)
+        private final int[] pages; // for ONLY type
+
+        private PageSelector(Type type, int from, int to, int[] pages) {
+            this.type = type;
+            this.from = from;
+            this.to = to;
+            this.pages = pages;
+        }
+
+        /** 전체 페이지에 적용 */
+        public static PageSelector all() { return ALL; }
+
+        /** 첫 페이지에만 적용 */
+        public static PageSelector first() { return new PageSelector(Type.FIRST, 1, 1, null); }
+
+        /** 마지막 페이지에만 적용 */
+        public static PageSelector last() { return new PageSelector(Type.LAST, 0, 0, null); }
+
+        /**
+         * 지정 범위 페이지에 적용 (1-based, 양 끝 포함).
+         *
+         * @param from 시작 페이지 (1-based, 포함)
+         * @param to   끝 페이지 (1-based, 포함)
+         * @return PageSelector
+         */
+        public static PageSelector range(int from, int to) {
+            if (from < 1) throw new IllegalArgumentException("시작 페이지는 1 이상이어야 합니다: " + from);
+            if (to < from) throw new IllegalArgumentException("끝 페이지(" + to + ")가 시작 페이지(" + from + ")보다 작습니다.");
+            return new PageSelector(Type.RANGE, from, to, null);
+        }
+
+        /**
+         * 지정된 페이지에만 적용 (1-based).
+         *
+         * @param pages 적용할 페이지 번호 목록 (1-based)
+         * @return PageSelector
+         */
+        public static PageSelector only(int... pages) {
+            if (pages == null || pages.length == 0) throw new IllegalArgumentException("적용할 페이지를 하나 이상 지정해야 합니다.");
+            for (int p : pages) {
+                if (p < 1) throw new IllegalArgumentException("페이지 번호는 1 이상이어야 합니다: " + p);
+            }
+            return new PageSelector(Type.ONLY, 0, 0, pages.clone());
+        }
+
+        /** 첫 페이지를 제외한 나머지 페이지에 적용 */
+        public static PageSelector exceptFirst() { return exceptFirst(1); }
+
+        /**
+         * 앞쪽 n 페이지를 제외한 나머지 페이지에 적용.
+         *
+         * @param count 제외할 앞쪽 페이지 수
+         * @return PageSelector
+         */
+        public static PageSelector exceptFirst(int count) {
+            if (count < 1) throw new IllegalArgumentException("제외할 페이지 수는 1 이상이어야 합니다: " + count);
+            return new PageSelector(Type.EXCEPT_FIRST, count, 0, null);
+        }
+
+        /** 마지막 페이지를 제외한 나머지 페이지에 적용 */
+        public static PageSelector exceptLast() { return exceptLast(1); }
+
+        /**
+         * 뒤쪽 n 페이지를 제외한 나머지 페이지에 적용.
+         *
+         * @param count 제외할 뒤쪽 페이지 수
+         * @return PageSelector
+         */
+        public static PageSelector exceptLast(int count) {
+            if (count < 1) throw new IllegalArgumentException("제외할 페이지 수는 1 이상이어야 합니다: " + count);
+            return new PageSelector(Type.EXCEPT_LAST, 0, count, null);
+        }
+
+        /**
+         * 지정된 페이지가 이 선택기에 포함되는지 확인한다.
+         *
+         * @param pageIndex  페이지 인덱스 (0-based)
+         * @param totalPages 전체 페이지 수
+         * @return 포함 여부
+         */
+        public boolean includes(int pageIndex, int totalPages) {
+            int pageNo = pageIndex + 1; // 1-based
+            return switch (type) {
+                case ALL -> true;
+                case FIRST -> pageNo == 1;
+                case LAST -> pageNo == totalPages;
+                case RANGE -> pageNo >= from && pageNo <= Math.min(to, totalPages);
+                case ONLY -> {
+                    for (int p : pages) {
+                        if (p == pageNo) yield true;
+                    }
+                    yield false;
+                }
+                case EXCEPT_FIRST -> pageNo > from;
+                case EXCEPT_LAST -> pageNo <= totalPages - to;
+            };
+        }
+    }
 
     /**
      * 스탬프 요소(워터마크, 텍스트, 페이지 번호)의 8방향 기준 위치 및 정중앙 Enum.
@@ -2172,29 +2409,28 @@ public class S2PdfUtil {
         BOTTOM_RIGHT
     }
 
+    // ========================================================================
+    // 📌 모든 스탬프 요소의 공통 기반 (BaseStampElement)
+    // ========================================================================
+
     /**
-     * PDF 텍스트 기반 스탬프 요소(텍스트 스탬프, 페이지 번호 등)의 공통 기반 추상 클래스.
+     * 모든 스탬프 요소(텍스트, 이미지, QR 등)의 공통 기반 추상 클래스.
      *
-     * <p>위치(Position), 오프셋(Offset), 글자 크기, 글자 색상, 폰트 파일/객체, 불투명도, 선 두께/볼드 등의
+     * <p>위치(Position), 오프셋(Offset), 불투명도(Opacity), 회전(Rotation), 페이지 선택기(PageSelector) 등의
      * 공통 속성 및 플루언트(Fluent) 빌더 메서드를 제공합니다.</p>
      *
      * @param <T> 구체 하위 클래스 타입 (플루언트 체이닝 반환용)
      */
-    public abstract static class BaseTextElement<T extends BaseTextElement<T>> {
+    public abstract static class BaseStampElement<T extends BaseStampElement<T>> {
         protected Position position;
         protected float offsetX = 0f;
         protected float offsetY = 20f;
         protected boolean customOffset = false;
-        protected float fontSize = 10f;
-        protected Color color = Color.BLACK;
-        protected File fontFile;
-        protected PDFont font;
         protected float opacity = 1.0f;
-        protected float strokeWidth = 0f;
-        protected boolean bold = false;
+        protected PageSelector pageSelector;
 
-        protected BaseTextElement(Position defaultPosition) {
-            this.position = defaultPosition != null ? defaultPosition : Position.BOTTOM_CENTER;
+        protected BaseStampElement(Position defaultPosition) {
+            this.position = defaultPosition != null ? defaultPosition : Position.CENTER;
         }
 
         @SuppressWarnings("unchecked")
@@ -2209,7 +2445,7 @@ public class S2PdfUtil {
          * @return this
          */
         public T position(Position position) {
-            this.position = position != null ? position : Position.BOTTOM_CENTER;
+            this.position = position != null ? position : Position.CENTER;
             if (!this.customOffset) {
                 if (this.position == Position.CENTER || this.position == Position.CENTER_LEFT || this.position == Position.LEFT
                         || this.position == Position.CENTER_RIGHT || this.position == Position.RIGHT) {
@@ -2250,14 +2486,8 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 좌측 하단(BOTTOM_LEFT, 기본 여백: 좌 20pt, 하 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T bottomLeft() {
-            return bottomLeft(20f, 20f);
-        }
+        /** 좌측 하단(BOTTOM_LEFT, 기본 여백: 좌 20pt, 하 20pt)에 배치한다. */
+        public T bottomLeft() { return bottomLeft(20f, 20f); }
 
         /**
          * 하단 중앙(BOTTOM_CENTER)을 기준으로 상대 오프셋을 지정한다.
@@ -2274,14 +2504,8 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 하단 중앙(BOTTOM_CENTER, 기본 여백: 하 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T bottomCenter() {
-            return bottomCenter(0f, 20f);
-        }
+        /** 하단 중앙(BOTTOM_CENTER, 기본 여백: 하 20pt)에 배치한다. */
+        public T bottomCenter() { return bottomCenter(0f, 20f); }
 
         /**
          * 우측 하단(BOTTOM_RIGHT)을 기준으로 상대 오프셋을 지정한다.
@@ -2298,14 +2522,8 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 우측 하단(BOTTOM_RIGHT, 기본 여백: 우 20pt, 하 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T bottomRight() {
-            return bottomRight(20f, 20f);
-        }
+        /** 우측 하단(BOTTOM_RIGHT, 기본 여백: 우 20pt, 하 20pt)에 배치한다. */
+        public T bottomRight() { return bottomRight(20f, 20f); }
 
         /**
          * 좌측 상단(TOP_LEFT)을 기준으로 상대 오프셋을 지정한다.
@@ -2322,14 +2540,8 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 좌측 상단(TOP_LEFT, 기본 여백: 좌 20pt, 상 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T topLeft() {
-            return topLeft(20f, 20f);
-        }
+        /** 좌측 상단(TOP_LEFT, 기본 여백: 좌 20pt, 상 20pt)에 배치한다. */
+        public T topLeft() { return topLeft(20f, 20f); }
 
         /**
          * 상단 중앙(TOP_CENTER)을 기준으로 상대 오프셋을 지정한다.
@@ -2346,14 +2558,8 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 상단 중앙(TOP_CENTER, 기본 여백: 상 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T topCenter() {
-            return topCenter(0f, 20f);
-        }
+        /** 상단 중앙(TOP_CENTER, 기본 여백: 상 20pt)에 배치한다. */
+        public T topCenter() { return topCenter(0f, 20f); }
 
         /**
          * 우측 상단(TOP_RIGHT)을 기준으로 상대 오프셋을 지정한다.
@@ -2370,26 +2576,76 @@ public class S2PdfUtil {
             return self();
         }
 
-        /**
-         * 우측 상단(TOP_RIGHT, 기본 여백: 우 20pt, 상 20pt)에 배치한다.
-         *
-         * @return this
-         */
-        public T topRight() {
-            return topRight(20f, 20f);
-        }
+        /** 우측 상단(TOP_RIGHT, 기본 여백: 우 20pt, 상 20pt)에 배치한다. */
+        public T topRight() { return topRight(20f, 20f); }
 
-        /**
-         * 페이지 정중앙(CENTER)에 배치한다.
-         *
-         * @return this
-         */
+        /** 페이지 정중앙(CENTER)에 배치한다. */
         public T center() {
             this.position = Position.CENTER;
             this.offsetX = 0f;
             this.offsetY = 0f;
             this.customOffset = true;
             return self();
+        }
+
+        /**
+         * 불투명도를 설정한다. (0.0f 완전 투명 ~ 1.0f 완전 불투명, 기본값: 1.0f)
+         *
+         * @param opacity 불투명도
+         * @return this
+         */
+        public T opacity(float opacity) {
+            this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
+            return self();
+        }
+
+        /**
+         * 스탬프를 적용할 페이지를 지정한다. (null이면 전체 페이지 적용)
+         *
+         * @param pageSelector 페이지 선택기
+         * @return this
+         */
+        public T pages(PageSelector pageSelector) {
+            this.pageSelector = pageSelector;
+            return self();
+        }
+
+        public Position getPosition() { return position; }
+        public float getOffsetX() { return offsetX; }
+        public float getOffsetY() { return offsetY; }
+        public float getOpacity() { return opacity; }
+        public PageSelector getPageSelector() { return pageSelector; }
+
+        /**
+         * 이 요소가 지정된 페이지에 적용되어야 하는지 확인한다.
+         *
+         * @param pageIndex  페이지 인덱스 (0-based)
+         * @param totalPages 전체 페이지 수
+         * @return 적용 여부
+         */
+        public boolean appliesToPage(int pageIndex, int totalPages) {
+            return pageSelector == null || pageSelector.includes(pageIndex, totalPages);
+        }
+    }
+
+    /**
+     * PDF 텍스트 기반 스탬프 요소(텍스트 스탬프, 페이지 번호 등)의 공통 기반 추상 클래스.
+     *
+     * <p>{@link BaseStampElement}의 위치/불투명도/페이지 선택 기능을 상속받고,
+     * 글자 크기, 글자 색상, 폰트 파일/객체, 선 두께/볼드 등의 텍스트 전용 속성을 추가합니다.</p>
+     *
+     * @param <T> 구체 하위 클래스 타입 (플루언트 체이닝 반환용)
+     */
+    public abstract static class BaseTextElement<T extends BaseTextElement<T>> extends BaseStampElement<T> {
+        protected float fontSize = 10f;
+        protected Color color = Color.BLACK;
+        protected File fontFile;
+        protected PDFont font;
+        protected float strokeWidth = 0f;
+        protected boolean bold = false;
+
+        protected BaseTextElement(Position defaultPosition) {
+            super(defaultPosition != null ? defaultPosition : Position.BOTTOM_CENTER);
         }
 
         /**
@@ -2461,17 +2717,6 @@ public class S2PdfUtil {
         }
 
         /**
-         * 불투명도를 설정한다. (0.0f 완전 투명 ~ 1.0f 완전 불투명, 기본값: 1.0f)
-         *
-         * @param opacity 불투명도
-         * @return this
-         */
-        public T opacity(float opacity) {
-            this.opacity = Math.max(0.0f, Math.min(1.0f, opacity));
-            return self();
-        }
-
-        /**
          * 선 두께(굵기)를 설정한다. (0보다 크면 외곽선을 채움과 동시에 선을 그어 볼드/두께 효과를 냄)
          *
          * @param thickness 텍스트 두께/선 굵기 (pt 단위, 예: 0.3f, 0.5f 등)
@@ -2513,14 +2758,10 @@ public class S2PdfUtil {
             return bold(true);
         }
 
-        public Position getPosition() { return position; }
-        public float getOffsetX() { return offsetX; }
-        public float getOffsetY() { return offsetY; }
         public float getFontSize() { return fontSize; }
         public Color getColor() { return color; }
         public File getFontFile() { return fontFile; }
         public PDFont getFont() { return font; }
-        public float getOpacity() { return opacity; }
         public float getThickness() { return strokeWidth; }
         public float getStrokeWidth() { return strokeWidth; }
         public boolean isBold() { return bold; }
@@ -3368,7 +3609,346 @@ public class S2PdfUtil {
     }
 
     /**
-     * PDF 스탬프 종합 옵션 (페이지 번호, 텍스트 목록, 이미지 워터마크, 적용 대상 페이지 수 등).
+     * PDF 페이지에 표시할 이미지 스탬프 설정 (회사 로고, 전자 직인, 인증 마크, 서명 등).
+     *
+     * <p>9대 기준 위치({@link Position}) 및 상대 오프셋(pt), 불투명도(0.0~1.0), 회전 각도,
+     * 크기(가로/세로 독립 또는 종횡비 유지), 대상 페이지 선택기({@link PageSelector})를 지원합니다.</p>
+     */
+    public static class ImageStamp extends BaseStampElement<ImageStamp> {
+        private final byte[] imageBytes;
+        private Float width;
+        private Float height;
+        private float rotation = 0f;
+
+        protected ImageStamp(byte[] imageBytes) {
+            super(Position.CENTER);
+            if (imageBytes == null || imageBytes.length == 0) {
+                throw new IllegalArgumentException("이미지 데이터가 비어 있습니다.");
+            }
+            this.imageBytes = imageBytes;
+        }
+
+        /**
+         * 이미지 바이트 배열로부터 이미지 스탬프를 생성한다.
+         *
+         * @param imageBytes 이미지 파일 바이트 배열 (PNG, JPG 등)
+         * @return ImageStamp 인스턴스
+         */
+        public static ImageStamp of(byte[] imageBytes) {
+            return new ImageStamp(imageBytes == null ? null : imageBytes.clone());
+        }
+
+        /**
+         * 이미지 파일({@link File})로부터 이미지 스탬프를 생성한다.
+         *
+         * @param file 이미지 파일
+         * @return ImageStamp 인스턴스
+         * @throws IOException 파일 읽기 실패 시
+         */
+        public static ImageStamp of(File file) throws IOException {
+            return of(file.toPath());
+        }
+
+        /**
+         * 이미지 파일 경로({@link Path})로부터 이미지 스탬프를 생성한다.
+         *
+         * @param path 이미지 파일 경로
+         * @return ImageStamp 인스턴스
+         * @throws IOException 파일 읽기 실패 시
+         */
+        public static ImageStamp of(Path path) throws IOException {
+            return new ImageStamp(Files.readAllBytes(path));
+        }
+
+        /**
+         * 이미지 입력 스트림({@link InputStream})으로부터 이미지 스탬프를 생성한다. (스트림은 읽은 후 자동 종료)
+         *
+         * @param inputStream 이미지 입력 스트림
+         * @return ImageStamp 인스턴스
+         * @throws IOException 스트림 읽기 실패 시
+         */
+        public static ImageStamp of(InputStream inputStream) throws IOException {
+            try (inputStream) {
+                return new ImageStamp(S2StreamUtil.streamToByteArray(inputStream, false, DEFAULT_MAX_SOURCE_BYTES));
+            }
+        }
+
+        /**
+         * 메모리 상의 {@link BufferedImage}로부터 이미지 스탬프를 생성한다.
+         *
+         * @param image BufferedImage 객체
+         * @return ImageStamp 인스턴스
+         * @throws IOException 이미지 인코딩 실패 시
+         */
+        public static ImageStamp of(BufferedImage image) throws IOException {
+            try (var baos = new ByteArrayOutputStream()) {
+                ImageIO.write(image, "PNG", baos);
+                return new ImageStamp(baos.toByteArray());
+            }
+        }
+
+        /**
+         * 이미지의 가로·세로 크기(pt)를 모두 지정한다. (원본 종횡비가 변경될 수 있음)
+         *
+         * @param width  가로 크기 (pt)
+         * @param height 세로 크기 (pt)
+         * @return this
+         */
+        public ImageStamp size(float width, float height) {
+            if (width <= 0f || height <= 0f) {
+                throw new IllegalArgumentException("이미지 크기는 0보다 커야 합니다.");
+            }
+            this.width = width;
+            this.height = height;
+            return this;
+        }
+
+        /**
+         * 이미지의 가로 크기(pt)만 지정한다. 세로 크기는 원본 비율에 맞춰 자동 조정된다.
+         *
+         * @param width 가로 크기 (pt)
+         * @return this
+         */
+        public ImageStamp width(float width) {
+            if (width <= 0f) {
+                throw new IllegalArgumentException("이미지 너비는 0보다 커야 합니다.");
+            }
+            this.width = width;
+            this.height = null;
+            return this;
+        }
+
+        /**
+         * 이미지의 세로 크기(pt)만 지정한다. 가로 크기는 원본 비율에 맞춰 자동 조정된다.
+         *
+         * @param height 세로 크기 (pt)
+         * @return this
+         */
+        public ImageStamp height(float height) {
+            if (height <= 0f) {
+                throw new IllegalArgumentException("이미지 높이는 0보다 커야 합니다.");
+            }
+            this.height = height;
+            this.width = null;
+            return this;
+        }
+
+        /**
+         * 이미지 회전 각도를 설정한다. (도 단위, 시계 반대 방향 회전, 기본값: 0도)
+         *
+         * @param rotation 회전 각도 (도)
+         * @return this
+         */
+        public ImageStamp rotation(float rotation) {
+            this.rotation = rotation;
+            return this;
+        }
+
+        /**
+         * 원본 이미지 크기 대비 실제로 그려질 너비와 높이를 계산한다.
+         *
+         * @param naturalWidth  원본 가로 폭
+         * @param naturalHeight 원본 세로 높이
+         * @return float[2] {width, height}
+         */
+        public float[] drawSize(float naturalWidth, float naturalHeight) {
+            if (width != null && height != null) {
+                return new float[] { width, height };
+            }
+            if (width != null) {
+                return new float[] { width, width * naturalHeight / naturalWidth };
+            }
+            if (height != null) {
+                return new float[] { height * naturalWidth / naturalHeight, height };
+            }
+            return new float[] { naturalWidth, naturalHeight };
+        }
+
+        public byte[] getImageBytes() {
+            return imageBytes == null ? null : imageBytes.clone();
+        }
+
+        public Float getWidth() { return width; }
+        public Float getHeight() { return height; }
+        public float getRotation() { return rotation; }
+    }
+
+    /**
+     * PDF 페이지에 표시할 QR 코드 스탬프 설정 (진위확인 URL, 문서 고유 식별자, 인증 링크 등).
+     *
+     * <p>Nayuki QR Code Generator를 내장하여 순수 Java(Zero Dependency, MIT License)로 고품질 QR 이미지를 동적 생성하며,
+     * 위치, 크기(pt 단위), 오프셋, 불투명도, 전경/배경 색상, 오류 복원율, 페이지 선택기({@link PageSelector})를 지원합니다.</p>
+     */
+    public static class QrStamp extends BaseStampElement<QrStamp> {
+        private final String content;
+        private float size = 100f; // PDF 상 표시 크기 (pt)
+        private Float height;      // 지정되지 않으면 size와 동일 (정사각형)
+        private int resolution = 300; // QR 비트맵 해상도 픽셀
+        private QrCode.Ecc ecc = QrCode.Ecc.MEDIUM;
+        private Color darkColor = Color.BLACK;
+        private Color lightColor = Color.WHITE;
+        private float rotation = 0f;
+
+        protected QrStamp(String content) {
+            super(Position.BOTTOM_RIGHT);
+            if (content == null || content.trim().isEmpty()) {
+                throw new IllegalArgumentException("QR 코드 내용(content)은 비어 있을 수 없습니다.");
+            }
+            this.content = content;
+        }
+
+        /**
+         * 일반 문자열 또는 식별값으로 QR 코드 스탬프를 생성한다.
+         *
+         * @param content QR 코드에 담을 내용
+         * @return QrStamp 인스턴스
+         */
+        public static QrStamp of(String content) {
+            return new QrStamp(content);
+        }
+
+        /**
+         * 진위확인 또는 웹 링크 URL로 QR 코드 스탬프를 생성한다.
+         *
+         * @param url QR 코드에 담을 URL
+         * @return QrStamp 인스턴스
+         */
+        public static QrStamp ofUrl(String url) {
+            return new QrStamp(url);
+        }
+
+        /**
+         * 텍스트 본문으로 QR 코드 스탬프를 생성한다.
+         *
+         * @param text QR 코드에 담을 텍스트
+         * @return QrStamp 인스턴스
+         */
+        public static QrStamp ofText(String text) {
+            return new QrStamp(text);
+        }
+
+        /**
+         * PDF 상에 표시될 QR 코드의 한 변 크기(pt, 정사각형)를 설정한다. (기본값: 100pt)
+         *
+         * @param size 한 변의 크기 (pt)
+         * @return this
+         */
+        public QrStamp size(float size) {
+            if (size <= 0f) throw new IllegalArgumentException("크기는 0보다 커야 합니다.");
+            this.size = size;
+            this.height = size;
+            return this;
+        }
+
+        /**
+         * PDF 상에 표시될 QR 코드의 가로 및 세로 크기(pt)를 설정한다.
+         *
+         * @param width  가로 크기 (pt)
+         * @param height 세로 크기 (pt)
+         * @return this
+         */
+        public QrStamp size(float width, float height) {
+            if (width <= 0f || height <= 0f) throw new IllegalArgumentException("크기는 0보다 커야 합니다.");
+            this.size = width;
+            this.height = height;
+            return this;
+        }
+
+        /**
+         * 생성할 QR 비트맵 이미지의 해상도(픽셀)를 설정한다. (기본값: 300px, 32~4096)
+         *
+         * @param pixelSize 비트맵 해상도 (픽셀)
+         * @return this
+         */
+        public QrStamp resolution(int pixelSize) {
+            if (pixelSize < 32 || pixelSize > 4096) {
+                throw new IllegalArgumentException("해상도는 32~4096 픽셀 범위여야 합니다: " + pixelSize);
+            }
+            this.resolution = pixelSize;
+            return this;
+        }
+
+        /**
+         * QR 코드 오류 복원 수준(Error Correction Level)을 설정한다. (기본값: {@link QrCode.Ecc#MEDIUM})
+         *
+         * @param ecc 오류 복원 레벨 (LOW, MEDIUM, QUARTILE, HIGH)
+         * @return this
+         */
+        public QrStamp errorCorrection(QrCode.Ecc ecc) {
+            if (ecc != null) this.ecc = ecc;
+            return this;
+        }
+
+        /**
+         * QR 코드의 전경색(어두운 모듈)과 배경색(밝은 모듈)을 설정한다. (기본값: 검정 / 흰색)
+         *
+         * @param darkColor  전경 색상
+         * @param lightColor 배경 색상
+         * @return this
+         */
+        public QrStamp colors(Color darkColor, Color lightColor) {
+            if (darkColor != null) this.darkColor = darkColor;
+            if (lightColor != null) this.lightColor = lightColor;
+            return this;
+        }
+
+        /**
+         * QR 코드 회전 각도를 설정한다. (도 단위, 시계 반대 방향 회전, 기본값: 0도)
+         *
+         * @param rotation 회전 각도 (도)
+         * @return this
+         */
+        public QrStamp rotation(float rotation) {
+            this.rotation = rotation;
+            return this;
+        }
+
+        /**
+         * QR 코드 비트맵 이미지를 동적 렌더링하여 PNG 바이트 배열로 생성한다.
+         *
+         * @return PNG 이미지 바이트 배열
+         * @throws IOException 이미지 인코딩 실패 시
+         */
+        public byte[] generateImageBytes() throws IOException {
+            var qr = QrCode.encodeText(content, ecc);
+            int qrModules = qr.size;
+            int border = 4; // QR 표준 Quiet zone
+            int totalModules = qrModules + border * 2;
+            int scale = Math.max(1, resolution / totalModules);
+            int imgSize = totalModules * scale;
+
+            var image = new BufferedImage(imgSize, imgSize, BufferedImage.TYPE_INT_ARGB);
+            int darkRgb = darkColor.getRGB();
+            int lightRgb = lightColor.getRGB();
+
+            for (int y = 0; y < imgSize; y++) {
+                for (int x = 0; x < imgSize; x++) {
+                    int moduleX = (x / scale) - border;
+                    int moduleY = (y / scale) - border;
+                    boolean isDark = moduleX >= 0 && moduleX < qrModules && moduleY >= 0 && moduleY < qrModules && qr.getModule(moduleX, moduleY);
+                    image.setRGB(x, y, isDark ? darkRgb : lightRgb);
+                }
+            }
+
+            try (var baos = new ByteArrayOutputStream()) {
+                ImageIO.write(image, "PNG", baos);
+                return baos.toByteArray();
+            }
+        }
+
+        public String getContent() { return content; }
+        public float getSize() { return size; }
+        public float getDisplayWidth() { return size; }
+        public float getDisplayHeight() { return height != null ? height : size; }
+        public int getResolution() { return resolution; }
+        public QrCode.Ecc getEcc() { return ecc; }
+        public Color getDarkColor() { return darkColor; }
+        public Color getLightColor() { return lightColor; }
+        public float getRotation() { return rotation; }
+    }
+
+    /**
+     * PDF 스탬프 종합 옵션 (페이지 번호, 텍스트 목록, 이미지 목록, QR 목록, 워터마크, 적용 대상 페이지 수 등).
      *
      * <p>빌더({@link #builder()})를 통해 필요한 스탬프 요소만 선택적으로 조합하여 생성할 수 있습니다.</p>
      */
@@ -3376,6 +3956,8 @@ public class S2PdfUtil {
         private Integer numberOfPagesToApply;
         private PageNumber pageNumber;
         private final List<Text> texts = new ArrayList<>();
+        private final List<ImageStamp> images = new ArrayList<>();
+        private final List<QrStamp> qrCodes = new ArrayList<>();
         private Watermark watermark;
 
         public static StampOptions create() {
@@ -3391,6 +3973,8 @@ public class S2PdfUtil {
         public PageNumber getPageNumber() { return pageNumber; }
         public void setPageNumber(PageNumber pageNumber) { this.pageNumber = pageNumber; }
         public List<Text> getTexts() { return texts; }
+        public List<ImageStamp> getImages() { return images; }
+        public List<QrStamp> getQrCodes() { return qrCodes; }
         public Watermark getWatermark() { return watermark; }
         public void setWatermark(Watermark watermark) { this.watermark = watermark; }
 
@@ -3431,6 +4015,32 @@ public class S2PdfUtil {
             public Builder addText(Text text) {
                 if (text != null) {
                     options.texts.add(text);
+                }
+                return this;
+            }
+
+            /**
+             * 이미지 스탬프(인증 마크, 직인, 로고 등)를 추가한다.
+             *
+             * @param image 추가할 이미지 스탬프 설정 객체
+             * @return this
+             */
+            public Builder addImage(ImageStamp image) {
+                if (image != null) {
+                    options.images.add(image);
+                }
+                return this;
+            }
+
+            /**
+             * QR 코드 스탬프(진위확인 URL, 문서 고유 코드 등)를 추가한다.
+             *
+             * @param qr 추가할 QR 코드 스탬프 설정 객체
+             * @return this
+             */
+            public Builder addQr(QrStamp qr) {
+                if (qr != null) {
+                    options.qrCodes.add(qr);
                 }
                 return this;
             }
@@ -3773,6 +4383,7 @@ public class S2PdfUtil {
         private float offsetX;
         private float offsetY;
         private float opacity = 1f;
+        private PageSelector pageSelector;
 
         private Watermark(byte[] image) {
             if (image == null || image.length == 0) {
@@ -3905,6 +4516,17 @@ public class S2PdfUtil {
             return this;
         }
 
+        /**
+         * 워터마크를 적용할 페이지를 지정한다. (null이면 전체 페이지 적용)
+         *
+         * @param pageSelector 페이지 선택기
+         * @return 이 워터마크
+         */
+        public Watermark pages(PageSelector pageSelector) {
+            this.pageSelector = pageSelector;
+            return this;
+        }
+
         private static float positive(float value, String name) {
             if (!(value > 0f) || Float.isInfinite(value)) {
                 throw new IllegalArgumentException("워터마크 " + name + " 크기는 0 보다 커야 합니다: " + value);
@@ -3974,6 +4596,14 @@ public class S2PdfUtil {
 
         public float getOpacity() {
             return opacity;
+        }
+
+        public PageSelector getPageSelector() {
+            return pageSelector;
+        }
+
+        public boolean appliesToPage(int pageIndex, int totalPages) {
+            return pageSelector == null || pageSelector.includes(pageIndex, totalPages);
         }
     }
 

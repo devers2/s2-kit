@@ -20,9 +20,12 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import io.github.devers2.s2kit.support.S2PdfUtil.ImageStamp;
 import io.github.devers2.s2kit.support.S2PdfUtil.PageNumber;
+import io.github.devers2.s2kit.support.S2PdfUtil.PageSelector;
 import io.github.devers2.s2kit.support.S2PdfUtil.PdfSource;
 import io.github.devers2.s2kit.support.S2PdfUtil.Position;
+import io.github.devers2.s2kit.support.S2PdfUtil.QrStamp;
 import io.github.devers2.s2kit.support.S2PdfUtil.StampOptions;
 import io.github.devers2.s2kit.support.S2PdfUtil.Text;
 import io.github.devers2.s2kit.support.S2PdfUtil.Watermark;
@@ -409,5 +412,233 @@ class S2PdfStampTest {
 
         var mergeEx = assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofPdf(encryptedPdf)));
         assertTrue(mergeEx.getMessage().contains("암호화 또는 권한 제한"), mergeEx.getMessage());
+    }
+
+    @Test
+    void testPageSelectorLogic() {
+        // All
+        var all = PageSelector.all();
+        assertTrue(all.includes(0, 5));
+        assertTrue(all.includes(4, 5));
+
+        // First
+        var first = PageSelector.first();
+        assertTrue(first.includes(0, 5));
+        assertFalse(first.includes(1, 5));
+
+        // Last
+        var last = PageSelector.last();
+        assertFalse(last.includes(0, 5));
+        assertTrue(last.includes(4, 5));
+
+        // Range
+        var range = PageSelector.range(2, 4);
+        assertFalse(range.includes(0, 5)); // Page 1
+        assertTrue(range.includes(1, 5));  // Page 2
+        assertTrue(range.includes(2, 5));  // Page 3
+        assertTrue(range.includes(3, 5));  // Page 4
+        assertFalse(range.includes(4, 5)); // Page 5
+
+        // Only
+        var only = PageSelector.only(1, 3, 5);
+        assertTrue(only.includes(0, 5));  // Page 1
+        assertFalse(only.includes(1, 5)); // Page 2
+        assertTrue(only.includes(2, 5));  // Page 3
+        assertFalse(only.includes(3, 5)); // Page 4
+        assertTrue(only.includes(4, 5));  // Page 5
+
+        // ExceptFirst
+        var exceptFirst = PageSelector.exceptFirst();
+        assertFalse(exceptFirst.includes(0, 5));
+        assertTrue(exceptFirst.includes(1, 5));
+        assertTrue(exceptFirst.includes(4, 5));
+
+        var exceptFirst2 = PageSelector.exceptFirst(2);
+        assertFalse(exceptFirst2.includes(0, 5));
+        assertFalse(exceptFirst2.includes(1, 5));
+        assertTrue(exceptFirst2.includes(2, 5));
+
+        // ExceptLast
+        var exceptLast = PageSelector.exceptLast();
+        assertTrue(exceptLast.includes(0, 5));
+        assertTrue(exceptLast.includes(3, 5));
+        assertFalse(exceptLast.includes(4, 5));
+
+        var exceptLast2 = PageSelector.exceptLast(2);
+        assertTrue(exceptLast2.includes(2, 5));
+        assertFalse(exceptLast2.includes(3, 5));
+        assertFalse(exceptLast2.includes(4, 5));
+
+        // Invalid args
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.range(0, 3));
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.range(4, 2));
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.only());
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.only(0));
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.exceptFirst(0));
+        assertThrows(IllegalArgumentException.class, () -> PageSelector.exceptLast(0));
+    }
+
+    @Test
+    void testImageStampConfigurationAndRendering() throws IOException {
+        var pdf = multiPagePdf(3);
+
+        var img = new BufferedImage(40, 20, BufferedImage.TYPE_INT_RGB);
+        var baos = new ByteArrayOutputStream();
+        ImageIO.write(img, "PNG", baos);
+        var imgBytes = baos.toByteArray();
+
+        var stamp1 = ImageStamp.of(imgBytes)
+                .topRight(20, 20)
+                .size(60, 30)
+                .opacity(0.8f)
+                .rotation(15f);
+
+        assertEquals(Position.TOP_RIGHT, stamp1.getPosition());
+        assertEquals(20f, stamp1.getOffsetX());
+        assertEquals(20f, stamp1.getOffsetY());
+        assertEquals(0.8f, stamp1.getOpacity());
+        assertEquals(15f, stamp1.getRotation());
+        assertEquals(60f, stamp1.getWidth());
+        assertEquals(30f, stamp1.getHeight());
+
+        // Aspect ratio drawSize
+        var sizeBoth = stamp1.drawSize(100, 50);
+        assertEquals(60f, sizeBoth[0]);
+        assertEquals(30f, sizeBoth[1]);
+
+        var stampWidthOnly = ImageStamp.of(imgBytes).width(50f);
+        var sizeW = stampWidthOnly.drawSize(100, 50);
+        assertEquals(50f, sizeW[0]);
+        assertEquals(25f, sizeW[1]);
+
+        var stampHeightOnly = ImageStamp.of(imgBytes).height(50f);
+        var sizeH = stampHeightOnly.drawSize(100, 50);
+        assertEquals(100f, sizeH[0]);
+        assertEquals(50f, sizeH[1]);
+
+        // Stamp with PageSelector (only on page 2)
+        var options = StampOptions.builder()
+                .addImage(stamp1.pages(PageSelector.range(2, 2)))
+                .build();
+
+        try (var stampedStream = S2PdfUtil.stamp(pdf, options);
+                var doc = Loader.loadPDF(stampedStream.readAllBytes())) {
+            assertEquals(3, doc.getNumberOfPages());
+        }
+    }
+
+    @Test
+    void testQrStampGenerationAndPlacement() throws IOException {
+        var pdf = multiPagePdf(2);
+
+        var qr = QrStamp.ofUrl("https://example.com/verify/DOC-12345")
+                .bottomRight(15, 15)
+                .size(80f)
+                .opacity(0.9f)
+                .resolution(200)
+                .colors(Color.BLACK, Color.WHITE);
+
+        assertEquals("https://example.com/verify/DOC-12345", qr.getContent());
+        assertEquals(Position.BOTTOM_RIGHT, qr.getPosition());
+        assertEquals(15f, qr.getOffsetX());
+        assertEquals(15f, qr.getOffsetY());
+        assertEquals(80f, qr.getDisplayWidth());
+        assertEquals(80f, qr.getDisplayHeight());
+        assertEquals(0.9f, qr.getOpacity());
+        assertEquals(200, qr.getResolution());
+
+        // Verify generated QR bytes is a valid image
+        byte[] qrBytes = qr.generateImageBytes();
+        assertTrue(qrBytes.length > 0);
+        var readImage = ImageIO.read(new java.io.ByteArrayInputStream(qrBytes));
+        assertTrue(readImage.getWidth() > 0);
+        assertTrue(readImage.getHeight() > 0);
+
+        // Apply QR to only the last page
+        var options = StampOptions.builder()
+                .addQr(qr.pages(PageSelector.last()))
+                .build();
+
+        try (var stampedStream = S2PdfUtil.stamp(pdf, options);
+                var doc = Loader.loadPDF(stampedStream.readAllBytes())) {
+            assertEquals(2, doc.getNumberOfPages());
+        }
+    }
+
+    @Test
+    void testCompositeStampWithTextAndImageAndQr() throws IOException {
+        var pdf = multiPagePdf(3);
+
+        var img = new BufferedImage(30, 30, BufferedImage.TYPE_INT_RGB);
+        var baos = new ByteArrayOutputStream();
+        ImageIO.write(img, "PNG", baos);
+
+        var options = StampOptions.builder()
+                // Header text on pages 2~3
+                .addText(Text.of("CONFIDENTIAL")
+                        .topCenter(0, 15)
+                        .fontSize(10)
+                        .pages(PageSelector.exceptFirst()))
+                // Certification seal on first page only
+                .addImage(ImageStamp.of(baos.toByteArray())
+                        .topLeft(20, 20)
+                        .size(40, 40)
+                        .pages(PageSelector.first()))
+                // QR verification on last page only
+                .addQr(QrStamp.ofUrl("https://cert.goono.so/verify?id=TEST")
+                        .bottomRight(20, 20)
+                        .size(60)
+                        .pages(PageSelector.last()))
+                // Page numbers on all pages
+                .pageNumber(PageNumber.of("%d / %d")
+                        .bottomCenter(0, 15)
+                        .fontSize(9))
+                .build();
+
+        try (var stampedStream = S2PdfUtil.stamp(pdf, options);
+                var doc = Loader.loadPDF(stampedStream.readAllBytes())) {
+            assertEquals(3, doc.getNumberOfPages());
+
+            // Page 1 should NOT have "CONFIDENTIAL" header
+            var p1 = pageText(doc, 1);
+            assertFalse(p1.contains("CONFIDENTIAL"));
+            assertTrue(p1.contains("1 / 3"));
+
+            // Page 2 should have "CONFIDENTIAL" header
+            var p2 = pageText(doc, 2);
+            assertTrue(p2.contains("CONFIDENTIAL"));
+            assertTrue(p2.contains("2 / 3"));
+
+            // Page 3 should have "CONFIDENTIAL" header
+            var p3 = pageText(doc, 3);
+            assertTrue(p3.contains("CONFIDENTIAL"));
+            assertTrue(p3.contains("3 / 3"));
+        }
+    }
+
+    @Test
+    void testWatermarkWithPageSelector() throws IOException {
+        var pdf = multiPagePdf(3);
+
+        var img = new BufferedImage(20, 20, BufferedImage.TYPE_INT_RGB);
+        var baos = new ByteArrayOutputStream();
+        ImageIO.write(img, "PNG", baos);
+
+        var watermark = Watermark.of(baos.toByteArray())
+                .size(50, 50)
+                .pages(PageSelector.only(1, 3));
+
+        assertTrue(watermark.appliesToPage(0, 3)); // Page 1
+        assertFalse(watermark.appliesToPage(1, 3)); // Page 2
+        assertTrue(watermark.appliesToPage(2, 3)); // Page 3
+
+        var options = StampOptions.builder()
+                .watermark(watermark)
+                .build();
+
+        try (var stampedStream = S2PdfUtil.stamp(pdf, options);
+                var doc = Loader.loadPDF(stampedStream.readAllBytes())) {
+            assertEquals(3, doc.getNumberOfPages());
+        }
     }
 }

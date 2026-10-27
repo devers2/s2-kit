@@ -158,14 +158,26 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
     pdf.transferTo(response.getOutputStream());
 }
 
-// 3. Dynamic Watermarks & Page Number Stamps
+// 3. Composite Stamping (Text, Seal Image, Verification QR, Page Numbers, Page Selection)
 var stampOptions = StampOptions.builder()
+        // Header text on pages starting from page 2 (skips cover page)
+        .addText(S2PdfUtil.Text.of("CONFIDENTIAL REPORT")
+                .position(S2PdfUtil.Position.TOP_CENTER)
+                .pages(S2PdfUtil.PageSelector.exceptFirst()))
+        // Certification seal image on the first page only
+        .addImage(S2PdfUtil.ImageStamp.of(Path.of("seal.png"))
+                .topRight(25, 25)
+                .size(60, 60)
+                .opacity(0.85f)
+                .pages(S2PdfUtil.PageSelector.first()))
+        // Verification QR code on the last page only
+        .addQr(S2PdfUtil.QrStamp.ofUrl("https://verify.example.com/doc/12345")
+                .bottomRight(20, 20)
+                .size(75f)
+                .pages(S2PdfUtil.PageSelector.last()))
+        // Page numbers centered at the bottom of all pages
         .pageNumber(S2PdfUtil.PageNumber.of("%d / %d")
                 .position(S2PdfUtil.Position.BOTTOM_CENTER))
-        .addText(S2PdfUtil.Text.of(pageNo -> "Lab Note - Page " + pageNo)
-                .position(S2PdfUtil.Position.TOP_CENTER))
-        .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png"))
-                .width(200).opacity(0.2f))
         .build();
 
 try (InputStream stamped = S2PdfUtil.stamp(pdfStream, stampOptions)) {

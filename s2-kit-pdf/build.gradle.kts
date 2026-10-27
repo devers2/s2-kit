@@ -39,6 +39,7 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "licenses/LICENSE-MIT",
             "licenses/LICENSE-COMMONMARK-BSD",
             "licenses/LICENSE-AUTOLINK-MIT",
+            "licenses/LICENSE-NAYUKI-QR-MIT",
             "licenses/NOTICE"
         )
     )
