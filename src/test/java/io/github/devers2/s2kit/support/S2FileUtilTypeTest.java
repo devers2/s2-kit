@@ -15,8 +15,6 @@ import java.util.zip.ZipOutputStream;
 
 import javax.imageio.ImageIO;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -91,12 +89,8 @@ class S2FileUtilTypeTest {
         return out;
     }
 
-    private static byte[] pdf() throws IOException {
-        try (var doc = new PDDocument(); var out = new ByteArrayOutputStream()) {
-            doc.addPage(new PDPage());
-            doc.save(out);
-            return out.toByteArray();
-        }
+    private static byte[] pdf() {
+        return "%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF".getBytes(StandardCharsets.US_ASCII);
     }
 
     private static byte[] png() throws IOException {

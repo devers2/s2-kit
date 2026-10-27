@@ -82,35 +82,6 @@ class ReadmeExamplesTest {
         assertTrue(S2HashUtil.verify(input, stored));
     }
 
-    /** Compiled, not run: it needs a font file and a network | 컴파일만 확인 (폰트 파일과 네트워크 필요) */
-    @SuppressWarnings("unused")
-    private static void pdfMerge(java.io.OutputStream responseOutput) throws Exception {
-        io.github.devers2.s2kit.support.S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
-
-        var options = io.github.devers2.s2kit.support.S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true)
-                .title("보고서");
-        try (InputStream pdf = io.github.devers2.s2kit.support.S2PdfUtil.merge(List.of(
-                io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
-                io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
-                io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png")
-                        .maxBytes(10_000_000)),
-                options)) {
-            pdf.transferTo(responseOutput);
-        }
-
-        var sessionId = "abc";
-        io.github.devers2.s2kit.support.S2PdfUtil.merge(io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofUrl(
-                "https://intra.example.com/report/view?id=10", Map.of("Cookie", "JSESSIONID=" + sessionId),
-                java.time.Duration.ofSeconds(30)));
-
-        InputStream uploadedStream = InputStream.nullInputStream();
-        if (io.github.devers2.s2kit.support.S2OfficeConverter.isAvailable()) {
-            io.github.devers2.s2kit.support.S2PdfUtil.merge(List.of(
-                    io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
-                    io.github.devers2.s2kit.support.S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));
-        }
-    }
-
     /** Compiled, not run: it would connect to a server | 컴파일만 확인 (실행하면 서버에 접속함) */
     @SuppressWarnings("unused")
     private static void sftp(InputStream inputStream) {

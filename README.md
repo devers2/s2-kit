@@ -7,8 +7,8 @@
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-blue?logo=openjdk)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](./LICENSE)
 
-> **Shared team modules** built on [s2-util](https://github.com/devers2/s2-util) (`s2-core`): document conversion and merging
-> (PDF, Office and Hangul, Markdown), files, pagination, Spring and servlet helpers, and front-end JS/CSS. Formerly `s2-support`.
+> **Shared team modules** built on [s2-util](https://github.com/devers2/s2-util) (`s2-core`): files, pagination,
+> Spring and servlet helpers, and front-end JS/CSS. (For PDF conversion, merging, and the web viewer, see the **[`s2-kit-pdf`](s2-kit-pdf/README.md)** submodule). Formerly `s2-support`.
 
 ---
 
@@ -28,11 +28,8 @@
 - **Foundation:** brings in `s2-core` (s2-util). See the [s2-util CHANGELOG](https://github.com/devers2/s2-util/blob/main/CHANGELOG.md)
   for its changes.
 - **What some features need:**
-  - Office and Hangul conversion (`S2OfficeConverter`, document sources in PDF merges): LibreOffice or s2-office-converter
-    (with H2Orestart, installable offline) on the server.
-  - Korean PDF output: a Korean TrueType font (e.g. NanumGothic).
-  - Optional dependencies (Spring, Servlet, SFTP, jsoup, OpenHTMLToPDF, CommonMark, ...): add only what you use. The list is at
-    the end of this document.
+  - PDF engine, Office/Hangul document conversion, and Web PDF Viewer: see the **[`s2-kit-pdf`](s2-kit-pdf/README.md)** submodule.
+  - Optional dependencies (Spring, Servlet, SFTP, etc.): add only what you use. The list is at the end of this document.
 - **Contact:** GitHub Issues or [eseungsu.dev@gmail.com](mailto:eseungsu.dev@gmail.com).
 
 ### 🔀 Moving from s2-support
@@ -61,12 +58,12 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ## ✨ Key Utilities
 
-- **📑 PDF Engine & Multi-Format Merge** — High-fidelity HTML/image/text/SVG to PDF conversion, sequence-guaranteed multi-format merging, async distributed URL pre-fetch, zero-leak disk stream caching, and batch page numbering via `S2PdfUtil`
 - **📁 File Management** — Local and remote (SFTP/JSch) file operations via `FileManager`, `S2File`, `S2RemoteFile`
 - **📄 Pagination** — Ready-to-use `S2PaginationInfo`, `S2PaginationTag`, and `S2SearchVO` for list/search UIs
 - **🍃 Spring Utilities** — `S2ContextUtil` (AOP join point parameters), `S2AnnotationResolver`, `S2RestApiUtil` for Spring-based apps
 - **🔧 General Helpers** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ Data Structures** — `S2LruMap` (LRU cache backed by `LinkedHashMap`)
+- **📑 PDF & Web Viewer Extension** — [`s2-kit-pdf`](s2-kit-pdf/README.md) submodule (PDF merge/stamp, Office conversion, Podman scripts, embedded web viewer)
 
 ---
 
@@ -94,15 +91,16 @@ dependencies {
 </dependency>
 ```
 
-#### Optional Companion Modules (`s2-validator`, `s2-validator-plugin`, `s2-jpa`)
+#### Optional Companion Modules (`s2-kit-pdf`, `s2-validator`, `s2-validator-plugin`, `s2-jpa`)
 
 > [!NOTE]
 > `s2-kit` automatically includes **`s2-core`** as an `api` (transitive) dependency, so core reflection, caching, date/string, and thread utilities are immediately available out-of-the-box.
 
-Depending on your application's requirements, you can optionally include companion modules from the **[s2-util suite](https://github.com/devers2/s2-util)**:
+Depending on your application's requirements, you can optionally include the **`s2-kit-pdf`** submodule and companion modules from the **[s2-util suite](https://github.com/devers2/s2-util)**:
 
 | Module | Type & Coordinates | Key Features & Purpose |
 | :--- | :--- | :--- |
+| **`s2-kit-pdf`** | Submodule Library<br>`io.github.devers2:s2-kit-pdf:1.0.0` | **PDF Engine + Office/Hangul Conversion + Web Viewer + Podman Scripts**<br>• Multi-format (HTML, Office, Hangul, images, Markdown) PDF merge, watermarking, and stamps.<br>• Built-in front-end web PDF viewer assets (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• 100% LGPL-Free Chromium Headless printing support & Podman online/offline converter installer.<br>• Includes `s2-kit` and `s2-core` automatically (`api` dependency). |
 | **`s2-validator`** | Library<br>`io.github.devers2:s2-validator:2.0.0` | **Cross-Platform Dynamic Validator**<br>• Author validation rules once in Java and synchronize seamlessly with client-side JavaScript (`s2.validator.js`).<br>• 30+ built-in rules (email, phone, date, etc.) with smart Korean particle interpolation (`{0|은/는}`).<br>• Fluent chaining API, conditional validation (`when`/`and`), nested/collection object validation.<br>• Seamless Spring MVC integration via `S2BindValidator` (`BindingResult`). |
 | **`s2-validator-plugin`** | Gradle Plugin<br>`id 'io.github.devers2.validator' version '2.0.0'` | **Compile-Time Field Validation** *(Optional companion for `s2-validator`)*<br>• AST-based static analysis during build (`compileJava`).<br>• Inspects `.field("fieldName")` in `S2Validator.<DTO>builder()` to verify fields exist on the target DTO class, preventing field mismatches or refactoring regressions before runtime.<br>• Zero configuration required (Gradle only). |
 | **`s2-jpa`** | Library<br>`io.github.devers2:s2-jpa:2.0.0` | **Dynamic JPQL Query Builder**<br>• Template-based dynamic query construction using `S2Jpql` with `{{=key}}` placeholders.<br>• Fluent conditional parameter and clause binding (`bindClause`, `bindParameter`, `bindOrderBy`).<br>• Safe LIKE search with `LikeMode` (ANYWHERE, START, END) preventing injection. |
@@ -121,6 +119,9 @@ plugins {
 dependencies {
     // Base: s2-kit (s2-core is included automatically)
     implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+
+    // [Optional] When PDF processing, Office conversion, and Web PDF Viewer are needed (includes s2-kit automatically)
+    // implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 
     // [Optional] Server & Client Unified Validation
     implementation 'io.github.devers2:s2-validator:2.0.0'
@@ -141,6 +142,15 @@ dependencies {
     <artifactId>s2-kit</artifactId>
     <version>1.0.0</version>
 </dependency>
+
+<!-- [Optional] s2-kit-pdf (PDF engine, Office conversion, Web PDF Viewer) -->
+<!--
+<dependency>
+    <groupId>io.github.devers2</groupId>
+    <artifactId>s2-kit-pdf</artifactId>
+    <version>1.0.0</version>
+</dependency>
+-->
 
 <!-- [Optional] s2-validator -->
 <dependency>
@@ -203,61 +213,22 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 }
 ```
 
-#### PDF merge (`S2PdfUtil`)
+#### PDF & Office Document Conversion, Web PDF Viewer (`s2-kit-pdf`)
 
-```java
-// Korean needs a Korean TrueType font; without one an installed font is looked up (SYSTEM_FONT_CANDIDATES),
-// and Korean text without any font fails instead of printing '#'
-S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+When PDF processing (HTML/Office/Image merging, watermarking, page number stamps), Office/Hangul document conversion, or the front-end web PDF viewer are needed, use the dedicated submodule **[`s2-kit-pdf`](s2-kit-pdf/README.md)**.
 
-var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("Report");
-// Skip the cover and contents (first 2 pages) and the appendix (last page), numbering the rest "1 / N":
-// MergeOptions.create().pageNumbers(2, 1)
-// Conversion result cache: merging the same document or HTML again reuses the conversion (per request, off by default)
-//   MergeOptions.create().cache(true)
-// Mixed attachment lists (database): kind from an original name, extension or MIME hint, then the name, then the content
-//   S2PdfUtil.PdfSource.of(Path.of(storedPath), originalName)   // filter first: S2PdfUtil.isMergeable(originalName)
-// Markdown (needs the optional org.commonmark:commonmark and extensions): images from the same folder, no remote ones
-//   S2PdfUtil.PdfSource.ofMarkdown(Path.of("note.md"))
-//   HTML for a web page: S2MarkdownUtil.toHtml(markdown) (HTML in the Markdown is shown as text, safe from XSS)
-// Converting right after an upload, in the background, makes even the first view use the cache (the merge options;
-// does nothing without cache(true))
-//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create().cache(true));
-// Shrink photos and scans to a resolution for their page (images inside PDF sources too; default 0 = keep)
-//   MergeOptions.create().imageDpi(200).cache(true)        // images and PDFs
-//   MergeOptions.create().imageDpi(150, 0).cache(true)     // photos only, PDFs kept
-// Watermark (points, A4 = 595 x 842): 200 wide with the height in ratio, centered, 20% opaque
-//   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
-// A 60 x 60 seal 40 and 30 in from the bottom-right corner
-//   .watermark(S2PdfUtil.Watermark.of(Path.of("seal.png")).size(60, 60)
-//           .position(S2PdfUtil.Watermark.Position.BOTTOM_RIGHT).offset(40, 30))
-try (InputStream pdf = S2PdfUtil.merge(List.of(
-        S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("Cover"),
-        S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
-        S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
-    pdf.transferTo(response.getOutputStream());
+```groovy
+dependencies {
+    // Declaring s2-kit-pdf instead of s2-kit automatically brings in s2-kit and s2-core
+    implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 }
-
-// An HTML page fetched by URL comes out as on screen: images and CSS of the same origin and images of public hosts (CDNs)
-// are embedded (internal addresses are refused). Headers (login cookies) go only to the same origin. The layout is for an
-// A4-wide screen. When Chromium (s2-chrome, chromium, google-chrome, msedge) is available, it prints the page via headless browser
-// (full flex, grid, JS, and SVG support; 100% Apache/BSD licensed without LGPL restrictions).
-// When no browser is available, falls back to the in-memory renderer (OpenHTMLtoPDF fallback).
-S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
-        Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
-
-// Office and Hangul documents (docx, xlsx, pptx, hwp, hwpx ...) are converted by LibreOffice when it is installed
-// (s2-soffice, soffice or libreoffice is found automatically); without it every other source still merges
-if (S2OfficeConverter.isAvailable()) {
-    S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("plan.docx")),
-            S2PdfUtil.PdfSource.ofDocument(uploadedStream, "report.hwp")));
-}
-
-// Web editor import: an Office or Hangul document as body HTML and images (scripts and bad links removed, BMP to PNG)
-var imported = S2OfficeConverter.toHtml(Path.of("report.hwp"), S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
-// Upload the images, then point the HTML at them: imported.images() -> imported.html(name -> "/files/editor/" + name)
-// Another format: S2OfficeConverter.convert(Path.of("report.hwp"), "docx", outDir)
 ```
+
+- **Backend Document Processing**: `S2PdfUtil.merge()`, `S2PdfUtil.stamp()`, `S2OfficeConverter` (Office/Hangul document conversion)
+- **Front-end Web Viewer**: `/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css` (Embedded standalone ES module viewer powered by React)
+- **Infrastructure Scripts**: Podman-based LibreOffice/Chromium online & offline converter installer (`scripts/setup-s2-office-converter.sh`)
+
+For full details, API references, and complete code examples, see the **[s2-kit-pdf README](s2-kit-pdf/README.md)**.
 
 #### SFTP (`S2SftpFileManagerImpl`)
 
@@ -329,14 +300,6 @@ dependencies {
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
-    implementation 'org.jsoup:jsoup:1.23.2'
-    implementation 'org.commonmark:commonmark-ext-heading-anchor:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
-    implementation 'org.commonmark:commonmark:0.30.0'
-    implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87'
-    implementation 'org.commonmark:commonmark-ext-autolink:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-task-list-items:0.30.0'
 }
 ```
 

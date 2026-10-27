@@ -7,8 +7,8 @@
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-blue?logo=openjdk)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](./LICENSE)
 
-> [s2-util](https://github.com/devers2/s2-util)(`s2-core`) 위에 만든 **팀 공통 모듈**입니다. 문서 변환·병합(PDF, 오피스·한글, 마크다운),
-> 파일, 페이징, Spring·서블릿 헬퍼, 프런트 JS/CSS 를 모았습니다. `s2-support`의 새 이름입니다.
+> [s2-util](https://github.com/devers2/s2-util)(`s2-core`) 위에 만든 **팀 공통 모듈**입니다. 파일, 페이징, Spring·서블릿 헬퍼, 프런트 JS/CSS를 모았습니다.
+> (PDF 변환·병합 및 웹 뷰어가 필요하다면 전용 서브모듈인 **[`s2-kit-pdf`](s2-kit-pdf/README.ko.md)**를 사용하십시오). `s2-support`의 새 이름입니다.
 
 ---
 
@@ -27,10 +27,8 @@
 - **기반:** `s2-core`(s2-util)를 함께 가져옵니다. `s2-core`의 변경은 [s2-util CHANGELOG](https://github.com/devers2/s2-util/blob/main/CHANGELOG.ko.md)를
   보십시오.
 - **기능별로 더 필요한 것:**
-  - 오피스·한글 문서 변환(`S2OfficeConverter`, PDF 병합의 문서 소스): 서버에 LibreOffice 또는 s2-office-converter(H2Orestart 포함,
-    폐쇄망 설치 지원).
-  - 한글 PDF: 한글 TrueType 폰트(예: 나눔고딕).
-  - 선택 의존성(Spring, 서블릿, SFTP, jsoup, OpenHTMLToPDF, CommonMark 등): 쓰는 기능만 추가합니다. 목록은 이 문서 맨 아래에 있습니다.
+  - PDF 엔진, 오피스·한글 문서 변환 및 웹 PDF 뷰어: 전용 서브모듈인 **[`s2-kit-pdf`](s2-kit-pdf/README.ko.md)**를 참조하십시오.
+  - 선택 의존성(Spring, 서블릿, SFTP 등): 쓰는 기능만 추가합니다. 목록은 이 문서 맨 아래에 있습니다.
 - **문의:** GitHub Issues 또는 [eseungsu.dev@gmail.com](mailto:eseungsu.dev@gmail.com).
 
 ### 🔀 s2-support 에서 옮기기
@@ -59,12 +57,12 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ## ✨ 주요 유틸리티
 
-- **📑 PDF 엔진 & 멀티 포맷 병합** — `S2PdfUtil`을 통한 HTML/이미지/텍스트/SVG → PDF 변환, 이종 포맷 순서 보장 병합, 원격 URL 비동기 분산 프리페치, 메모리 누수 방지 디스크 캐시 및 페이지 번호 각인
 - **📁 파일 관리** — `FileManager`, `S2File`, `S2RemoteFile`을 통한 로컬 및 원격(SFTP/JSch) 파일 처리
 - **📄 페이징** — 목록/검색 UI를 위한 `S2PaginationInfo`, `S2PaginationTag`, `S2SearchVO` 제공
 - **🍃 Spring 유틸리티** — Spring 기반 앱을 위한 `S2ContextUtil`(AOP 조인포인트 파라미터), `S2AnnotationResolver`, `S2RestApiUtil`
 - **🔧 범용 헬퍼** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ 자료구조** — `S2LruMap` (`LinkedHashMap` 기반 LRU 캐시)
+- **📑 PDF & 웹 뷰어 확장** — [`s2-kit-pdf`](s2-kit-pdf/README.ko.md) 서브모듈 (PDF 병합/스탬프, 오피스 변환, Podman 스크립트, 웹 PDF 뷰어 내장)
 
 ---
 
@@ -92,15 +90,16 @@ dependencies {
 </dependency>
 ```
 
-#### 선택적 확장 모듈 (`s2-validator`, `s2-validator-plugin`, `s2-jpa`)
+#### 선택적 확장 모듈 (`s2-kit-pdf`, `s2-validator`, `s2-validator-plugin`, `s2-jpa`)
 
 > [!NOTE]
 > `s2-kit`은 핵심 모듈인 **`s2-core`**를 `api` 전이 의존성으로 기본 포함하고 있으므로, 고성능 리플렉션, 지능형 캐시, 날짜/문자열 유틸리티 등은 별도 선언 없이 즉시 사용할 수 있습니다.
 
-애플리케이션 요구사항에 따라 **[s2-util 제품군](https://github.com/devers2/s2-util)**의 동반 모듈을 선택적으로 추가하여 기능을 확장할 수 있습니다:
+애플리케이션 요구사항에 따라 **`s2-kit-pdf`** 서브모듈 및 **[s2-util 제품군](https://github.com/devers2/s2-util)**의 동반 모듈을 선택적으로 추가하여 기능을 확장할 수 있습니다:
 
 | 모듈 | 유형 및 좌표 | 주요 특징 및 기능 |
 | :--- | :--- | :--- |
+| **`s2-kit-pdf`** | 서브모듈 라이브러리<br>`io.github.devers2:s2-kit-pdf:1.0.0` | **PDF 엔진 + 오피스/한글 변환 + 웹 뷰어 + Podman 스크립트**<br>• 다중 포맷(HTML, 오피스, 한글, 이미지, MD) PDF 병합 및 워터마크/스탬프.<br>• 프론트엔드 웹 PDF 뷰어 내장 (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• Chromium Headless 기반 100% LGPL-Free 인쇄 지원 및 팟맨 온/오프라인 설치기 제공.<br>• `s2-kit` 및 `s2-core`를 자동으로 포함 (`api` 의존성). |
 | **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.0.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
 | **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.0.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
 | **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.0.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
@@ -119,6 +118,9 @@ plugins {
 dependencies {
     // 기본: s2-kit (s2-core 자동 포함)
     implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+
+    // [선택] PDF 처리, 오피스 문서 변환, 웹 PDF 뷰어가 필요한 경우 (s2-kit, s2-core 자동 포함)
+    // implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 
     // [선택] 서버/클라이언트 통합 검증 기능이 필요한 경우
     implementation 'io.github.devers2:s2-validator:2.0.0'
@@ -139,6 +141,15 @@ dependencies {
     <artifactId>s2-kit</artifactId>
     <version>1.0.0</version>
 </dependency>
+
+<!-- [선택] s2-kit-pdf (PDF/오피스 변환/웹 뷰어) -->
+<!--
+<dependency>
+    <groupId>io.github.devers2</groupId>
+    <artifactId>s2-kit-pdf</artifactId>
+    <version>1.0.0</version>
+</dependency>
+-->
 
 <!-- [선택] s2-validator -->
 <dependency>
@@ -201,59 +212,22 @@ if (S2HashUtil.verify(input, stored) && S2HashUtil.needsRehash(stored)) {
 }
 ```
 
-#### PDF 병합 (`S2PdfUtil`)
+#### PDF & 오피스 문서 변환, 웹 PDF 뷰어 (`s2-kit-pdf`)
 
-```java
-// 한글은 한글 TrueType 폰트가 필요. 지정하지 않으면 설치된 폰트를 찾고(SYSTEM_FONT_CANDIDATES),
-// 폰트가 전혀 없으면 '#'으로 깨지는 대신 예외
-S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+PDF 처리(HTML/오피스/이미지 병합, 워터마크, 페이지 번호 스탬프), 오피스·한글 문서 변환 및 프론트엔드 웹 PDF 뷰어가 필요한 경우 전용 서브모듈인 **[`s2-kit-pdf`](s2-kit-pdf/README.ko.md)**를 사용합니다.
 
-var options = S2PdfUtil.MergeOptions.create().bookmarks(true).pageNumbers(true).title("보고서");
-// 표지·목차(앞 2쪽)와 부록(뒤 1쪽)은 빼고 나머지에만 "1 / N": MergeOptions.create().pageNumbers(2, 1)
-// 변환 결과 캐시: 같은 문서·HTML 을 다시 병합하면 변환 없이 재사용 (요청마다 선택, 기본 꺼짐)
-//   MergeOptions.create().cache(true)
-// 종류가 섞인 첨부 목록(DB): 원래 파일명·확장자·MIME 힌트 → 파일명 → 내용 순으로 자동 판별
-//   S2PdfUtil.PdfSource.of(Path.of(storedPath), originalName)   // 미리 거르기: S2PdfUtil.isMergeable(originalName)
-// 마크다운 (선택 의존성 org.commonmark:commonmark 와 확장 필요): 같은 폴더의 이미지 포함, 원격 이미지는 가져오지 않음
-//   S2PdfUtil.PdfSource.ofMarkdown(Path.of("연구노트.md"))
-//   웹 화면용 HTML: S2MarkdownUtil.toHtml(markdown) (마크다운 안의 HTML 은 글자로 보여 XSS 안전)
-// 업로드 직후 백그라운드에서 미리 변환해 두면 처음 볼 때도 캐시를 씀 (병합과 같은 옵션. cache(false)면 아무것도 하지 않음)
-//   S2PdfUtil.prepare(List.of(S2PdfUtil.PdfSource.ofDocument(savedPath)), S2PdfUtil.MergeOptions.create().cache(true));
-// 사진·스캔 이미지를 쪽 기준 해상도로 줄이기 (PDF 소스 안의 이미지 포함, 기본 0 = 원본 유지)
-//   MergeOptions.create().imageDpi(200).cache(true)        // 이미지·PDF 모두
-//   MergeOptions.create().imageDpi(150, 0).cache(true)     // 사진만 줄이고 PDF 는 원본
-// 워터마크 (단위 pt, A4 = 595 x 842): 가로 200 에 세로는 비율대로, 가운데, 20% 불투명
-//   .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png")).width(200).opacity(0.2f))
-// 오른쪽 아래에서 안쪽으로 40, 30 떨어진 60 x 60 직인
-//   .watermark(S2PdfUtil.Watermark.of(Path.of("seal.png")).size(60, 60)
-//           .position(S2PdfUtil.Watermark.Position.BOTTOM_RIGHT).offset(40, 30))
-try (InputStream pdf = S2PdfUtil.merge(List.of(
-        S2PdfUtil.PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
-        S2PdfUtil.PdfSource.ofPdf(Path.of("body.pdf")),
-        S2PdfUtil.PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)), options)) {
-    pdf.transferTo(response.getOutputStream());
+```groovy
+dependencies {
+    // s2-kit 대신 s2-kit-pdf 를 선언하면 s2-kit 과 s2-core 도 함께 포함됩니다
+    implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 }
-
-// URL 로 받은 HTML 페이지는 화면처럼: 같은 출처의 이미지·CSS 와 공개 주소(CDN)의 이미지를 받아 넣음 (내부망 주소는 차단).
-// 헤더(로그인 쿠키 등)는 같은 출처 요청에만 보냄. 레이아웃 기준은 A4 너비 화면.
-// 서버에 Chromium(s2-chrome, chromium, google-chrome 등)이 있으면 Headless 브라우저로 화면 그대로 인쇄
-// (flex·grid·JS·SVG 지원, 100% Apache/BSD 라이선스로 LGPL 제약 없음).
-// 브라우저가 없는 환경에서는 Java 내장 렌더러(OpenHTMLtoPDF fallback)로 자동 변환
-S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
-        Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
-
-// 오피스·한글 문서(docx, xlsx, pptx, hwp, hwpx 등)는 LibreOffice 가 설치되어 있으면 변환됨
-// (s2-soffice, soffice, libreoffice 를 자동으로 찾음). 없어도 다른 소스는 그대로 병합됨
-if (S2OfficeConverter.isAvailable()) {
-    S2PdfUtil.merge(List.of(S2PdfUtil.PdfSource.ofDocument(Path.of("계획서.docx")),
-            S2PdfUtil.PdfSource.ofDocument(uploadedStream, "보고서.hwp")));
-}
-
-// 웹에디터 가져오기: 오피스·한글 문서를 본문 HTML 과 이미지로 (스크립트·위험 링크 제거, BMP → PNG)
-var imported = S2OfficeConverter.toHtml(Path.of("보고서.hwp"), S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
-// 이미지를 저장소에 올린 뒤 그 주소로: imported.images() → imported.html(name -> "/files/editor/" + name)
-// 다른 형식으로: S2OfficeConverter.convert(Path.of("보고서.hwp"), "docx", outDir)
 ```
+
+- **백엔드 문서 처리**: `S2PdfUtil.merge()`, `S2PdfUtil.stamp()`, `S2OfficeConverter` (오피스/한글 문서 변환)
+- **프론트엔드 웹 뷰어**: `/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css` (React 내장 독립형 ES 모듈 뷰어)
+- **인프라 스크립트**: Podman 기반 LibreOffice/Chromium 온·오프라인 변환기 (`scripts/setup-s2-office-converter.sh`)
+
+자세한 사용법과 전체 예제 코드는 **[s2-kit-pdf README](s2-kit-pdf/README.ko.md)**를 참고하십시오.
 
 #### SFTP (`S2SftpFileManagerImpl`)
 
@@ -325,14 +299,6 @@ dependencies {
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
     implementation 'org.aspectj:aspectjweaver:1.9.25.1'
-    implementation 'org.jsoup:jsoup:1.23.2'
-    implementation 'org.commonmark:commonmark-ext-heading-anchor:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
-    implementation 'org.commonmark:commonmark:0.30.0'
-    implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87'
-    implementation 'org.commonmark:commonmark-ext-autolink:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'
-    implementation 'org.commonmark:commonmark-ext-task-list-items:0.30.0'
 }
 ```
 

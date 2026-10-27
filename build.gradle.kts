@@ -121,14 +121,7 @@ extra["releaseCompatibility"] = JavaVersion.VERSION_17
  *   - S2PdfUtil 포함 (기본값): setOf("licensesInfo", "S2PdfUtil")
  *   - S2PdfUtil 제외 (경량화): setOf("licensesInfo")
  */
-extra["activeFeatures"] = setOf("licensesInfo", "S2OfficeConverter", "S2PdfUtil", "S2MarkdownUtil")
-
-// S2PdfUtil converts Office and Hangul documents through S2OfficeConverter | S2PdfUtil 은 S2OfficeConverter 로 오피스·한글 문서를 변환
-(extra["activeFeatures"] as Set<*>).let { features ->
-    require("S2PdfUtil" !in features || "S2OfficeConverter" in features) {
-        "activeFeatures: S2PdfUtil 기능은 S2OfficeConverter 기능이 필요합니다. | S2PdfUtil needs the S2OfficeConverter feature."
-    }
-}
+extra["activeFeatures"] = setOf("licensesInfo")
 
 /**
  * [동적 기능 소스 정보 (Feature Toggles Definition)]
@@ -143,7 +136,6 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "LICENSE",
             "licenses/LICENSE-APACHE-2.0",
             "licenses/LICENSE-EPL-2.0",
-            "licenses/LICENSE-LGPL-2.1",
             "licenses/LICENSE-MIT",
             "licenses/LICENSE-UUID-CREATOR-MIT",
             "licenses/LICENSE-JSCH-BSD",
@@ -151,65 +143,6 @@ extra["dynamicSourceInfoMap"] = mapOf(
             "licenses/LICENSE-JBCRYPT-ISC",
             "licenses/NOTICE"
         )
-    ),
-    "S2OfficeConverter" to mapOf(
-        /*
-         * Office and Hangul documents through LibreOffice (an external program, not linked): PDF, HTML for web editors,
-         * other formats. jsoup (MIT) cleans the HTML | LibreOffice(외부 프로그램, 링크하지 않음)로 오피스·한글 문서 변환. jsoup(MIT)으로 HTML 정리
-         */
-        "sources" to listOf("io/github/devers2/s2kit/support/S2OfficeConverter.java"),
-        "dependencies" to listOf(
-            mapOf("configuration" to "compileOnly", "group" to "org.jsoup", "name" to "jsoup", "version" to "1.23.2")
-        )
-    ),
-    "S2PdfUtil" to mapOf(
-        /*
-         * PDF Rendering: Chromium Headless (Apache 2.0 / BSD) is primary.
-         * OpenHTML to PDF (LGPL 2.1) is an optional pure-Java fallback, used via compileOnly (no bundling/shading).
-         * End users can run 100% LGPL-free with Chromium or optionally provide openhtmltopdf at runtime.
-         */
-        /* "variantId" to "pdf", */
-        // Helpers used only by S2PdfUtil leave with it (S2HtmlResources needs jsoup)
-        // | S2PdfUtil 전용 보조 클래스도 함께 빠짐 (S2HtmlResources 는 jsoup 사용)
-        "sources" to listOf(
-            "io/github/devers2/s2kit/support/S2PdfUtil.java",
-            "io/github/devers2/s2kit/support/S2HtmlResources.java",
-            "io/github/devers2/s2kit/support/S2PdfCache.java",
-            "io/github/devers2/s2kit/support/S2FontCmap.java"
-        ),
-        "dependencies" to listOf(
-            mapOf( // (jsoup은 MIT이지만 openhtmltopdf와 함께 동작하므로 동일하게 처리)
-                "configuration" to "compileOnly",
-                "group" to "org.jsoup",
-                "name" to "jsoup",
-                "version" to "1.23.2"
-            ),
-            mapOf( // LGPL 2.1 라이선스
-                "configuration" to "compileOnly",
-                "group" to "io.github.openhtmltopdf",
-                "name" to "openhtmltopdf-pdfbox",
-                "version" to "1.1.87"
-            )
-        ),
-        "licenses" to listOf("README-LGPL-2.1-PDF.md")
-    ),
-    "S2MarkdownUtil" to mapOf(
-        /*
-         * commonmark-java (BSD 2-Clause) and autolink-java (MIT): compileOnly, added by the user, not redistributed.
-         * S2PdfUtil calls S2MarkdownUtil by name, so either feature can be left out on its own
-         * | commonmark-java(BSD 2-Clause), autolink-java(MIT): compileOnly 로 사용자가 추가하며 재배포하지 않음.
-         * S2PdfUtil 은 S2MarkdownUtil 을 이름으로 호출하므로 두 기능은 따로 뺄 수 있음
-         */
-        "sources" to listOf("io/github/devers2/s2kit/support/S2MarkdownUtil.java"),
-        "dependencies" to listOf(
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark", "version" to "0.30.0"),
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-gfm-tables", "version" to "0.30.0"),
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-gfm-strikethrough", "version" to "0.30.0"),
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-autolink", "version" to "0.30.0"),
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-task-list-items", "version" to "0.30.0"),
-            mapOf("configuration" to "compileOnly", "group" to "org.commonmark", "name" to "commonmark-ext-heading-anchor", "version" to "0.30.0")
-        ),
-        "licenses" to listOf("licenses/LICENSE-COMMONMARK-BSD", "licenses/LICENSE-AUTOLINK-MIT")
     )
 )
 
@@ -393,19 +326,67 @@ dependencies {
     testRuntimeOnly(libs.junit.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.s2.core)
-    testImplementation("org.jsoup:jsoup:1.23.2")
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87")
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.87") // optional SVG drawing | 선택: SVG 그리기
-    // Optional Markdown (S2MarkdownUtil) | 선택: 마크다운
-    for (module in listOf("commonmark", "commonmark-ext-gfm-tables", "commonmark-ext-gfm-strikethrough", "commonmark-ext-autolink",
-            "commonmark-ext-task-list-items", "commonmark-ext-heading-anchor")) {
-        testImplementation("org.commonmark:$module:0.30.0")
-    }
     testImplementation(libs.jakarta.servlet.api) // S2PaginationTag 시험 (TagSupport)
     testImplementation(libs.jakarta.servlet.jsp)
     testImplementation(libs.spring6.context) // S2AnnotationResolver, S2RestApiUtil 시험
     testImplementation(libs.spring6.web)
     testImplementation(libs.spring.integration.sftp) // SFTP 통합 시험 (SpringSftpConfig)
     testImplementation(libs.sshd.sftp) // SFTP 통합 시험용 내장 SSH 서버 (Apache MINA SSHD)
-    testImplementation(libs.imageio.webp) // S2PdfUtil WebP 시험 (사용자는 필요할 때 직접 추가)
+}
+
+// ========================================================================
+// ⭐ [서브 프로젝트 구성] ※ subprojects { ... } 안에서의 project 는 서브 프로젝트를 가리킨다.
+// ========================================================================
+subprojects {
+    apply(plugin = "java-library")
+    apply(plugin = "maven-publish")
+    apply(plugin = rootProject.libs.plugins.s2.build.support.get().pluginId)
+    apply(plugin = "signing")
+
+    if (rootProject.plugins.hasPlugin("com.github.johnrengelman.shadow")) {
+        apply(plugin = rootProject.libs.plugins.shadow.get().pluginId)
+    }
+
+    group = rootProject.group
+    if (version == "unspecified") {
+        version = rootProject.version
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    val subJavaSrcRoot = rootProject.extra["JAVA_SRC_ROOT"] as String
+
+    configure<SourceSetContainer> {
+        named("main") {
+            java.setSrcDirs(listOf(subJavaSrcRoot))
+            resources.setSrcDirs(listOf("src/main/resources"))
+        }
+    }
+
+    // 프로젝트 통합 설정
+    S2BuildUtils.configureProject(project)
+
+    // 저작권 연도 업데이트 (수정이 필요한 경우에만 파일 IO 발생)
+    S2BuildUtils.updateCopyright(
+        project,
+        arrayOf(
+            subJavaSrcRoot,
+            "src/main/resources",
+            "README.md",
+            "build.gradle.kts"
+        )
+    )
+
+    S2BuildUtils.configureLibraryPublishing(
+        project,
+        project.name,
+        "S2 Kit - ${project.name} module",
+        "https://github.com/devers2/s2-kit"
+    )
+
+    S2BuildUtils.configureTestDefaults(project)
+    S2BuildUtils.registerCopyDependenciesTask(project)
+    S2BuildUtils.updateReadmeWithVersionAndDependencies(project, "^README(\\..+)?\\.md$")
 }
