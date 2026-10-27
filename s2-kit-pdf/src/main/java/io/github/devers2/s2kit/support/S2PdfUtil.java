@@ -160,14 +160,6 @@ public class S2PdfUtil {
         S2Util.checkDependency("S2PdfUtil", "org.jsoup.Jsoup", "org.jsoup:jsoup:1.23.2");
     }
 
-    /**
-     * @deprecated OpenHTMLtoPDF(LGPL) 엔진이 완전히 제거되었습니다. 브라우저 렌더러 가용 여부는 {@link #isBrowserRenderingAvailable()}을 사용하십시오.
-     */
-    @Deprecated
-    public static boolean isOpenHtmlAvailable() {
-        return false;
-    }
-
     private static final S2Logger logger = S2LogManager.getLogger(S2PdfUtil.class);
 
     private static final String DEFAULT_FONT_FAMILY = "ConvertPDF";
