@@ -42,12 +42,12 @@ Declaring `s2-kit-pdf` transitively provides the core `s2-kit` and `s2-core` lib
 
 **Gradle (Kotlin DSL)**
 ```kotlin
-implementation("io.github.devers2:s2-kit-pdf:1.0.0")
+implementation("io.github.devers2:s2-kit-pdf:1.1.0")
 ```
 
 **Gradle (Groovy)**
 ```groovy
-implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
+implementation 'io.github.devers2:s2-kit-pdf:1.1.0'
 ```
 
 ---

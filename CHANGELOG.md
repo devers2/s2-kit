@@ -4,14 +4,14 @@
 
 All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `s2-support` 1.x history continues in this file.
 
-## [1.0.0] - 2026-10-27
+## [1.1.0]
 
 ### 📑 Module Extraction (`s2-kit-pdf`)
 
 - **Extracted PDF and document conversion into a dedicated submodule `s2-kit-pdf`**:
   - Split the architecture into a lightweight core library (`s2-kit`) and an all-in-one PDF solution module (`s2-kit-pdf`).
   - Root `s2-kit` JAR reduced to 2.2 MB, completely free of PDFBox, OpenHTMLtoPDF, and CommonMark dependencies.
-  - `s2-kit-pdf` declares `api(rootProject)`, so downstream projects only need `implementation 'io.github.devers2:s2-kit-pdf:1.0.0'` to get both `s2-kit` and PDF features.
+  - `s2-kit-pdf` declares `api(rootProject)`, so downstream projects only need `implementation 'io.github.devers2:s2-kit-pdf:1.1.0'` to get both `s2-kit` and PDF features.
   - **Backend Document Engine**: Moved `S2PdfUtil` (multi-format merge/stamp/watermark), `S2OfficeConverter` (LibreOffice + H2Orestart Office/Hangul conversion), and `S2MarkdownUtil` into `s2-kit-pdf`.
   - **Embedded Frontend Web PDF Viewer**: Standalone React-bundled ES module viewer assets (`pdf-viewer.js`, `pdf-viewer.css`, `pdfjs/`) packaged under `META-INF/resources/s2-kit/pdf-viewer/` for instant Servlet 3.0+ / Spring Boot static resource serving.
   - **Comprehensive JSDoc & TypeScript declarations**: Detailed JSDoc banner embedded at the top of `pdf-viewer.js` with full options reference, lifecycle API, and usage examples.

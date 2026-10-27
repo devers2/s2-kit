@@ -76,7 +76,7 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
 }
 ```
 
@@ -86,7 +86,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -99,11 +99,11 @@ dependencies {
 
 | 모듈 | 유형 및 좌표 | 주요 특징 및 기능 |
 | :--- | :--- | :--- |
-| **`s2-kit-pdf`** | 서브모듈 라이브러리<br>`io.github.devers2:s2-kit-pdf:1.0.0` | **PDF 엔진 + 오피스/한글 변환 + 웹 뷰어 + Podman 스크립트**<br>• 다중 포맷(HTML, 오피스, 한글, 이미지, MD) PDF 병합 및 워터마크/스탬프.<br>• 프론트엔드 웹 PDF 뷰어 내장 (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• Chromium Headless 기반 100% LGPL-Free 인쇄 지원 및 팟맨 온/오프라인 설치기 제공.<br>• `s2-kit` 및 `s2-core`를 자동으로 포함 (`api` 의존성). |
-| **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.0.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
-| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.0.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
-| **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.0.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
-| **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:2.0.0` | **s2-kit 과 함께 쓰지 마십시오.**<br>• 번들은 `s2-core` 클래스를 JAR 안에 담고 있어, `s2-kit`이 가져오는 `s2-core`와 같은 클래스가 클래스패스에 두 번 올라갑니다.<br>• `s2-kit`과 함께라면 위의 개별 모듈(`s2-validator`, `s2-jpa`)을 추가하십시오. |
+| **`s2-kit-pdf`** | 서브모듈 라이브러리<br>`io.github.devers2:s2-kit-pdf:1.1.0` | **PDF 엔진 + 오피스/한글 변환 + 웹 뷰어 + Podman 스크립트**<br>• 다중 포맷(HTML, 오피스, 한글, 이미지, MD) PDF 병합 및 워터마크/스탬프.<br>• 프론트엔드 웹 PDF 뷰어 내장 (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• Chromium Headless 기반 100% LGPL-Free 인쇄 지원 및 팟맨 온/오프라인 설치기 제공.<br>• `s2-kit` 및 `s2-core`를 자동으로 포함 (`api` 의존성). |
+| **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.1.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
+| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.1.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
+| **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.1.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
+| **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:2.1.0` | **s2-kit 과 함께 쓰지 마십시오.**<br>• 번들은 `s2-core` 클래스를 JAR 안에 담고 있어, `s2-kit`이 가져오는 `s2-core`와 같은 클래스가 클래스패스에 두 번 올라갑니다.<br>• `s2-kit`과 함께라면 위의 개별 모듈(`s2-validator`, `s2-jpa`)을 추가하십시오. |
 
 **Gradle 설정 예시:**
 
@@ -112,21 +112,21 @@ dependencies {
 plugins {
     id 'java'
     // [선택] S2Validator 빌드 시점 필드 정적 검증 플러그인 (Gradle 전용, 라이브러리와 별도 선언 필요)
-    id 'io.github.devers2.validator' version '2.0.0'
+    id 'io.github.devers2.validator' version '2.1.0'
 }
 
 dependencies {
     // 기본: s2-kit (s2-core 자동 포함)
-    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
 
     // [선택] PDF 처리, 오피스 문서 변환, 웹 PDF 뷰어가 필요한 경우 (s2-kit, s2-core 자동 포함)
-    // implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
+    // implementation 'io.github.devers2:s2-kit-pdf:1.1.0'
 
     // [선택] 서버/클라이언트 통합 검증 기능이 필요한 경우
-    implementation 'io.github.devers2:s2-validator:2.0.0'
+    implementation 'io.github.devers2:s2-validator:2.1.0'
 
     // [선택] 동적 JPQL 쿼리 작성이 필요한 경우
-    implementation 'io.github.devers2:s2-jpa:2.0.0'
+    implementation 'io.github.devers2:s2-jpa:2.1.0'
 
     // ⚠️ s2-util 통합 번들은 s2-core 를 안에 담고 있어 s2-kit 과 겹치므로 개별 모듈을 쓰십시오
 }
@@ -139,7 +139,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 
 <!-- [선택] s2-kit-pdf (PDF/오피스 변환/웹 뷰어) -->
@@ -147,7 +147,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-kit-pdf</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 -->
 
@@ -155,14 +155,14 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-validator</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.0</version>
 </dependency>
 
 <!-- [선택] s2-jpa -->
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-jpa</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.0</version>
 </dependency>
 ```
 
@@ -219,7 +219,7 @@ PDF 처리(HTML/오피스/이미지 병합, 워터마크, 페이지 번호 스�
 ```groovy
 dependencies {
     // s2-kit 대신 s2-kit-pdf 를 선언하면 s2-kit 과 s2-core 도 함께 포함됩니다
-    implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
+    implementation 'io.github.devers2:s2-kit-pdf:1.1.0'
 }
 ```
 
@@ -296,7 +296,7 @@ MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);   // 실패 시 S2JsonExcept
 
 ---
 
-s2-kit Version: 1.0.0 (2026-10-02)
+s2-kit Version: 1.1.0 (2026-10-28)
 
 [//]: # 'S2_DEPS_INFO_START'
 

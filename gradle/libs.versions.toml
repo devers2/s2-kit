@@ -1,8 +1,8 @@
 [versions]
 # Plugin Versions
-s2-build-support = "0.2.5"
+s2-build-support = "1.0.0"
 shadow = "9.3.1"
-s2-validator-plugin = "2.0.0"
+s2-validator-plugin = "2.1.0"
 
 
 # Java / Core
@@ -10,7 +10,7 @@ java = "21"
 jsr305 = "3.0.2"
 
 # S2Util Libraries
-s2-util = "2.0.0"
+s2-util = "2.1.0"
 
 # Dependencies
 aspectj = "1.9.25.1"

@@ -77,7 +77,7 @@ Add the following dependency to your `build.gradle` or `pom.xml`.
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
 }
 ```
 
@@ -87,7 +87,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -100,11 +100,11 @@ Depending on your application's requirements, you can optionally include the **`
 
 | Module | Type & Coordinates | Key Features & Purpose |
 | :--- | :--- | :--- |
-| **`s2-kit-pdf`** | Submodule Library<br>`io.github.devers2:s2-kit-pdf:1.0.0` | **PDF Engine + Office/Hangul Conversion + Web Viewer + Podman Scripts**<br>• Multi-format (HTML, Office, Hangul, images, Markdown) PDF merge, watermarking, and stamps.<br>• Built-in front-end web PDF viewer assets (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• 100% LGPL-Free Chromium Headless printing support & Podman online/offline converter installer.<br>• Includes `s2-kit` and `s2-core` automatically (`api` dependency). |
-| **`s2-validator`** | Library<br>`io.github.devers2:s2-validator:2.0.0` | **Cross-Platform Dynamic Validator**<br>• Author validation rules once in Java and synchronize seamlessly with client-side JavaScript (`s2.validator.js`).<br>• 30+ built-in rules (email, phone, date, etc.) with smart Korean particle interpolation (`{0|은/는}`).<br>• Fluent chaining API, conditional validation (`when`/`and`), nested/collection object validation.<br>• Seamless Spring MVC integration via `S2BindValidator` (`BindingResult`). |
-| **`s2-validator-plugin`** | Gradle Plugin<br>`id 'io.github.devers2.validator' version '2.0.0'` | **Compile-Time Field Validation** *(Optional companion for `s2-validator`)*<br>• AST-based static analysis during build (`compileJava`).<br>• Inspects `.field("fieldName")` in `S2Validator.<DTO>builder()` to verify fields exist on the target DTO class, preventing field mismatches or refactoring regressions before runtime.<br>• Zero configuration required (Gradle only). |
-| **`s2-jpa`** | Library<br>`io.github.devers2:s2-jpa:2.0.0` | **Dynamic JPQL Query Builder**<br>• Template-based dynamic query construction using `S2Jpql` with `{{=key}}` placeholders.<br>• Fluent conditional parameter and clause binding (`bindClause`, `bindParameter`, `bindOrderBy`).<br>• Safe LIKE search with `LikeMode` (ANYWHERE, START, END) preventing injection. |
-| **`s2-util`** *(Bundle)* | Library<br>`io.github.devers2:s2-util:2.0.0` | **Do not combine with s2-kit.**<br>• The bundle carries the `s2-core` classes inside its JAR, so they would sit on the classpath twice next to the `s2-core` that `s2-kit` brings.<br>• With `s2-kit`, add the individual modules above (`s2-validator`, `s2-jpa`). |
+| **`s2-kit-pdf`** | Submodule Library<br>`io.github.devers2:s2-kit-pdf:1.1.0` | **PDF Engine + Office/Hangul Conversion + Web Viewer + Podman Scripts**<br>• Multi-format (HTML, Office, Hangul, images, Markdown) PDF merge, watermarking, and stamps.<br>• Built-in front-end web PDF viewer assets (`/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css`).<br>• 100% LGPL-Free Chromium Headless printing support & Podman online/offline converter installer.<br>• Includes `s2-kit` and `s2-core` automatically (`api` dependency). |
+| **`s2-validator`** | Library<br>`io.github.devers2:s2-validator:2.1.0` | **Cross-Platform Dynamic Validator**<br>• Author validation rules once in Java and synchronize seamlessly with client-side JavaScript (`s2.validator.js`).<br>• 30+ built-in rules (email, phone, date, etc.) with smart Korean particle interpolation (`{0|은/는}`).<br>• Fluent chaining API, conditional validation (`when`/`and`), nested/collection object validation.<br>• Seamless Spring MVC integration via `S2BindValidator` (`BindingResult`). |
+| **`s2-validator-plugin`** | Gradle Plugin<br>`id 'io.github.devers2.validator' version '2.1.0'` | **Compile-Time Field Validation** *(Optional companion for `s2-validator`)*<br>• AST-based static analysis during build (`compileJava`).<br>• Inspects `.field("fieldName")` in `S2Validator.<DTO>builder()` to verify fields exist on the target DTO class, preventing field mismatches or refactoring regressions before runtime.<br>• Zero configuration required (Gradle only). |
+| **`s2-jpa`** | Library<br>`io.github.devers2:s2-jpa:2.1.0` | **Dynamic JPQL Query Builder**<br>• Template-based dynamic query construction using `S2Jpql` with `{{=key}}` placeholders.<br>• Fluent conditional parameter and clause binding (`bindClause`, `bindParameter`, `bindOrderBy`).<br>• Safe LIKE search with `LikeMode` (ANYWHERE, START, END) preventing injection. |
+| **`s2-util`** *(Bundle)* | Library<br>`io.github.devers2:s2-util:2.1.0` | **Do not combine with s2-kit.**<br>• The bundle carries the `s2-core` classes inside its JAR, so they would sit on the classpath twice next to the `s2-core` that `s2-kit` brings.<br>• With `s2-kit`, add the individual modules above (`s2-validator`, `s2-jpa`). |
 
 **Example Dependency Setup (Gradle):**
 
@@ -113,21 +113,21 @@ Depending on your application's requirements, you can optionally include the **`
 plugins {
     id 'java'
     // [Optional] Compile-time field validation plugin for S2Validator (Gradle only, declared separately from libraries)
-    id 'io.github.devers2.validator' version '2.0.0'
+    id 'io.github.devers2.validator' version '2.1.0'
 }
 
 dependencies {
     // Base: s2-kit (s2-core is included automatically)
-    implementation 'io.github.devers2.internal:s2-kit:1.0.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
 
     // [Optional] When PDF processing, Office conversion, and Web PDF Viewer are needed (includes s2-kit automatically)
-    // implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
+    // implementation 'io.github.devers2:s2-kit-pdf:1.1.0'
 
     // [Optional] Server & Client Unified Validation
-    implementation 'io.github.devers2:s2-validator:2.0.0'
+    implementation 'io.github.devers2:s2-validator:2.1.0'
 
     // [Optional] Dynamic JPQL Queries
-    implementation 'io.github.devers2:s2-jpa:2.0.0'
+    implementation 'io.github.devers2:s2-jpa:2.1.0'
 
     // ⚠️ Not the s2-util bundle: it carries s2-core inside and would overlap with s2-kit
 }
@@ -140,7 +140,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 
 <!-- [Optional] s2-kit-pdf (PDF engine, Office conversion, Web PDF Viewer) -->
@@ -148,7 +148,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-kit-pdf</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 -->
 
@@ -156,14 +156,14 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-validator</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.0</version>
 </dependency>
 
 <!-- [Optional] s2-jpa -->
 <dependency>
     <groupId>io.github.devers2</groupId>
     <artifactId>s2-jpa</artifactId>
-    <version>2.0.0</version>
+    <version>2.1.0</version>
 </dependency>
 ```
 
@@ -220,7 +220,7 @@ When PDF processing (HTML/Office/Image merging, watermarking, page number stamps
 ```groovy
 dependencies {
     // Declaring s2-kit-pdf instead of s2-kit automatically brings in s2-kit and s2-core
-    implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
+    implementation 'io.github.devers2:s2-kit-pdf:1.1.0'
 }
 ```
 
@@ -297,7 +297,7 @@ This library is provided under the **Apache License 2.0**. You are free to use, 
 
 ---
 
-s2-kit Version: 1.0.0 (2026-10-02)
+s2-kit Version: 1.1.0 (2026-10-28)
 
 [//]: # 'S2_DEPS_INFO_START'
 
