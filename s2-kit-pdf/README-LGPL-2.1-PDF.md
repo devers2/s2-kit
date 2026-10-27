@@ -19,9 +19,9 @@
 
 ### 2. LGPL 2.1 Compliance When Using OpenHTMLtoPDF
 
-`s2-kit` **does not include or redistribute** OpenHTMLtoPDF binary JAR files:
-- `s2-kit` declares OpenHTMLtoPDF as a `compileOnly` dependency and accesses it only via dynamic/isolated bridges.
-- `s2-kit` itself is released under the **Apache License 2.0**.
+`s2-kit` and `s2-kit-pdf` **do not include or redistribute** OpenHTMLtoPDF binary JAR files:
+- `s2-kit-pdf` declares OpenHTMLtoPDF as a `compileOnly` dependency and accesses it only via dynamic/isolated bridges.
+- `s2-kit-pdf` itself is released under the **Apache License 2.0**.
 - The source code of OpenHTMLtoPDF is publicly available at:
   [https://github.com/openhtmltopdf/openhtmltopdf](https://github.com/openhtmltopdf/openhtmltopdf).
 

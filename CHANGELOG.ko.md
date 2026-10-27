@@ -4,6 +4,20 @@
 
 `s2-kit`(이전 이름 `s2-support`)의 주요 변경 사항을 기록합니다. `s2-support` 1.x 의 기록도 이 파일에 이어서 둡니다.
 
+## [1.0.0] - 2026-10-27
+
+### 📑 모듈 분리 (`s2-kit-pdf`)
+
+- **PDF 및 문서 변환 기능 전용 서브 모듈 `s2-kit-pdf` 분리**:
+  - `s2-kit` 코어 라이브러리와 PDF 올인원 솔루션 모듈(`s2-kit-pdf`)로 아키텍처를 분리했습니다.
+  - 루트 `s2-kit` JAR 용량이 2.2MB로 경량화되었으며, 불필요한 PDFBox, OpenHTMLtoPDF, CommonMark 의존성을 완전히 제거했습니다.
+  - `s2-kit-pdf`는 `api(rootProject)`를 통해 `s2-kit`과 `s2-core`를 자동으로 포함하므로, 다운스트림 프로젝트는 `implementation 'io.github.devers2:s2-kit-pdf:1.0.0'` 한 줄만 선언하면 모든 기능을 사용할 수 있습니다.
+  - **백엔드 문서 엔진**: `S2PdfUtil`(다중 포맷 병합/스탬프/워터마크), `S2OfficeConverter`(LibreOffice + H2Orestart 오피스/한글 변환), `S2MarkdownUtil`을 `s2-kit-pdf`로 이동.
+  - **프론트엔드 웹 PDF 뷰어 내장**: React 내장 독립형 ES 모듈 뷰어 자원(`pdf-viewer.js`, `pdf-viewer.css`, `pdfjs/`)을 JAR의 `/META-INF/resources/s2-kit/pdf-viewer/`에 패키징하여 서블릿/Spring Boot에서 스크립트 태그 1줄로 즉시 서빙 가능.
+  - **JSDoc 및 TypeScript 선언 완비**: `pdf-viewer.js` 번들 최상단에 상세 JSDoc 배너를 내장하여 개발 편의성 및 자동완성 지원.
+  - **팟맨(Podman) 온/오프라인 변환기 설치 스크립트**: `s2-kit-pdf/scripts/`에 원클릭 온라인 설치 및 폐쇄망용 단일 실행 파일(`--make-offline`) 생성 스크립트(`setup-s2-office-converter.sh`) 내장.
+  - **100% LGPL-Free 인쇄**: Chromium Headless(`s2-chrome`)를 기본 렌더러로 채택하여 완전한 Apache 2.0 / BSD 라이선스 보장.
+
 ## [1.0.0] - 2026-10-02
 
 `s2-support` 1.1.5 의 후속으로, 이름을 `s2-kit`으로 바꾼 첫 버전입니다. 1.1.5 대비 변경이며 하위 호환을 유지하지 않으므로
