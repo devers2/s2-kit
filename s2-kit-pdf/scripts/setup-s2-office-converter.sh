@@ -50,7 +50,7 @@
 #                      --user 도 같은 뜻으로 받습니다.
 #   --rebuild          이미지를 다시 만듭니다 (보안 업데이트 반영 등).
 #   --no-chrome        웹 페이지 변환용 Chromium(s2-chrome)을 빼고 설치합니다 (이미지 약 0.7GB 작아짐).
-#                      없으면 S2PdfUtil 은 웹 페이지를 내장 렌더러(openhtmltopdf)로 변환합니다.
+#                      (HTML-to-PDF 및 SVG 변환 기능이 비활성화됩니다)
 #   --uninstall        s2-soffice 명령과 이미지를 제거합니다 (Podman 자체는 남김).
 #   --export [파일]    폐쇄망용 설치 파일 하나를 만듭니다 (기본 ./setup-s2-office-converter-offline.sh).
 #                      인터넷 되는 PC에서 실행. 이 스크립트 뒤에 변환기 이미지와 Podman 설치 파일을 붙인 파일로,

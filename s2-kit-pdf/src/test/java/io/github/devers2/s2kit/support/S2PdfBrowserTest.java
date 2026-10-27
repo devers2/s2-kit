@@ -127,43 +127,35 @@ class S2PdfBrowserTest {
     }
 
     @Test
-    void failuresFallBackToTheBuiltInRenderer() throws IOException {
+    void failuresThrowIOException() throws IOException {
         for (var behavior : new String[] { "fail", "garbage" }) {
             S2PdfUtil.setBrowserCommand(fakeBrowser(behavior).toString());
-            try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
-                assertTrue(new PDFTextStripper().getText(doc).contains("PAGE TEXT"), behavior);
-            }
+            assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")).close(), behavior);
         }
         S2PdfUtil.setBrowserCommand(dir.resolve("missing-chrome").toString());
         assertFalse(S2PdfUtil.isBrowserRenderingAvailable());
-        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
-            assertTrue(new PDFTextStripper().getText(doc).contains("PAGE TEXT"));
-        }
+        assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")).close());
     }
 
     @Test
-    void aHungBrowserIsStoppedAndFallsBack() throws IOException {
+    void aHungBrowserIsStoppedAndThrows() throws IOException {
         S2PdfUtil.setBrowserCommand(fakeBrowser("hang").toString());
         S2PdfUtil.setBrowserTimeout(Duration.ofMillis(500));
         var start = System.nanoTime();
-        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
-            assertTrue(new PDFTextStripper().getText(doc).contains("PAGE TEXT"));
-        }
+        assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")).close());
         assertTrue(Duration.ofNanos(System.nanoTime() - start).toSeconds() < 10);
     }
 
     @Test
-    void theBrowserIsUsedOnlyForWebPagesAndCanBeTurnedOff() throws IOException {
+    void theBrowserRendersHtmlAndCanBeTurnedOff() throws IOException {
         S2PdfUtil.setBrowserCommand(fakeBrowser("ok").toString());
         try (var doc = load(S2PdfUtil.merge(PdfSource.ofHtml("<p>string html</p>")))) {
-            assertEquals(1, doc.getNumberOfPages());
+            assertEquals(3, doc.getNumberOfPages());
         }
         S2PdfUtil.setBrowserRenderingEnabled(false);
         assertFalse(S2PdfUtil.isBrowserRenderingAvailable());
-        try (var doc = load(S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")))) {
-            assertTrue(new PDFTextStripper().getText(doc).contains("PAGE TEXT"));
-        }
-        assertFalse(Files.exists(dir.resolve("calls.log")), "never called");
+        assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofUrl(base + "/page.html")).close());
+        assertThrows(IOException.class, () -> S2PdfUtil.merge(PdfSource.ofHtml("<p>x</p>")).close());
     }
 
     @Test

@@ -57,7 +57,6 @@ class S2PdfCacheTest {
         Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"), "shell scripts");
         cache = dir.resolve("cache");
         S2PdfUtil.setConversionCache(cache, 1024L * 1024 * 1024, Duration.ofDays(1), 1);
-        S2PdfUtil.setBrowserRenderingEnabled(false);
         samplePdf = dir.resolve("converted.pdf");
         try (var doc = new PDDocument()) {
             doc.addPage(new PDPage());
@@ -221,10 +220,8 @@ class S2PdfCacheTest {
             Files.setPosixFilePermissions(failing, PosixFilePermissions.fromString("rwx------"));
             S2PdfUtil.setBrowserRenderingEnabled(true);
             S2PdfUtil.setBrowserCommand(failing.toString());
-            try (var doc = load(S2PdfUtil.merge(List.of(PdfSource.ofUrl(url)), CACHED))) {
-                assertTrue(new PDFTextStripper().getText(doc).contains("WEB PAGE"), "fallback rendering");
-            }
-            assertEquals(List.of(), entries(), "a fallback is not kept");
+            assertThrows(IOException.class, () -> S2PdfUtil.merge(List.of(PdfSource.ofUrl(url)), CACHED).close());
+            assertEquals(List.of(), entries(), "a failure is not kept");
 
             var working = dir.resolve("chrome-ok");
             Files.writeString(working, "#!/usr/bin/env bash\ncp \"" + samplePdf + "\" \"$2\"\n");

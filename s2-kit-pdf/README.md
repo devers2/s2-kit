@@ -202,9 +202,9 @@ See [scripts/README.md](scripts/README.md) for full details.
 
 ## ⚖️ License
 
-- `s2-kit-pdf` is released under the **[Apache License 2.0](LICENSE)**.
-- HTML-to-PDF rendering operates **100% LGPL-Free (Apache 2.0 / BSD)** using headless Chromium (`s2-chrome`).
-- See [README-LGPL-2.1-PDF.md](README-LGPL-2.1-PDF.md) for guidelines on the optional pure-Java OpenHTMLtoPDF (LGPL 2.1) fallback.
+- `s2-kit-pdf` is released under the **[Apache License 2.0](LICENSE)** as a **100% LGPL-Free** library.
+- HTML-to-PDF and SVG rendering operate **100% LGPL-Free (Apache 2.0 / BSD)** powered by headless Chromium (`s2-chrome` or system browser).
+- No LGPL obligations or source redistribution requirements apply.
 
 
 [//]: # 'S2_DEPS_INFO_START'
@@ -218,8 +218,6 @@ See [scripts/README.md](scripts/README.md) for full details.
 ```groovy
 dependencies {
     // Essential runtime dependencies for optional functionalities
-    implementation 'io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87'
-    implementation 'io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.87'
     implementation 'org.commonmark:commonmark:0.30.0'
     implementation 'org.commonmark:commonmark-ext-gfm-tables:0.30.0'
     implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0'

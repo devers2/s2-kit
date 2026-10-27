@@ -11,8 +11,7 @@ s2-kit 의 `S2OfficeConverter`·`S2PdfUtil` 이 **오피스·한글 문서(docx,
 
 - 변환기가 없어도 앱은 동작합니다. 오피스·한글이 아닌 소스(PDF, HTML, 이미지 등)는 그대로 병합되고,
   문서 소스만 `오피스·한글 문서를 변환하려면 s2-office-converter 설치가 필요합니다.` 오류가 납니다.
-- 웹 페이지는 `s2-chrome` 이 있으면 Chromium 으로(flex·grid·JavaScript 까지 화면 그대로), 없거나 실패하면(크롬 문제, 제한 시간 초과 등)
-  경고 로그를 남기고 내장 렌더러(openhtmltopdf)로 변환합니다. 웹 페이지 변환 때문에 병합이 실패하지는 않습니다.
+- 웹 페이지 및 HTML은 `s2-chrome`이 설치되면 Chromium 헤드리스로(flex·grid·JavaScript까지 화면 그대로) 100% LGPL-Free로 인쇄됩니다.
 - 설치 후 앱을 다시 시작할 필요 없이 `S2OfficeConverter`(와 이를 쓰는 `S2PdfUtil`)가 자동으로 찾습니다.
 
 ## 파일

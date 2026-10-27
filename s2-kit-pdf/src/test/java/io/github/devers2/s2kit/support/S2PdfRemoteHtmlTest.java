@@ -59,8 +59,6 @@ class S2PdfRemoteHtmlTest {
 
     @BeforeEach
     void start() throws IOException {
-        // These tests check the built-in renderer, even where s2-chrome is installed | s2-chrome 이 있어도 내장 렌더러를 시험
-        S2PdfUtil.setBrowserRenderingEnabled(false);
         origin = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         origin.createContext("/", this::serveOrigin);
         origin.start();
@@ -300,7 +298,7 @@ class S2PdfRemoteHtmlTest {
 
     @Test
     void svgIsDrawnWithoutFetchingWhatItPointsAt() throws IOException {
-        assertTrue(S2PdfUtil.isSvgSupported(), "openhtmltopdf-svg-support is a test dependency");
+        assertTrue(S2PdfUtil.isSvgSupported(), "browser rendering engine supports SVG");
         files.put("/logo.svg", ("<svg xmlns='http://www.w3.org/2000/svg' width='60' height='60'>"
                 + "<rect width='60' height='60' fill='#ff0000'/>"
                 + "<image href='" + otherBase + "/from-svg.png' width='10' height='10'/>"

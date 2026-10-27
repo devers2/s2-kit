@@ -34,10 +34,8 @@ extra["dynamicSourceInfoMap"] = mapOf(
         "licenses" to listOf(
             "README.md",
             "README.ko.md",
-            "README-LGPL-2.1-PDF.md",
             "LICENSE",
             "licenses/LICENSE-APACHE-2.0",
-            "licenses/LICENSE-LGPL-2.1",
             "licenses/LICENSE-MIT",
             "licenses/LICENSE-COMMONMARK-BSD",
             "licenses/LICENSE-AUTOLINK-MIT",
@@ -52,12 +50,11 @@ extra["artifactTestClassNames"] = emptyList<String>()
 dependencies {
     api(rootProject)
 
+    // Apache PDFBox 3.x (Apache License 2.0) - PDF 조작, 병합, 스탬프, 워터마크
+    api("org.apache.pdfbox:pdfbox:3.0.4")
+
     // HTML 전처리 및 정리 (MIT)
     implementation("org.jsoup:jsoup:1.23.2")
-
-    // PDF 렌더링 & OpenHTMLtoPDF (LGPL 2.1) - 선택적 런타임 폴백 엔진
-    compileOnly("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87")
-    compileOnly("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.87")
 
     // 마크다운 파싱 (BSD / MIT) - S2MarkdownUtil
     compileOnly("org.commonmark:commonmark:0.30.0")
@@ -75,8 +72,6 @@ dependencies {
     testRuntimeOnly(rootProject.libs.junit.jupiter.engine)
     testRuntimeOnly(rootProject.libs.junit.platform.launcher)
 
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.87")
-    testImplementation("io.github.openhtmltopdf:openhtmltopdf-svg-support:1.1.87")
     testImplementation("org.commonmark:commonmark:0.30.0")
     testImplementation("org.commonmark:commonmark-ext-gfm-tables:0.30.0")
     testImplementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0")

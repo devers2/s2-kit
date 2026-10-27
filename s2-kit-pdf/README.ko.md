@@ -207,6 +207,6 @@ if (S2OfficeConverter.isAvailable()) {
 
 ## ⚖️ 라이선스 (License)
 
-- `s2-kit-pdf`는 기본적으로 **[Apache License 2.0](LICENSE)**에 따라 배포됩니다.
-- HTML-to-PDF 변환은 서버에 설치된 **Chromium 헤드리스(`s2-chrome`)를 기본 렌더러로 사용하여 100% LGPL-Free(Apache 2.0 / BSD)로 동작**합니다.
-- 순수 Java 인메모리 폴백 엔진인 OpenHTMLtoPDF(LGPL 2.1)를 사용할 경우의 라이선스 고지 및 소스 교체 안내는 [README-LGPL-2.1-PDF.md](README-LGPL-2.1-PDF.md)를 참고하십시오.
+- `s2-kit-pdf`는 **[Apache License 2.0](LICENSE)**에 따라 배포되는 **100% LGPL-Free** 라이브러리입니다.
+- HTML-to-PDF 및 SVG 렌더링은 서버에 설치된 **Chromium 헤드리스(`s2-chrome` 또는 시스템 브라우저)를 엔진으로 사용하여 완전한 Apache 2.0 / BSD 환경에서 동작**합니다.
+- 복잡한 라이선스 제약이나 소스 코드 공개 의무가 일체 발생하지 않습니다.

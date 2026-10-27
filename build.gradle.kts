@@ -106,20 +106,18 @@ extra["releaseCompatibility"] = JavaVersion.VERSION_17
  * ========================================================================
  * ⭐ [동적 기능 활성화 설정 (Active Features Toggle)]
  * ========================================================================
- * 아래 'dynamicSourceInfoMap'에 정의된 기능 키(예: 'S2PdfUtil', 'licensesInfo')를
+ * 아래 'dynamicSourceInfoMap'에 정의된 기능 키(예: 'licensesInfo')를
  * 'activeFeatures' Set에 추가하면, 해당 기능에 매핑된:
- *   1) 소스 파일 (sources: 예, S2PdfUtil.java)
- *   2) 라이브러리 의존성 (dependencies: 예, jsoup, openhtmltopdf-pdfbox)
- *   3) 라이선스 문서 (licenses: 예, README-LGPL-2.1-PDF.md)
+ *   1) 소스 파일 (sources)
+ *   2) 라이브러리 의존성 (dependencies)
+ *   3) 라이선스 문서 (licenses)
  * 가 빌드 파이프라인에 자동으로 활성화(포함)되어 컴파일 및 패키징됩니다.
  *
  * 💡 반대로 'activeFeatures'에서 해당 기능 키를 제외(제거)하면:
  *   - 관련 소스 파일과 라이브러리 의존성, 라이선스가 빌드에서 완전히 비활성화(제외)되어
  *   - 특정 대용량 의존성이나 불필요한 서드파티 라이브러리를 배제한 초경량 배포용 아티팩트를 구성할 수 있습니다.
  *
- * 설정 예시)
- *   - S2PdfUtil 포함 (기본값): setOf("licensesInfo", "S2PdfUtil")
- *   - S2PdfUtil 제외 (경량화): setOf("licensesInfo")
+ * 📦 PDF 관련 기능(S2PdfUtil, S2OfficeConverter, S2MarkdownUtil)은 s2-kit-pdf 서브모듈로 분리되었습니다.
  */
 extra["activeFeatures"] = setOf("licensesInfo")
 
@@ -237,17 +235,6 @@ S2BuildUtils.updateCopyright(
 )
 
 // 컴파일러 옵션(인코딩, -parameters)은 s2-build-support 플러그인이 apply 시 자동 처리한다.
-
-/**
- * [JAR 패키징 명시적 필터링]
- * S2BuildUtils를 통해 자동 관리되지만, activeFeatures 설정에 따라
- * 특정 라이선스 파일이 중복 포함되는 것을 방지하기 위해 명시적으로 exclude 처리한다.
- */
-tasks.withType<Jar>().configureEach {
-    if (!projectActiveFeatures.contains("S2PdfUtil")) {
-        exclude("README-LGPL-2.1-PDF.md")
-    }
-}
 
 /*
  * [표준 라이브러리 배포 설정 (원콜)]
