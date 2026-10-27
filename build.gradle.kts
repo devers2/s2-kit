@@ -164,8 +164,9 @@ extra["dynamicSourceInfoMap"] = mapOf(
     ),
     "S2PdfUtil" to mapOf(
         /*
-         * OpenHTML to PDF (LGPL 2.1) - S2Pdf 관련 의존성으로 LGPL 2.1 라이선스 준수를 위해 compileOnly로 사용(Shadow/Bundle 방지)
-         * 최종 사용자가 의존성을 직접 추가해야 하며 Shadow JAR에서 쉐이딩/번들링 되지 않도록 방지해야 함
+         * PDF Rendering: Chromium Headless (Apache 2.0 / BSD) is primary.
+         * OpenHTML to PDF (LGPL 2.1) is an optional pure-Java fallback, used via compileOnly (no bundling/shading).
+         * End users can run 100% LGPL-free with Chromium or optionally provide openhtmltopdf at runtime.
          */
         /* "variantId" to "pdf", */
         // Helpers used only by S2PdfUtil leave with it (S2HtmlResources needs jsoup)

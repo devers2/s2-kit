@@ -170,6 +170,19 @@ public final class S2OfficeConverter {
     }
 
     /**
+     * 한글(HWP, HWPX) 문서 변환을 지원하는지 확인한다 (변환 명령이 설치되어 있는지 확인).
+     * <p>
+     * 한글 문서 변환 품질을 극대화하려면 LibreOffice에 {@code libreoffice-h2orestart} 패키지 또는
+     * {@code H2Orestart.oxt} 확장 플러그인이 설치되어 있어야 합니다.
+     * </p>
+     *
+     * @return 변환 명령이 준비되어 있으면 true
+     */
+    public static boolean isHwpSupported() {
+        return isAvailable();
+    }
+
+    /**
      * 사용할 변환 명령. 없으면 비어 있다.
      *
      * @return 명령과 앞부분 인자
@@ -369,7 +382,8 @@ public final class S2OfficeConverter {
                         + readTail(log, 2000));
                 logger.warn("문서 변환 실패: {} → {} ({})", name, formatExtension, detail.getMessage());
                 // Plain LibreOffice without the H2Orestart extension cannot read Hangul files | H2Orestart 없는 LibreOffice 는 한글 파일을 못 읽음
-                var message = HWP_EXTENSIONS.contains(extension) && !wrapper ? CONVERTER_REQUIRED
+                var message = HWP_EXTENSIONS.contains(extension) && !wrapper
+                        ? "한글(HWP/HWPX) 문서 변환에는 H2Orestart 확장이 필요합니다. " + CONVERTER_REQUIRED
                         : "문서를 " + formatExtension.toUpperCase(Locale.ROOT) + "로 변환하지 못했습니다: " + name;
                 throw new IOException(message, detail);
             }

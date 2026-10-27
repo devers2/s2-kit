@@ -47,9 +47,11 @@ For more details, please refer to the 'LICENSE' file in the root directory.
     - License: Apache License 2.0
     - URL: [https://github.com/findbugsproject/findbugs](https://github.com/findbugsproject/findbugs)
 
-11. OpenHTMLtoPDF (openhtmltopdf-pdfbox, openhtmltopdf-core) (Optional; added by the user for S2PdfUtil)
+11. OpenHTMLtoPDF (openhtmltopdf-pdfbox, openhtmltopdf-core) (Optional; pure-Java fallback engine for S2PdfUtil)
     - License: GNU Lesser General Public License, Version 2.1 or later (See 'LICENSE-LGPL-2.1' and 'README-LGPL-2.1-PDF.md')
     - URL: [https://github.com/openhtmltopdf/openhtmltopdf](https://github.com/openhtmltopdf/openhtmltopdf)
+    - Note: S2PdfUtil natively supports headless Chromium/Chrome (Apache 2.0 / BSD) without requiring any LGPL dependencies.
+      OpenHTMLtoPDF is an optional in-memory fallback for environments without a browser binary installed.
 
 12. Apache PDFBox (pdfbox, fontbox, pdfbox-io, xmpbox) (Optional; transitive dependency of OpenHTMLtoPDF)
     - License: Apache License 2.0

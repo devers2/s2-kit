@@ -59,8 +59,6 @@ import java.util.regex.Pattern;
 
 import javax.imageio.ImageIO;
 
-import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
-
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
@@ -157,10 +155,18 @@ import io.github.devers2.s2util.log.S2Logger;
 public class S2PdfUtil {
 
     static {
-        // S2PdfUtil 관련 필수 의존성 유무를 체크
+        // S2PdfUtil 관련 필수 의존성 유무를 체크 (Jsoup은 HTML 정리 및 파싱에 필수)
         S2Util.checkDependency("S2PdfUtil", "org.jsoup.Jsoup", "org.jsoup:jsoup:1.23.2");
-        S2Util.checkDependency("S2PdfUtil", "com.openhtmltopdf.pdfboxout.PdfRendererBuilder",
-                "io.github.openhtmltopdf:openhtmltopdf-pdfbox:1.1.85");
+    }
+
+    /** OpenHTMLtoPDF 라이브러리 사용 가능 여부 (LGPL 2.1 의존성) */
+    public static boolean isOpenHtmlAvailable() {
+        try {
+            Class.forName("com.openhtmltopdf.pdfboxout.PdfRendererBuilder", false, S2PdfUtil.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError e) {
+            return false;
+        }
     }
 
     private static final S2Logger logger = S2LogManager.getLogger(S2PdfUtil.class);
@@ -703,30 +709,64 @@ public class S2PdfUtil {
     /** Renders straight into the stream (a file in merge), so the PDF is not held in memory | 스트림(병합 시 파일)으로 바로 렌더링 */
     private static void createPdf(String htmlContent, Class<?> clazz, String fontPath, OutputStream outputStream)
             throws IOException {
-        var builder = new PdfRendererBuilder();
-        builder.withHtmlContent(htmlContent, null);
-        // Only inline data: URIs are loaded; images and CSS were already embedded, so the renderer never fetches
-        // http:, file: or other URLs written in the HTML (SSRF, local file read) | data: URI 만 로드. 이미지·CSS 는 이미 인라인되어
-        // 있으므로 렌더러가 HTML 의 http:, file: 등 URL 을 직접 가져오지 않음 (SSRF, 로컬 파일 읽기 방지)
-        builder.useUriResolver((baseUri, uri) -> uri != null && uri.startsWith("data:") ? uri : null);
-        var svgDrawer = newSvgDrawer();
-        if (svgDrawer != null) {
-            builder.useSVGDrawer(svgDrawer);
-        } else if (htmlContent.contains("<svg") || htmlContent.contains("image/svg+xml")) {
-            if (SVG_WARNED.compareAndSet(false, true)) {
-                logger.warn("SVG 는 그리지 않고 비워 둡니다. " + SVG_SUPPORT_REQUIRED);
+        if (isOpenHtmlAvailable()) {
+            OpenHtmlBridge.createPdf(htmlContent, clazz, fontPath, outputStream);
+            return;
+        }
+
+        if (isBrowserRenderingAvailable()) {
+            Path tempPdf = Files.createTempFile("s2_html_", ".pdf");
+            try {
+                var command = resolveBrowserCommand();
+                var doc = Jsoup.parse(htmlContent);
+                doc.head().prependElement("style").appendChild(new DataNode(BROWSER_PAGE_CSS));
+                if (doc.selectFirst("meta[charset]") == null) {
+                    doc.head().prependElement("meta").attr("charset", "UTF-8");
+                }
+                printWithBrowser(command, doc.outerHtml(), tempPdf);
+                try (var in = Files.newInputStream(tempPdf)) {
+                    in.transferTo(outputStream);
+                }
+                return;
+            } finally {
+                Files.deleteIfExists(tempPdf);
             }
         }
 
-        var font = resolveFont(clazz, fontPath);
-        requireFontFor(htmlContent, font != null);
-        if (font != null) {
-            var fontBytes = font.bytes();
-            builder.useFont(() -> new ByteArrayInputStream(fontBytes), DEFAULT_FONT_FAMILY);
-        }
+        throw new IllegalStateException("HTML을 PDF로 변환할 렌더러가 없습니다.\n"
+                + "  1) 시스템에 Chromium 또는 Chrome 브라우저를 설치하거나 (권장: 100% Apache 2.0/BSD 라이선스 유지),\n"
+                + "  2) 'io.github.openhtmltopdf:openhtmltopdf-pdfbox' 의존성을 클래스패스에 추가해 주세요.");
+    }
 
-        builder.toStream(outputStream);
-        builder.run();
+    /** OpenHTMLtoPDF 클래스 격리 브리지 (LGPL 2.1 의존성 지연 로딩) */
+    private static class OpenHtmlBridge {
+        static void createPdf(String htmlContent, Class<?> clazz, String fontPath, OutputStream outputStream)
+                throws IOException {
+            var builder = new com.openhtmltopdf.pdfboxout.PdfRendererBuilder();
+            builder.withHtmlContent(htmlContent, null);
+            // Only inline data: URIs are loaded; images and CSS were already embedded, so the renderer never fetches
+            // http:, file: or other URLs written in the HTML (SSRF, local file read) | data: URI 만 로드. 이미지·CSS 는 이미 인라인되어
+            // 있으므로 렌더러가 HTML 의 http:, file: 등 URL 을 직접 가져오지 않음 (SSRF, 로컬 파일 읽기 방지)
+            builder.useUriResolver((baseUri, uri) -> uri != null && uri.startsWith("data:") ? uri : null);
+            var svgDrawer = newSvgDrawer();
+            if (svgDrawer != null) {
+                builder.useSVGDrawer((com.openhtmltopdf.extend.SVGDrawer) svgDrawer);
+            } else if (htmlContent.contains("<svg") || htmlContent.contains("image/svg+xml")) {
+                if (SVG_WARNED.compareAndSet(false, true)) {
+                    logger.warn("SVG 는 그리지 않고 비워 둡니다. " + SVG_SUPPORT_REQUIRED);
+                }
+            }
+
+            var font = resolveFont(clazz, fontPath);
+            requireFontFor(htmlContent, font != null);
+            if (font != null) {
+                var fontBytes = font.bytes();
+                builder.useFont(() -> new ByteArrayInputStream(fontBytes), DEFAULT_FONT_FAMILY);
+            }
+
+            builder.toStream(outputStream);
+            builder.run();
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -811,16 +851,48 @@ public class S2PdfUtil {
     }
 
     private static List<String> detectBrowserCommand() {
-        var fromEnv = System.getenv("S2_CHROME");
-        if (fromEnv != null && !fromEnv.isBlank()) {
-            return List.of(fromEnv.trim());
+        for (var env : List.of("S2_CHROME", "CHROME_BIN", "CHROMIUM_PATH")) {
+            var fromEnv = System.getenv(env);
+            if (fromEnv != null && !fromEnv.isBlank()) {
+                return List.of(fromEnv.trim());
+            }
         }
         var found = S2OfficeConverter.findOnPath("s2-chrome");
         if (found != null) {
             return List.of(found.toString());
         }
         var fixed = Path.of("/usr/local/bin/s2-chrome");
-        return Files.isExecutable(fixed) ? List.of(fixed.toString()) : null;
+        if (Files.isExecutable(fixed)) {
+            return List.of(fixed.toString());
+        }
+        // 일반 시스템 브라우저 탐색 (Linux / macOS / Windows)
+        var browserNames = List.of(
+                "chromium", "chromium-browser",
+                "google-chrome-stable", "google-chrome",
+                "chrome", "msedge");
+        for (var name : browserNames) {
+            var path = S2OfficeConverter.findOnPath(name);
+            if (path != null) {
+                return List.of(path.toString());
+            }
+        }
+        List<Path> commonPaths = List.of(
+                Path.of("/usr/bin/chromium"),
+                Path.of("/usr/bin/chromium-browser"),
+                Path.of("/usr/bin/google-chrome-stable"),
+                Path.of("/usr/bin/google-chrome"),
+                Path.of("/snap/bin/chromium"),
+                Path.of("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+                Path.of("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+                Path.of("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"),
+                Path.of("C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"),
+                Path.of("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"));
+        for (var p : commonPaths) {
+            if (Files.isExecutable(p)) {
+                return List.of(p.toString());
+            }
+        }
+        return null;
     }
 
     /** Browser print setup: A4, and backgrounds kept as on screen | 브라우저 인쇄 설정: A4, 배경은 화면처럼 유지 */
@@ -852,13 +924,13 @@ public class S2PdfUtil {
                 // A broken or outdated browser must not stop the merge | 브라우저 문제로 병합이 멈추지 않도록
                 logger.warn("브라우저 변환에 실패해 내장 렌더러로 변환합니다: {}", e.getMessage());
             }
-            renderHtmlToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+            renderHtmlToPdfFileBuiltIn(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
                     convertCssBackgroundImageTargetSelectors);
             // A fallback result is not cached, so the browser's is used once it works again
             // | 대체 결과는 캐시하지 않음 (브라우저가 복구되면 브라우저 결과를 씀)
             return false;
         }
-        renderHtmlToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+        renderHtmlToPdfFileBuiltIn(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
                 convertCssBackgroundImageTargetSelectors);
         return true;
     }
@@ -870,7 +942,28 @@ public class S2PdfUtil {
             Files.writeString(input, html, StandardCharsets.UTF_8);
             var output = work.resolve("page.pdf");
             var args = new ArrayList<>(command);
-            args.addAll(List.of("--print-to-pdf", output.toString(), input.toString()));
+
+            var execName = Path.of(command.get(0)).getFileName().toString().toLowerCase(Locale.ROOT);
+            // 래퍼 스크립트(s2-chrome, fake-chrome 등)이거나 사용자가 직접 setBrowserCommand 로 지정한 명령은
+            // [cmd, --print-to-pdf, output, input] 표준 래퍼 계약을 준수함
+            boolean isDirectSystemBrowser = (configuredBrowserCommand == null)
+                    && (execName.contains("chrome") || execName.contains("chromium") || execName.contains("edge"))
+                    && !execName.startsWith("s2-") && !execName.startsWith("fake-");
+
+            if (isDirectSystemBrowser) {
+                // 시스템 브라우저(Chromium/Chrome) 직접 실행 시 안정적인 헤드리스 인쇄 플래그 적용
+                args.addAll(List.of(
+                        "--headless=new",
+                        "--disable-gpu",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--no-pdf-header-footer",
+                        "--print-to-pdf=" + output.toString(),
+                        input.toString()));
+            } else {
+                args.addAll(List.of("--print-to-pdf", output.toString(), input.toString()));
+            }
+
             var log = work.resolve("browser.log");
             var process = new ProcessBuilder(args).redirectErrorStream(true).redirectOutput(log.toFile()).start();
             var timeout = browserTimeout;
@@ -1017,7 +1110,7 @@ public class S2PdfUtil {
      * @return SVG 를 그릴 수 있으면 true
      */
     public static boolean isSvgSupported() {
-        return newSvgDrawer() != null;
+        return isBrowserRenderingAvailable() || newSvgDrawer() != null;
     }
 
     /**
@@ -1025,14 +1118,14 @@ public class S2PdfUtil {
      * when the module is absent | 스크립트를 끄고 data: 리소스만 허용한 Batik 그리기 도구 (SVG 도 http:, file: 주소를 가리킬 수 있음). 없으면 null
      */
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static com.openhtmltopdf.extend.SVGDrawer newSvgDrawer() {
+    private static Object newSvgDrawer() {
         try {
-            var loader = PdfRendererBuilder.class.getClassLoader();
+            var loader = S2PdfUtil.class.getClassLoader();
             var drawer = Class.forName(SVG_DRAWER, true, loader);
             var scriptMode = (Class<Enum>) Class.forName(SVG_DRAWER + "$SvgScriptMode", true, loader);
             // Only data: (images already embedded); http:, file: and the rest stay refused
             // | data: 만 허용 (이미 넣은 이미지). http:, file: 등은 계속 거부
-            return (com.openhtmltopdf.extend.SVGDrawer) drawer.getConstructor(scriptMode, java.util.Set.class)
+            return drawer.getConstructor(scriptMode, java.util.Set.class)
                     .newInstance(Enum.valueOf(scriptMode, "SECURE"), java.util.Set.of("data"));
         } catch (ClassNotFoundException | LinkageError e) {
             return null;
@@ -5725,6 +5818,19 @@ public class S2PdfUtil {
     private static void renderHtmlToPdfFile(Path target, String htmlContent, String staticResourceBasePath,
             String cssPath, String fontPath, Class<?> clazz, String... convertCssBackgroundImageTargetSelectors)
             throws IOException {
+        if (!isOpenHtmlAvailable() && isBrowserRenderingAvailable()) {
+            renderWebPageToPdfFile(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+                    convertCssBackgroundImageTargetSelectors);
+            return;
+        }
+        renderHtmlToPdfFileBuiltIn(target, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
+                convertCssBackgroundImageTargetSelectors);
+    }
+
+    /** OpenHTMLtoPDF 내장 렌더러로 파일 렌더링 */
+    private static void renderHtmlToPdfFileBuiltIn(Path target, String htmlContent, String staticResourceBasePath,
+            String cssPath, String fontPath, Class<?> clazz, String... convertCssBackgroundImageTargetSelectors)
+            throws IOException {
         try (var out = new BufferedOutputStream(Files.newOutputStream(target))) {
             renderHtmlToPdf(out, htmlContent, staticResourceBasePath, cssPath, fontPath, clazz,
                     convertCssBackgroundImageTargetSelectors);
@@ -6024,7 +6130,7 @@ public class S2PdfUtil {
     }
 
     private static String convertSvgToHtml(String svgContent) throws IOException {
-        if (newSvgDrawer() == null) {
+        if (!isSvgSupported()) {
             throw new IOException(SVG_SUPPORT_REQUIRED);
         }
         if (S2Util.isEmpty(svgContent)) {

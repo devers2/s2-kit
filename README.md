@@ -240,9 +240,9 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
 
 // An HTML page fetched by URL comes out as on screen: images and CSS of the same origin and images of public hosts (CDNs)
 // are embedded (internal addresses are refused). Headers (login cookies) go only to the same origin. The layout is for an
-// A4-wide screen. With s2-chrome on the server (_devtools2 s2-office-converter) Chromium prints the page, so flex, grid and
-// JavaScript come out as on screen; without it, or when it fails, the built-in renderer is used (SVG then needs
-// io.github.openhtmltopdf:openhtmltopdf-svg-support)
+// A4-wide screen. When Chromium (s2-chrome, chromium, google-chrome, msedge) is available, it prints the page via headless browser
+// (full flex, grid, JS, and SVG support; 100% Apache/BSD licensed without LGPL restrictions).
+// When no browser is available, falls back to the in-memory renderer (OpenHTMLtoPDF fallback).
 S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
         Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
 

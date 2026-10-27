@@ -236,8 +236,9 @@ try (InputStream pdf = S2PdfUtil.merge(List.of(
 
 // URL 로 받은 HTML 페이지는 화면처럼: 같은 출처의 이미지·CSS 와 공개 주소(CDN)의 이미지를 받아 넣음 (내부망 주소는 차단).
 // 헤더(로그인 쿠키 등)는 같은 출처 요청에만 보냄. 레이아웃 기준은 A4 너비 화면.
-// 서버에 s2-chrome(_devtools2 s2-office-converter)이 있으면 Chromium 으로 인쇄해 flex·grid·JavaScript 까지 화면 그대로,
-// 없거나 실패하면 내장 렌더러로 변환 (이때 SVG 는 io.github.openhtmltopdf:openhtmltopdf-svg-support 가 있어야 그림)
+// 서버에 Chromium(s2-chrome, chromium, google-chrome 등)이 있으면 Headless 브라우저로 화면 그대로 인쇄
+// (flex·grid·JS·SVG 지원, 100% Apache/BSD 라이선스로 LGPL 제약 없음).
+// 브라우저가 없는 환경에서는 Java 내장 렌더러(OpenHTMLtoPDF fallback)로 자동 변환
 S2PdfUtil.merge(S2PdfUtil.PdfSource.ofUrl("https://intra.example.com/report/view?id=10",
         Map.of("Cookie", "JSESSIONID=" + sessionId), Duration.ofSeconds(30)));
 
