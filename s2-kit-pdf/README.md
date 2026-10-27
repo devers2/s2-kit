@@ -202,11 +202,16 @@ Use the scripts in `s2-kit-pdf/scripts/` to set up containerized LibreOffice and
 - **Online installation**:
   ```bash
   cd scripts/
-  ./setup-s2-office-converter.sh
+  # Production server: target your application's Linux user account (e.g., appuser)
+  ./setup-s2-office-converter.sh --app-user appuser
   ```
-- **Self-contained offline installer creation (`--make-offline`)**:
+- **Self-contained offline installer creation (`--export`)**:
   ```bash
-  ./setup-s2-office-converter.sh --make-offline --target el9
+  # 1. On an internet-connected PC, generate the self-contained offline installer package
+  ./setup-s2-office-converter.sh --export --target rockylinux:9
+
+  # 2. Transfer to the air-gapped target server and execute
+  bash setup-s2-office-converter-offline.sh --app-user appuser
   ```
 
 See [scripts/README.md](scripts/README.md) for full details.

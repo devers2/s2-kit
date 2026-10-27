@@ -226,9 +226,26 @@ dependencies {
 
 - **Backend Document Processing**: `S2PdfUtil.merge()`, `S2PdfUtil.stamp()`, `S2OfficeConverter` (Office/Hangul document conversion)
 - **Front-end Web Viewer**: `/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css` (Embedded standalone ES module viewer powered by React)
-- **Infrastructure Scripts**: Podman-based LibreOffice/Chromium online & offline converter installer (`scripts/setup-s2-office-converter.sh`)
+- **Infrastructure Scripts**: Podman-based LibreOffice/Chromium online & offline converter installer ([`s2-kit-pdf/scripts/`](s2-kit-pdf/scripts/README.md))
 
-For full details, API references, and complete code examples, see the **[s2-kit-pdf README](s2-kit-pdf/README.md)**.
+##### 🛠️ Server Document Converter Setup (Podman Online / Offline)
+To support Office/Hangul document conversion (`s2-soffice`) and high-fidelity headless web printing (`s2-chrome`), automated Podman installation scripts are provided:
+
+- **Online Installation**:
+  ```bash
+  # Install for your application's Linux user account (e.g., appuser)
+  ./s2-kit-pdf/scripts/setup-s2-office-converter.sh --app-user appuser
+  ```
+- **Air-Gapped (Offline) Installation**:
+  ```bash
+  # 1. On an internet-connected PC, generate the self-contained offline installer package
+  ./s2-kit-pdf/scripts/setup-s2-office-converter.sh --export --target rockylinux:9
+
+  # 2. Transfer the generated setup-s2-office-converter-offline.sh to the target server and run
+  bash setup-s2-office-converter-offline.sh --app-user appuser
+  ```
+
+For full details, API references, and complete code examples, see the **[s2-kit-pdf README](s2-kit-pdf/README.md)** and **[scripts README](s2-kit-pdf/scripts/README.md)**.
 
 #### SFTP (`S2SftpFileManagerImpl`)
 

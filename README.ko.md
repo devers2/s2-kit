@@ -225,9 +225,26 @@ dependencies {
 
 - **백엔드 문서 처리**: `S2PdfUtil.merge()`, `S2PdfUtil.stamp()`, `S2OfficeConverter` (오피스/한글 문서 변환)
 - **프론트엔드 웹 뷰어**: `/s2-kit/pdf-viewer/pdf-viewer.js`, `pdf-viewer.css` (React 내장 독립형 ES 모듈 뷰어)
-- **인프라 스크립트**: Podman 기반 LibreOffice/Chromium 온·오프라인 변환기 (`scripts/setup-s2-office-converter.sh`)
+- **인프라 스크립트**: Podman 기반 LibreOffice/Chromium 온·오프라인 변환기 ([`s2-kit-pdf/scripts/`](s2-kit-pdf/scripts/README.md))
 
-자세한 사용법과 전체 예제 코드는 **[s2-kit-pdf README](s2-kit-pdf/README.ko.md)**를 참고하십시오.
+##### 🛠️ 서버 문서 변환기 설치 (Podman 온/오프라인)
+오피스·한글 문서 변환(`s2-soffice`) 및 웹 화면 무손실 PDF 인쇄(`s2-chrome`)를 위해 Podman 기반의 원클릭 변환기 설치 스크립트를 제공합니다.
+
+- **온라인 환경 설치**:
+  ```bash
+  # 앱 실행 리눅스 계정(예: appuser)에 설치 (변환기 이미지 약 1.6GB 자동 구축)
+  ./s2-kit-pdf/scripts/setup-s2-office-converter.sh --app-user appuser
+  ```
+- **인터넷 불가(폐쇄망) 환경 설치**:
+  ```bash
+  # 1. 인터넷 연결 PC에서 단일 오프라인 설치 파일 생성 (대상 서버 OS 지정, 예: rockylinux:9, ubuntu:22.04 등)
+  ./s2-kit-pdf/scripts/setup-s2-office-converter.sh --export --target rockylinux:9
+
+  # 2. 생성된 setup-s2-office-converter-offline.sh 파일을 폐쇄망 서버로 복사 후 실행
+  bash setup-s2-office-converter-offline.sh --app-user appuser
+  ```
+
+자세한 사용법과 전체 예제 코드는 **[s2-kit-pdf README](s2-kit-pdf/README.ko.md)** 및 **[scripts README](s2-kit-pdf/scripts/README.md)**를 참고하십시오.
 
 #### SFTP (`S2SftpFileManagerImpl`)
 

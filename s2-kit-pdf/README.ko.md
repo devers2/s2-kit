@@ -203,15 +203,16 @@ if (S2OfficeConverter.isAvailable()) {
 - **온라인 환경 원클릭 설치**:
   ```bash
   cd scripts/
-  ./setup-s2-office-converter.sh
+  # 운영 서버: 애플리케이션 실행 리눅스 계정(예: appuser)을 지정하여 설치
+  ./setup-s2-office-converter.sh --app-user appuser
   ```
-- **폐쇄망용 단일 오프라인 설치 파일 생성 (`--make-offline`)**:
+- **폐쇄망용 단일 오프라인 설치 파일 생성 (`--export`)**:
   ```bash
-  # 인터넷 연결 환경에서 실행하여 단일 실행 파일 생성
-  ./setup-s2-office-converter.sh --make-offline --target el9
+  # 1. 인터넷 연결 PC에서 단일 실행 파일 생성 (--target 에 대상 서버 배포판:버전 지정)
+  ./setup-s2-office-converter.sh --export --target rockylinux:9
 
-  # 폐쇄망 서버로 전달 후 실행
-  ./setup-s2-office-converter-offline.sh
+  # 2. 생성된 setup-s2-office-converter-offline.sh 파일을 폐쇄망 서버로 복사 후 실행
+  bash setup-s2-office-converter-offline.sh --app-user appuser
   ```
 
 자세한 옵션과 지원 환경은 [scripts/README.md](scripts/README.md)를 참고하세요.
