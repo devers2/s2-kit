@@ -58,12 +58,12 @@ dependencies {
     implementation("org.jsoup:jsoup:1.23.2")
 
     // 마크다운 파싱 (BSD / MIT) - S2MarkdownUtil
-    compileOnly("org.commonmark:commonmark:0.30.0")
-    compileOnly("org.commonmark:commonmark-ext-gfm-tables:0.30.0")
-    compileOnly("org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0")
-    compileOnly("org.commonmark:commonmark-ext-autolink:0.30.0")
-    compileOnly("org.commonmark:commonmark-ext-task-list-items:0.30.0")
-    compileOnly("org.commonmark:commonmark-ext-heading-anchor:0.30.0")
+    compileOnly("org.commonmark:commonmark:0.31.0")
+    compileOnly("org.commonmark:commonmark-ext-gfm-tables:0.31.0")
+    compileOnly("org.commonmark:commonmark-ext-gfm-strikethrough:0.31.0")
+    compileOnly("org.commonmark:commonmark-ext-autolink:0.31.0")
+    compileOnly("org.commonmark:commonmark-ext-task-list-items:0.31.0")
+    compileOnly("org.commonmark:commonmark-ext-heading-anchor:0.31.0")
 
     compileOnly(rootProject.libs.jakarta.servlet.api)
     compileOnly(rootProject.libs.caffeine)
@@ -73,11 +73,11 @@ dependencies {
     testRuntimeOnly(rootProject.libs.junit.jupiter.engine)
     testRuntimeOnly(rootProject.libs.junit.platform.launcher)
 
-    testImplementation("org.commonmark:commonmark:0.30.0")
-    testImplementation("org.commonmark:commonmark-ext-gfm-tables:0.30.0")
-    testImplementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0")
-    testImplementation("org.commonmark:commonmark-ext-autolink:0.30.0")
-    testImplementation("org.commonmark:commonmark-ext-task-list-items:0.30.0")
-    testImplementation("org.commonmark:commonmark-ext-heading-anchor:0.30.0")
+    testImplementation("org.commonmark:commonmark:0.31.0")
+    testImplementation("org.commonmark:commonmark-ext-gfm-tables:0.31.0")
+    testImplementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.31.0")
+    testImplementation("org.commonmark:commonmark-ext-autolink:0.31.0")
+    testImplementation("org.commonmark:commonmark-ext-task-list-items:0.31.0")
+    testImplementation("org.commonmark:commonmark-ext-heading-anchor:0.31.0")
     testImplementation(rootProject.libs.imageio.webp)
 }
