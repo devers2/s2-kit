@@ -641,4 +641,31 @@ class S2PdfStampTest {
             assertEquals(3, doc.getNumberOfPages());
         }
     }
+
+    @Test
+    void getPageCount_allVariants() throws IOException {
+        var pdfPath = multiPagePdf(4);
+        var pdfBytes = Files.readAllBytes(pdfPath);
+
+        // Path
+        assertEquals(4, S2PdfUtil.getPageCount(pdfPath));
+        // File
+        assertEquals(4, S2PdfUtil.getPageCount(pdfPath.toFile()));
+        // InputStream (auto close)
+        assertEquals(4, S2PdfUtil.getPageCount(Files.newInputStream(pdfPath)));
+        // InputStream (shouldCloseStream = false)
+        try (var in = Files.newInputStream(pdfPath)) {
+            assertEquals(4, S2PdfUtil.getPageCount(in, false));
+        }
+        // byte[]
+        assertEquals(4, S2PdfUtil.getPageCount(pdfBytes));
+
+        // Edge cases
+        assertEquals(0, S2PdfUtil.getPageCount((Path) null));
+        assertEquals(0, S2PdfUtil.getPageCount((java.io.File) null));
+        assertEquals(0, S2PdfUtil.getPageCount((java.io.InputStream) null));
+        assertEquals(0, S2PdfUtil.getPageCount((byte[]) null));
+        assertEquals(0, S2PdfUtil.getPageCount(new byte[0]));
+        assertEquals(0, S2PdfUtil.getPageCount(dir.resolve("non_existent.pdf")));
+    }
 }

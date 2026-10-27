@@ -1230,6 +1230,114 @@ public class S2PdfUtil {
         return mime.startsWith("image/") ? mime : null;
     }
 
+    // ========================================================================
+    // PDF 페이지 수 조회 (Page Count)
+    // ========================================================================
+
+    /**
+     * Gets the total page count of a PDF file.
+     * <p>
+     * PDF 파일의 총 페이지 수를 반환합니다.
+     * {@code try-with-resources}를 통해 {@link PDDocument}를 안전하게 닫아 메모리 및 파일 핸들 누수를 방지합니다.
+     *
+     * @param pdfFile PDF file path | 페이지 수를 확인할 PDF 파일 경로 (Path)
+     * @return Total page count, or 0 if null or loading fails | 총 페이지 수 (null이거나 로드 실패 시 0)
+     */
+    public static int getPageCount(Path pdfFile) {
+        if (pdfFile == null) {
+            return 0;
+        }
+        return getPageCount(pdfFile.toFile());
+    }
+
+    /**
+     * Gets the total page count of a PDF file.
+     * <p>
+     * PDF 파일의 총 페이지 수를 반환합니다.
+     * {@code try-with-resources}를 통해 {@link PDDocument}를 안전하게 닫아 메모리 및 파일 핸들 누수를 방지합니다.
+     *
+     * @param pdfFile PDF File object | 페이지 수를 확인할 PDF File 객체
+     * @return Total page count, or 0 if null, nonexistent, or loading fails | 총 페이지 수 (파일이 null이거나 존재하지 않거나 로드 실패 시 0)
+     */
+    public static int getPageCount(File pdfFile) {
+        if (pdfFile == null || !pdfFile.exists()) {
+            return 0;
+        }
+        try (var document = Loader.loadPDF(pdfFile)) {
+            return document.getNumberOfPages();
+        } catch (IOException e) {
+            logger.error("PDF 페이지 수 조회 오류[File]: ", e);
+            return 0;
+        }
+    }
+
+    /**
+     * Gets the total page count of a PDF input stream.
+     * <p>
+     * PDF 입력 스트림의 총 페이지 수를 반환합니다.
+     * 대용량 PDF 처리 시 JVM 힙 메모리 고갈(OOM)을 방지하기 위해 스트림을 디스크 임시 파일로
+     * 스트리밍한 후 페이지 수를 파악하며, 작업 완료 후 임시 파일은 즉시 안전하게 삭제됩니다.
+     *
+     * @param pdfData           PDF InputStream | PDF 입력 스트림
+     * @param shouldCloseStream Whether to close the inputStream after completion | 작업 완료 후 inputStream을 닫을지 여부
+     * @return Total page count, or 0 if null or loading fails | 총 페이지 수 (스트림이 null이거나 로드 실패 시 0)
+     */
+    public static int getPageCount(InputStream pdfData, boolean shouldCloseStream) {
+        if (pdfData == null) {
+            return 0;
+        }
+        final var pageCount = new int[]{0};
+        try {
+            S2FileUtil.processStreamWithTempFile(pdfData, null, tempFile -> {
+                try (var document = Loader.loadPDF(tempFile.toFile())) {
+                    if (document != null) {
+                        pageCount[0] = document.getNumberOfPages();
+                    }
+                } catch (IOException e) {
+                    logger.error("PDF 페이지 수 조회 오류[InputStream1]: ", e);
+                }
+                return null;
+            }, shouldCloseStream);
+        } catch (IOException e) {
+            logger.error("PDF 페이지 수 조회 오류[InputStream2]: ", e);
+        }
+        return pageCount[0];
+    }
+
+    /**
+     * Gets the total page count of a PDF input stream (closes stream automatically).
+     * <p>
+     * PDF 입력 스트림의 총 페이지 수를 반환합니다. (기본적으로 작업 완료 후 inputStream을 자동으로 닫습니다.)
+     *
+     * @param pdfData PDF InputStream | PDF 입력 스트림
+     * @return Total page count, or 0 if null or loading fails | 총 페이지 수 (스트림이 null이거나 로드 실패 시 0)
+     * @see #getPageCount(InputStream, boolean)
+     */
+    public static int getPageCount(InputStream pdfData) {
+        return getPageCount(pdfData, true);
+    }
+
+    /**
+     * Gets the total page count of PDF byte array.
+     * <p>
+     * PDF 바이트 배열의 총 페이지 수를 반환합니다.
+     * {@code try-with-resources}를 통해 {@link PDDocument}를 안전하게 닫아 메모리 누수를 방지합니다.
+     *
+     * @param pdfData PDF byte array | PDF 바이트 배열
+     * @return Total page count, or 0 if null or loading fails | 총 페이지 수 (데이터가 null이거나 로드 실패 시 0)
+     */
+    public static int getPageCount(byte[] pdfData) {
+        if (pdfData == null || pdfData.length == 0) {
+            return 0;
+        }
+        try (var document = Loader.loadPDF(pdfData)) {
+            return document.getNumberOfPages();
+        } catch (IOException e) {
+            logger.error("PDF 페이지 수 조회 오류[byteArray]: ", e);
+            return 0;
+        }
+    }
+
     /**
      * PDF 를 이미지로 변환한다.
      *
