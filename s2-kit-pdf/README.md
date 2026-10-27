@@ -204,7 +204,6 @@ See [scripts/README.md](scripts/README.md) for full details.
 
 - `s2-kit-pdf` is released under the **[Apache License 2.0](LICENSE)** as a **100% LGPL-Free** library.
 - HTML-to-PDF and SVG rendering operate **100% LGPL-Free (Apache 2.0 / BSD)** powered by headless Chromium (`s2-chrome` or system browser).
-- No LGPL obligations or source redistribution requirements apply.
 
 
 [//]: # 'S2_DEPS_INFO_START'

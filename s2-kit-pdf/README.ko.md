@@ -209,4 +209,3 @@ if (S2OfficeConverter.isAvailable()) {
 
 - `s2-kit-pdf`는 **[Apache License 2.0](LICENSE)**에 따라 배포되는 **100% LGPL-Free** 라이브러리입니다.
 - HTML-to-PDF 및 SVG 렌더링은 서버에 설치된 **Chromium 헤드리스(`s2-chrome` 또는 시스템 브라우저)를 엔진으로 사용하여 완전한 Apache 2.0 / BSD 환경에서 동작**합니다.
-- 복잡한 라이선스 제약이나 소스 코드 공개 의무가 일체 발생하지 않습니다.

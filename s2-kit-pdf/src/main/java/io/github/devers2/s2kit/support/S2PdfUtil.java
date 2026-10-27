@@ -1094,6 +1094,8 @@ public class S2PdfUtil {
     // ------------------------------------------------------------------------
     // SVG (native Chromium rendering) | SVG (Chromium 브라우저 네이티브 렌더링)
 
+    private static final String SVG_SUPPORT_REQUIRED = "SVG 를 변환하려면 Chromium 또는 Chrome 브라우저가 필요합니다.";
+
     /**
      * Whether SVG ({@code ofSvg}, inline {@code <svg>}, SVG images in HTML) can be drawn.
      * Chromium natively renders SVG.
@@ -6094,7 +6096,7 @@ public class S2PdfUtil {
 
     private static String convertSvgToHtml(String svgContent) throws IOException {
         if (!isSvgSupported()) {
-            throw new IOException("SVG 를 변환하려면 Chromium 또는 Chrome 브라우저가 필요합니다.");
+            throw new IOException(SVG_SUPPORT_REQUIRED);
         }
         if (S2Util.isEmpty(svgContent)) {
             return "<div></div>";
