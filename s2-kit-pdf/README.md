@@ -52,28 +52,31 @@ implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 
 ---
 
-### 2. Frontend Web PDF Viewer (HTML / Thymeleaf / Vanilla JS)
+### 2. Frontend Web PDF Viewer (HTML / Thymeleaf / JSP / Vanilla JS)
 
-All static assets are packaged inside the JAR (`META-INF/resources/`), so you can use it immediately without npm or build steps:
+All static web assets are packaged inside the JAR (`META-INF/resources/s2-kit/pdf-viewer/`), allowing instant integration in modern web applications without npm or extra build steps. In addition, `pdf-viewer.js` includes comprehensive **JSDoc and TypeScript definitions** at the top of the bundle for seamless IDE auto-completion.
+
+#### Basic Integration Example (Thymeleaf / JSP / HTML)
 
 ```html
 <!-- 1. Load stylesheet -->
-<link rel="stylesheet" th:href="@{/s2-kit/pdf-viewer/pdf-viewer.css}">
+<link rel="stylesheet" th:href="@{/s2-kit/pdf-viewer/pdf-viewer.css}" href="/s2-kit/pdf-viewer/pdf-viewer.css">
 
-<!-- 2. Target container -->
+<!-- 2. Target container element -->
 <div id="pdf-viewer-container" style="width: 100%; height: 800px;"></div>
 
 <!-- 3. ES module import & initialization -->
-<script type="module" th:inline="javascript">
-    import { S2PdfViewer } from /*[[@{/s2-kit/pdf-viewer/pdf-viewer.js}]]*/ '/s2-kit/pdf-viewer/pdf-viewer.js';
+<script type="module">
+    import { S2PdfViewer } from '/s2-kit/pdf-viewer/pdf-viewer.js';
 
     const viewer = new S2PdfViewer('pdf-viewer-container', {
-        src: '/api/v1/files/download?id=123',
+        src: '/api/v1/files/download?id=123', // Download URL or Uint8Array / ArrayBuffer
         fileName: 'report.pdf',
         config: {
             zoom: 'page-width', // 'auto' | 'page-fit' | 'page-width' | number (e.g. 1.2)
             lazy: true          // Render only viewport pages (optimized for large documents)
         },
+        // (Optional) Timestamp Authority (TSA) / Digital signature verification badge
         timestamp: {
             timestamped: true,
             issuedAt: '2026-10-27T15:30:00Z',
@@ -82,40 +85,98 @@ All static assets are packaged inside the JAR (`META-INF/resources/`), so you ca
         }
     });
 
-    viewer.on('load', ({ numPages }) => {
+    // Event subscriptions
+    viewer.on('load', ({ numPages, src }) => {
         console.log(`Document loaded: ${numPages} pages`);
     });
 
-    viewer.on('error', ({ error, phase }) => {
+    viewer.on('error', ({ error, phase, src }) => {
         console.error(`[${phase}] error:`, error);
     });
 
-    // Cleanup when unmounting or closing modal:
+    // Await ready
+    await viewer.ready;
+
+    // Cleanup resources upon unmount or closing modal (prevents memory leaks):
     // viewer.destroy();
 </script>
 ```
 
+#### Options Reference (`S2PdfViewerOptions`)
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `src` **(Required)** | `string \| ArrayBuffer \| Uint8Array` | - | PDF document URL path or binary byte buffer |
+| `fileName` | `string` | `undefined` | Original file name displayed on toolbar and download action |
+| `config.zoom` | `'auto' \| 'page-fit' \| 'page-width' \| number` | `'page-width'` | Initial zoom level (number e.g. 1.0 = 100%, 1.5 = 150%) |
+| `config.lazy` | `boolean` | `true` | Viewport-aware virtualization (renders only pages near viewport) |
+| `config.scrollMode` | `'vertical' \| 'horizontal' \| 'wrapped'` | `'vertical'` | Document scroll layout direction |
+| `timestamp` | `object` | `undefined` | TSA timestamp / digital signature verification badge |
+| `timestamp.timestamped` | `boolean` | - | Whether TSA timestamp is present |
+| `timestamp.issuedAt` | `string` | - | Issuance date/time in ISO-8601 format |
+| `timestamp.authority` | `string` | - | Certified Timestamp Authority name |
+| `timestamp.verified` | `boolean` | - | Whether signature verification succeeded |
+
+#### Key Methods & Lifecycle API
+
+- **`await viewer.ready`**: `Promise<{ numPages: number }>` — Resolves when document parsing is complete and ready.
+- **`viewer.on(event, handler)` / `viewer.off(event, handler)`**:
+  - `'load'`: `({ numPages, src }) => void` — Triggered when document finishes loading.
+  - `'error'`: `({ error, phase, src }) => void` — Triggered on load (`'load'`) or rendering (`'render'`) error.
+- **`viewer.destroy()`**: Unmounts React root, removes DOM listeners, and terminates Mozilla pdf.js worker threads to prevent memory leaks in SPAs.
+- **`getViewerInstance(elementId)`**: Retrieves an active `S2PdfViewer` instance by its container element ID.
+
 ---
 
-### 3. Backend PDF Merge and Stamping (`S2PdfUtil`)
+### 3. Backend PDF Merge and Office Conversion (`S2PdfUtil`, `S2OfficeConverter`)
 
 ```java
 import io.github.devers2.s2kit.support.S2PdfUtil;
 import io.github.devers2.s2kit.support.S2PdfUtil.PdfSource;
 import io.github.devers2.s2kit.support.S2PdfUtil.MergeOptions;
 import io.github.devers2.s2kit.support.S2PdfUtil.StampOptions;
+import io.github.devers2.s2kit.support.S2OfficeConverter;
 
+// 1. Korean/CJK Font Configuration
+S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+
+// 2. Multi-Format PDF Merging
 var options = MergeOptions.create()
-        .bookmarks(true)
-        .pageNumbers(true)
-        .title("Merged Report");
+        .bookmarks(true)          // Generate document outline bookmarks
+        .pageNumbers(true)        // Stamp centered bottom page numbers ("1 / N")
+        .title("Consolidated Report")
+        .imageDpi(200)            // Resize embedded photos for file size optimization
+        .cache(true);             // Reuse intermediate converted cache
 
 try (InputStream pdf = S2PdfUtil.merge(List.of(
         PdfSource.ofHtml("<h1>Cover</h1>").title("Cover"),
         PdfSource.ofPdf(Path.of("body.pdf")),
+        PdfSource.ofDocument(Path.of("plan.docx")),  // Automated LibreOffice conversion
+        PdfSource.ofDocument(Path.of("report.hwp")), // Automated H2Orestart Hangul conversion
         PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)
 ), options)) {
     pdf.transferTo(response.getOutputStream());
+}
+
+// 3. Dynamic Watermarks & Page Number Stamps
+var stampOptions = StampOptions.builder()
+        .pageNumber(S2PdfUtil.PageNumber.of("%d / %d")
+                .position(S2PdfUtil.Position.BOTTOM_CENTER))
+        .addText(S2PdfUtil.Text.of(pageNo -> "Lab Note - Page " + pageNo)
+                .position(S2PdfUtil.Position.TOP_CENTER))
+        .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png"))
+                .width(200).opacity(0.2f))
+        .build();
+
+try (InputStream stamped = S2PdfUtil.stamp(pdfStream, stampOptions)) {
+    stamped.transferTo(response.getOutputStream());
+}
+
+// 4. Office/Hangul Document Web Editor HTML Extraction
+if (S2OfficeConverter.isAvailable()) {
+    var imported = S2OfficeConverter.toHtml(Path.of("report.hwp"),
+            S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
+    String html = imported.html(imageName -> "/api/v1/files/view?name=" + imageName);
 }
 ```
 

@@ -52,30 +52,32 @@ implementation 'io.github.devers2:s2-kit-pdf:1.0.0'
 
 ---
 
-### 2. 프론트엔드 웹 PDF 뷰어 연동 (HTML / Thymeleaf / Vanilla JS)
+### 2. 프론트엔드 웹 PDF 뷰어 연동 (HTML / Thymeleaf / JSP / Vanilla JS)
 
-JAR 내부에 정적 자원이 패키징되어 있으므로, npm 설치나 별도 빌드 없이 스크립트 태그 1줄로 즉시 사용 가능합니다.
+JAR 내부에 정적 웹 자원(`/META-INF/resources/s2-kit/pdf-viewer/`)이 패키징되어 있으므로, npm 설치나 별도 빌드 없이 스크립트 태그 1줄로 즉시 사용 가능합니다. 또한 `pdf-viewer.js` 번들 최상단에 풍부한 **JSDoc 및 TypeScript 선언**이 내장되어 있어 VS Code, IntelliJ 등 IDE에서 완벽한 자동 완성을 지원합니다.
+
+#### 기본 연동 예시 (Thymeleaf / JSP / HTML)
 
 ```html
 <!-- 1. 스타일시트 로드 -->
-<link rel="stylesheet" th:href="@{/s2-kit/pdf-viewer/pdf-viewer.css}">
+<link rel="stylesheet" th:href="@{/s2-kit/pdf-viewer/pdf-viewer.css}" href="/s2-kit/pdf-viewer/pdf-viewer.css">
 
 <!-- 2. 뷰어가 렌더링될 대상 컨테이너 -->
 <div id="pdf-viewer-container" style="width: 100%; height: 800px;"></div>
 
 <!-- 3. ES 모듈 임포트 및 초기화 -->
-<script type="module" th:inline="javascript">
-    import { S2PdfViewer } from /*[[@{/s2-kit/pdf-viewer/pdf-viewer.js}]]*/ '/s2-kit/pdf-viewer/pdf-viewer.js';
+<script type="module">
+    import { S2PdfViewer } from '/s2-kit/pdf-viewer/pdf-viewer.js';
 
     // 뷰어 인스턴스 생성 및 마운트
     const viewer = new S2PdfViewer('pdf-viewer-container', {
-        src: '/api/v1/files/download?id=123',
-        fileName: '보고서.pdf',
+        src: '/api/v1/files/download?id=123', // 다운로드 URL 또는 Uint8Array / ArrayBuffer
+        fileName: '연구노트.pdf',
         config: {
-            zoom: 'page-width', // 배율 ('auto', 'page-fit', 'page-width', 또는 1.2 등 숫자)
-            lazy: true          // 뷰포트 인접 페이지만 렌더링 (대용량 PDF 최적화)
+            zoom: 'page-width', // 배율 ('auto' | 'page-fit' | 'page-width' | 1.2 등 숫자)
+            lazy: true          // 뷰포트 인접 페이지만 지연 렌더링 (대용량 PDF 최적화)
         },
-        // (선택) 시점확인 / 전자서명 배지 표기
+        // (선택) 시점확인(TSA) / 전자서명 배지 표기
         timestamp: {
             timestamped: true,
             issuedAt: '2026-10-27T15:30:00Z',
@@ -85,52 +87,98 @@ JAR 내부에 정적 자원이 패키징되어 있으므로, npm 설치나 별�
     });
 
     // 이벤트 구독
-    viewer.on('load', ({ numPages }) => {
+    viewer.on('load', ({ numPages, src }) => {
         console.log(`문서 로드 완료: 총 ${numPages}페이지`);
     });
 
-    viewer.on('error', ({ error, phase }) => {
+    viewer.on('error', ({ error, phase, src }) => {
         console.error(`[${phase}] 에러 발생:`, error);
     });
 
-    // 페이지 언마운트 또는 모달 닫기 시 자원 해제
+    // 비동기 준비 대기
+    await viewer.ready;
+
+    // 페이지 이동 또는 모달 닫기 시 메모리/Worker 완전 해제 (필수)
     // viewer.destroy();
 </script>
 ```
 
+#### 옵션 레퍼런스 (`S2PdfViewerOptions`)
+
+| 옵션 | 타입 | 기본값 | 설명 |
+| :--- | :--- | :--- | :--- |
+| `src` **(필수)** | `string \| ArrayBuffer \| Uint8Array` | - | PDF 파일 URL 경로 또는 바이너리 바이트 배열 |
+| `fileName` | `string` | `undefined` | 툴바 및 다운로드 시 표시할 원본 파일명 |
+| `config.zoom` | `'auto' \| 'page-fit' \| 'page-width' \| number` | `'page-width'` | 초기 확대 배율 (숫자 지정 시 1.0 = 100%, 1.5 = 150%) |
+| `config.lazy` | `boolean` | `true` | 화면 뷰포트 인접 페이지만 동적으로 렌더링 (대용량 문서 메모리 절약) |
+| `config.scrollMode` | `'vertical' \| 'horizontal' \| 'wrapped'` | `'vertical'` | 문서 스크롤 방향 |
+| `timestamp` | `object` | `undefined` | 시점확인(TSA) / 전자서명 진본확인 배지 정보 |
+| `timestamp.timestamped` | `boolean` | - | TSA 시점확인 적용 여부 |
+| `timestamp.issuedAt` | `string` | - | 서명/시점확인 발급 일시 (ISO-8601 포맷) |
+| `timestamp.authority` | `string` | - | 발급 공인인증기관 (예: 한국정보인증, Amano eTiming) |
+| `timestamp.verified` | `boolean` | - | 전자서명 유효성 검증 성공 여부 |
+
+#### 주요 메서드 및 수명주기 API
+
+- **`await viewer.ready`**: `Promise<{ numPages: number }>` — 문서 파싱 및 뷰어 준비 완료 시 resolve됩니다.
+- **`viewer.on(event, handler)` / `viewer.off(event, handler)`**:
+  - `'load'`: `({ numPages, src }) => void` — 문서 로드 완료 시 발생
+  - `'error'`: `({ error, phase, src }) => void` — 로드(`'load'`) 또는 렌더링(`'render'`) 실패 시 발생
+- **`viewer.destroy()`**: React 루트 언마운트, DOM 리스너 해제, 백그라운드 Mozilla pdf.js worker 스레드를 안전하게 파괴하여 SPA 환경에서의 메모리 누수를 원천 차단합니다.
+- **`getViewerInstance(elementId)`**: 컨테이너 엘리먼트 ID로 이미 생성되어 있는 `S2PdfViewer` 인스턴스를 조회합니다.
+
 ---
 
-### 3. 백엔드 PDF 병합 및 스탬프 (`S2PdfUtil`)
+### 3. 백엔드 PDF 병합 및 변환 엔진 (`S2PdfUtil`, `S2OfficeConverter`)
 
 ```java
 import io.github.devers2.s2kit.support.S2PdfUtil;
 import io.github.devers2.s2kit.support.S2PdfUtil.PdfSource;
 import io.github.devers2.s2kit.support.S2PdfUtil.MergeOptions;
 import io.github.devers2.s2kit.support.S2PdfUtil.StampOptions;
+import io.github.devers2.s2kit.support.S2OfficeConverter;
 
-// 1. 다중 포맷 PDF 병합 (HTML, PDF, 이미지, 웹 URL)
+// 1. 한글 폰트 설정 (미지정 시 OS 내 나눔고딕, 본고딕 등 시스템 폰트 자동 탐색)
+S2PdfUtil.setDefaultFont(Path.of("/usr/share/fonts/truetype/nanum/NanumGothic.ttf"));
+
+// 2. 다중 포맷 PDF 병합 (HTML, PDF, 이미지, 오피스, 한글, 웹 URL)
 var options = MergeOptions.create()
-        .bookmarks(true)
-        .pageNumbers(true)
-        .title("통합 보고서");
+        .bookmarks(true)          // 문서별 북마크/목차 자동 생성
+        .pageNumbers(true)        // "1 / N" 하단 중앙 페이지 번호 각인
+        .title("통합 보고서")
+        .imageDpi(200)            // 이미지 해상도 자동 리사이즈 (용량 최적화)
+        .cache(true);             // 중간 변환 결과 디스크 캐싱 재사용
 
 try (InputStream pdf = S2PdfUtil.merge(List.of(
         PdfSource.ofHtml("<h1>표지</h1>").title("표지"),
         PdfSource.ofPdf(Path.of("본문.pdf")),
+        PdfSource.ofDocument(Path.of("계획서.docx")), // LibreOffice 자동 연동
+        PdfSource.ofDocument(Path.of("보고서.hwp")),  // H2Orestart 한글 확장 자동 연동
         PdfSource.ofUrl("https://example.com/chart.png").maxBytes(10_000_000)
 ), options)) {
     pdf.transferTo(response.getOutputStream());
 }
 
-// 2. 동적 워터마크 및 페이지 번호 스탬프
+// 3. 동적 워터마크 및 페이지 번호 스탬프
 var stampOptions = StampOptions.builder()
         .pageNumber(S2PdfUtil.PageNumber.of("%d / %d")
                 .position(S2PdfUtil.Position.BOTTOM_CENTER))
         .addText(S2PdfUtil.Text.of(pageNo -> "연구노트 - 페이지 " + pageNo)
                 .position(S2PdfUtil.Position.TOP_CENTER))
+        .watermark(S2PdfUtil.Watermark.of(Path.of("logo.png"))
+                .width(200).opacity(0.2f))
         .build();
 
-InputStream stamped = S2PdfUtil.stamp(pdfStream, stampOptions);
+try (InputStream stamped = S2PdfUtil.stamp(pdfStream, stampOptions)) {
+    stamped.transferTo(response.getOutputStream());
+}
+
+// 4. 웹 에디터용 HTML/이미지 분리 추출
+if (S2OfficeConverter.isAvailable()) {
+    var imported = S2OfficeConverter.toHtml(Path.of("보고서.hwp"),
+            S2OfficeConverter.HtmlOptions.create().maxImageWidth(1600));
+    String html = imported.html(imageName -> "/api/v1/files/view?name=" + imageName);
+}
 ```
 
 ---
