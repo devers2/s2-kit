@@ -78,7 +78,7 @@ Add the following dependency to your `build.gradle` or `pom.xml`.
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 }
 ```
 
@@ -88,7 +88,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -118,7 +118,7 @@ plugins {
 
 dependencies {
     // Base: s2-kit (s2-core is included automatically)
-    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 
     // [Optional] PDF stamps, page numbers and merging (S2PdfUtil)
     // implementation 'org.apache.pdfbox:pdfbox:3.0.4'
@@ -140,7 +140,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 
 
@@ -287,7 +287,7 @@ This library is provided under the **Apache License 2.0**. You are free to use, 
 
 ---
 
-s2-kit Version: 1.1.0 (2026-10-28)
+s2-kit Version: 1.2.0 (2026-11-02)
 
 [//]: # 'S2_DEPS_INFO_START'
 

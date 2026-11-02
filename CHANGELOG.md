@@ -4,7 +4,7 @@
 
 All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `s2-support` 1.x history continues in this file.
 
-## [Unreleased]
+## [1.2.0]
 
 ### ⚠️ Compatibility
 
@@ -31,7 +31,7 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 - PDF and document conversion (`S2PdfUtil`, `S2OfficeConverter`, `S2MarkdownUtil`), the web PDF viewer and the converter
   setup scripts moved out of the root `s2-kit` JAR into a separate module, `s2-kit-pdf`. The root JAR no longer depends
-  on PDFBox, OpenHTMLtoPDF or CommonMark. (Discontinued later; see Unreleased.)
+  on PDFBox, OpenHTMLtoPDF or CommonMark. (Discontinued later; see 1.2.0.)
 
 ## [1.0.0] - 2026-10-02
 
@@ -124,7 +124,7 @@ compatibility, so check the ⚠️ items before upgrading. See "Moving from s2-s
 - Document conversion and multi-source merge: `S2PdfUtil.merge`/`prepare` (HTML, text, SVG, Markdown, images, Office
   and Hangul documents through LibreOffice, and URLs, with bookmarks, page numbers, a conversion cache and concurrent
   conversion), `S2OfficeConverter` and `S2MarkdownUtil`. They moved to `s2-kit-pdf` in 1.1.0 and are no longer part of
-  this project (see Unreleased).
+  this project (see 1.2.0).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)` (keeps the ratio, subsampled reading, EXIF orientation, the
   same array when nothing changes), `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
 - `S2FileUtil` file types: `detectExtension(Path | byte[])` (from the content, for uploads stored without an
