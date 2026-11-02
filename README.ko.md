@@ -77,7 +77,7 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ```groovy
 dependencies {
-    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 }
 ```
 
@@ -87,7 +87,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 ```
 
@@ -117,7 +117,7 @@ plugins {
 
 dependencies {
     // 기본: s2-kit (s2-core 자동 포함)
-    implementation 'io.github.devers2.internal:s2-kit:1.1.0'
+    implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 
     // [선택] PDF 스탬프·쪽 번호·병합 (S2PdfUtil)
     // implementation 'org.apache.pdfbox:pdfbox:3.0.4'
@@ -139,7 +139,7 @@ dependencies {
 <dependency>
     <groupId>io.github.devers2.internal</groupId>
     <artifactId>s2-kit</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
 </dependency>
 
 
@@ -286,7 +286,7 @@ MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);   // 실패 시 S2JsonExcept
 
 ---
 
-s2-kit Version: 1.1.0 (2026-10-28)
+s2-kit Version: 1.2.0 (2026-11-02)
 
 [//]: # 'S2_DEPS_INFO_START'
 
