@@ -20,9 +20,11 @@
  */
 package io.github.devers2.s2kit.file;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.NoSuchElementException;
 
 import com.jcraft.jsch.JSch;
@@ -259,12 +261,23 @@ public class JschSessionFactory {
             session.setConfig("ServerAliveInterval", "60000"); // 서버 연결 유지 확인 간격 (60초)
             session.setConfig("ServerAliveCountMax", "3"); // 연결 유지 실패 허용 횟수
 
+            // Secrets go to JSch as bytes (the String overloads are deprecated) and are wiped after use, as JSch
+            // itself did | 비밀값은 바이트로 넘기고(String 오버로드는 deprecated) 쓴 뒤 지운다 (JSch 가 내부에서 하던 방식과 동일)
             if (privateKeyPath != null && !privateKeyPath.isBlank()) {
                 // 개인키 설정
-                jsch.addIdentity(privateKeyPath, passphrase);
-            } else {
-                // privateKeyPath 가 없는 경우 password 사용
-                session.setPassword(password);
+                var secret = passphrase != null ? passphrase.getBytes(StandardCharsets.UTF_8) : null;
+                try {
+                    jsch.addIdentity(privateKeyPath, secret);
+                } finally {
+                    if (secret != null) {
+                        Arrays.fill(secret, (byte) 0);
+                    }
+                }
+            } else if (password != null) {
+                // privateKeyPath 가 없는 경우 password 사용 (Session 이 사본을 보관함)
+                var secret = password.getBytes(StandardCharsets.UTF_8);
+                session.setPassword(secret);
+                Arrays.fill(secret, (byte) 0);
             }
 
             configureHostKeyChecking(jsch, session);

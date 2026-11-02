@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  * Even in the most favorable conditions, a QR Code can only hold 7089 characters of data.
  * Any segment longer than this is meaningless for the purpose of generating QR Codes.
  * This class can represent kanji mode segments, but provides no help in encoding them
- * - see {@link QrSegmentAdvanced} for full kanji support.</p>
+ * - see {@code QrSegmentAdvanced} in the original library for full kanji support (not bundled in s2-kit).</p>
  */
 public final class QrSegment {
 	
