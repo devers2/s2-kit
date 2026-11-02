@@ -329,7 +329,7 @@ class S2PdfStampTest {
         assertTrue(textStamp.isBold());
         assertEquals("Page 1 of 5", textStamp.resolveText(1, 5));
 
-        var leftHeader = Text.of("Goono ELN")
+        var leftHeader = Text.of("Sample ELN")
                 .bottomLeft(20, 30)
                 .fontSize(10);
         assertEquals(Position.BOTTOM_LEFT, leftHeader.getPosition());
@@ -351,7 +351,7 @@ class S2PdfStampTest {
             for (int i = 1; i <= 2; i++) {
                 var content = pageText(doc, i);
                 assertTrue(content.contains("Page " + i + " of 2"));
-                assertTrue(content.contains("Goono ELN"));
+                assertTrue(content.contains("Sample ELN"));
                 assertTrue(content.contains("CONFIDENTIAL"));
             }
         }
@@ -594,7 +594,7 @@ class S2PdfStampTest {
                         .size(40, 40)
                         .pages(PageSelector.first()))
                 // QR verification on last page only
-                .addQr(QrStamp.ofUrl("https://cert.goono.so/verify?id=TEST")
+                .addQr(QrStamp.ofUrl("https://cert.example.com/verify?id=TEST")
                         .bottomRight(20, 20)
                         .size(60)
                         .pages(PageSelector.last()))
