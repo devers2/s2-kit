@@ -4,7 +4,7 @@
 
 `s2-kit`(이전 이름 `s2-support`)의 주요 변경 사항을 기록합니다. `s2-support` 1.x 의 기록도 이 파일에 이어서 둡니다.
 
-## [Unreleased]
+## [1.2.0]
 
 ### ⚠️ 호환성
 
@@ -30,7 +30,7 @@
 
 - PDF·문서 변환(`S2PdfUtil`, `S2OfficeConverter`, `S2MarkdownUtil`), 웹 PDF 뷰어, 변환기 설치 스크립트를 루트 `s2-kit` JAR 에서
   별도 모듈 `s2-kit-pdf`로 옮겼습니다. 루트 JAR 는 더 이상 PDFBox, OpenHTMLtoPDF, CommonMark 에 의존하지 않습니다. (이후 중단,
-  Unreleased 참고)
+  1.2.0 참고)
 
 ## [1.0.0] - 2026-10-02
 
@@ -109,7 +109,7 @@
   납니다.
 - 문서 변환과 여러 소스 병합: `S2PdfUtil.merge`/`prepare`(HTML·텍스트·SVG·마크다운·이미지·LibreOffice 를 통한 오피스·한글
   문서·URL, 책갈피·쪽 번호·변환 결과 캐시·동시 변환), `S2OfficeConverter`, `S2MarkdownUtil`. 1.1.0 에서 `s2-kit-pdf`로 옮겼고
-  지금은 이 프로젝트에 없습니다(Unreleased 참고).
+  지금은 이 프로젝트에 없습니다(1.2.0 참고).
 - `S2ImageUtil.resizeToFit(bytes, maxWidth, maxHeight)`(비율 유지, 서브샘플링, EXIF 방향 적용, 바꿀 것이 없으면 같은 배열),
   `scaleToFit`, `exifOrientation`, `applyOrientation`, `JPEG_QUALITY`.
 - `S2FileUtil` 파일 형식 판별: `detectExtension(Path | byte[])`(내용으로 판별, 확장자 없는 업로드 파일 등), `getExtensionByHint(파일명·확장자·MIME)`,
