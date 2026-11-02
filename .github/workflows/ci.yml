@@ -1,0 +1,83 @@
+name: Java CI with Gradle
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Checked out into s2-kit/ with no sibling s2-util, so s2-core comes from Maven Central | 형제 s2-util 없이 s2-kit/ 에 체크아웃하므로 s2-core 는 Maven Central 에서 받음
+    defaults:
+      run:
+        working-directory: s2-kit
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+        with:
+          path: s2-kit
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v6
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: "temurin"
+          cache: "gradle"
+          cache-dependency-path: |
+            s2-kit/**/*.gradle*
+            s2-kit/**/gradle-wrapper.properties
+            s2-kit/gradle/libs.versions.toml
+      - name: Set up JDK 21 for Gradle Toolchain (if matrix is 17)
+        if: matrix.java == '17'
+        uses: actions/setup-java@v6
+        with:
+          java-version: "21"
+          distribution: "temurin"
+      - name: Install a Korean font for the PDF tests
+        # S2PdfUtil refuses Korean text without a Korean font; NanumGothic is one of the fonts it looks up | 한글 폰트가 없으면 한글 PDF 시험이 건너뛰어지므로 설치
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends fonts-nanum
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      - name: Build and Test
+        run: |
+          # Propagate the Gradle exit code through the pipe so tail's success does not hide build failures. | 파이프를 거쳐도 Gradle 종료코드를 전달하여 tail 의 성공이 빌드 실패를 가리지 않도록 함
+          set -o pipefail
+          # Keep the full output in build.log; the log view shows the last 150 lines | 전체 출력은 build.log 에 두고 로그 화면에는 마지막 150줄만 표시
+          ./gradlew build --stacktrace 2>&1 | tee build.log | tail -150
+      - name: Show failed tests
+        if: failure()
+        shell: bash
+        run: |
+          # The build output above is cut to its last 150 lines, so list failed tests from the JUnit XML reports (also as annotations on the run page) | 위 출력은 마지막 150줄만 남으므로 JUnit XML 에서 실패한 시험을 뽑아 출력 (실행 요약 화면에도 주석으로 표시)
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          failed = 0
+          for path in sorted(glob.glob("**/build/test-results/**/*.xml", recursive=True)):
+              for case in ET.parse(path).getroot().iter("testcase"):
+                  for problem in case.findall("failure") + case.findall("error"):
+                      failed += 1
+                      name = f"{case.get('classname')} > {case.get('name')}"
+                      message = (problem.get("message") or "").replace("\n", " ")[:500]
+                      print(f"::error title=Failed test::{name}: {message}")
+                      print(f"===== {name}\n{(problem.text or '')[:4000]}")
+          print(f"{failed} failed test(s)" if failed else "No failed tests in the JUnit reports; the failure is outside the tests (see build.log).")
+          PY
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-java-${{ matrix.java }}
+          path: |
+            s2-kit/**/build/reports/tests/
+            s2-kit/**/build/test-results/
+            s2-kit/build.log
+          retention-days: 7
+          if-no-files-found: ignore

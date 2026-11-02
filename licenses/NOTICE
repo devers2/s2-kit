@@ -1,0 +1,58 @@
+# S2Kit Library 3rd Party Notices
+
+This product includes or depends on the following open source software components.
+For more details, please refer to the 'LICENSE' file in the root directory.
+
+---
+
+1. Apache Commons Pool2
+   - License: Apache License 2.0
+   - URL: [https://commons.apache.org/proper/commons-pool/](https://commons.apache.org/proper/commons-pool/)
+
+2. LZ4 Java
+   - License: Apache License 2.0
+   - URL: [https://github.com/lz4/lz4-java](https://github.com/lz4/lz4-java)
+
+3. UUID Creator
+   - License: MIT License (See 'LICENSE-UUID-CREATOR-MIT' for details)
+   - URL: [https://github.com/f4b6a3/uuid-creator](https://github.com/f4b6a3/uuid-creator)
+
+4. JSch (Java Secure Channel), maintained fork com.github.mwiede:jsch
+   - License: Revised BSD License (See 'LICENSE-JSCH-BSD' for details)
+   - Includes JZlib: Revised BSD License (See 'LICENSE-JZLIB-BSD' for details)
+   - Includes jBCrypt: ISC License (See 'LICENSE-JBCRYPT-ISC' for details)
+   - URL: [https://github.com/mwiede/jsch](https://github.com/mwiede/jsch)
+
+5. Spring Framework (spring-context, spring-web) (Provided/Compile-only Dependency)
+   - License: Apache License 2.0
+   - URL: [https://spring.io/projects/spring-framework](https://spring.io/projects/spring-framework)
+
+6. Spring Integration SFTP (Provided/Compile-only Dependency)
+   - License: Apache License 2.0
+   - URL: [https://spring.io/projects/spring-integration](https://spring.io/projects/spring-integration)
+
+7. Jakarta Servlet API (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (elected from EPL 2.0 or GPL 2.0 with Classpath Exception; see 'LICENSE-EPL-2.0')
+   - URL: [https://github.com/jakartaee/servlet](https://github.com/jakartaee/servlet)
+
+8. Jakarta Server Pages API (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (elected from EPL 2.0 or GPL 2.0 with Classpath Exception; see 'LICENSE-EPL-2.0')
+   - URL: [https://github.com/jakartaee/pages](https://github.com/jakartaee/pages)
+
+9. AspectJ Weaver (Provided/Compile-only Dependency)
+   - License: Eclipse Public License 2.0 (See 'LICENSE-EPL-2.0' for details)
+   - URL: [https://eclipse.dev/aspectj/](https://eclipse.dev/aspectj/)
+
+10. JSR-305 Annotations (com.google.code.findbugs:jsr305) (Provided/Compile-only Dependency)
+    - License: Apache License 2.0
+    - URL: [https://github.com/findbugsproject/findbugs](https://github.com/findbugsproject/findbugs)
+
+11. Apache PDFBox (org.apache.pdfbox:pdfbox) (Provided/Compile-only Dependency; added by users of S2PdfUtil)
+    - License: Apache License 2.0
+    - URL: [https://pdfbox.apache.org/](https://pdfbox.apache.org/)
+
+12. QR Code Generator Library (io.nayuki.qrcodegen) (Bundled source; used for S2PdfUtil QR code stamps)
+    - License: MIT License (See 'LICENSE-NAYUKI-QR-MIT' for details)
+    - URL: [https://www.nayuki.io/page/qr-code-generator-library](https://www.nayuki.io/page/qr-code-generator-library)
+
+---
