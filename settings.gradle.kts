@@ -23,15 +23,18 @@ plugins {
 // JAR 파일의 기본 이름(BaseName, artifactId를 의미) 지정
 rootProject.name = "s2-kit"
 
+// 로컬 개발: 옆 폴더의 소스가 있으면 배포본 대신 그대로 사용한다 (composite build).
+// 배포본(Maven Central·Gradle Plugin Portal)만으로 확인하려면 -Ps2.localBuilds=false
+val useLocalBuilds = providers.gradleProperty("s2.localBuilds").orNull != "false"
 
 val s2BuildSupportDir = file("../s2-build-support")
-if (s2BuildSupportDir.exists()) {
+if (useLocalBuilds && s2BuildSupportDir.exists()) {
     // 로컬 개발용: s2-build-support 디렉토리가 존재하는 경우에만 포함 (없어도 빌드 오류 발생 방지)
     includeBuild(s2BuildSupportDir)
 }
 
 val s2UtilDir = file("../s2-util")
-if (s2UtilDir.exists()) {
+if (useLocalBuilds && s2UtilDir.exists()) {
     // 로컬 개발용: s2-util 디렉토리가 존재하는 경우에만 포함 (멀티 프로젝트 참조)
     includeBuild(s2UtilDir)
 }
