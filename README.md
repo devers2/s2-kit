@@ -121,7 +121,7 @@ dependencies {
     implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 
     // [Optional] PDF stamps, page numbers and merging (S2PdfUtil)
-    // implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    // implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
     // [Optional] Server & Client Unified Validation
     implementation 'io.github.devers2:s2-validator:2.1.0'
@@ -213,7 +213,7 @@ documents (Office, HTML) to PDF. Add PDFBox to use it:
 
 ```groovy
 dependencies {
-    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
     // implementation 'com.twelvemonkeys.imageio:imageio-webp:3.15.2' // only for WebP images
 }
 ```
@@ -306,8 +306,8 @@ dependencies {
     implementation 'org.springframework.integration:spring-integration-sftp:6.5.10'
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
-    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
-    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    implementation 'org.aspectj:aspectjweaver:1.9.26'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 }
 ```
 

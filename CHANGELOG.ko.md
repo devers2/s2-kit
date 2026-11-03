@@ -4,6 +4,13 @@
 
 `s2-kit`(이전 이름 `s2-support`)의 주요 변경 사항을 기록합니다. `s2-support` 1.x 의 기록도 이 파일에 이어서 둡니다.
 
+## [Unreleased]
+
+### 의존성
+
+- Apache PDFBox 3.0.4 → 3.0.8 (보안·버그 수정 패치), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
+  Caffeine 3.2.3 → 3.3.1, jackson-databind 3.0.3 → 3.2.4. `S2PdfUtil`을 쓰는 앱은 PDFBox 3.0.8 을 권장합니다 (3.0.x 는 그대로 동작).
+
 ## [1.2.0]
 
 ### ⚠️ 호환성
