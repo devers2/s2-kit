@@ -120,7 +120,7 @@ dependencies {
     implementation 'io.github.devers2.internal:s2-kit:1.2.0'
 
     // [선택] PDF 스탬프·쪽 번호·병합 (S2PdfUtil)
-    // implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    // implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 
     // [선택] 서버/클라이언트 통합 검증 기능이 필요한 경우
     implementation 'io.github.devers2:s2-validator:2.1.0'
@@ -212,7 +212,7 @@ PDF 로 변환하지는 않습니다. 사용하려면 PDFBox 를 추가합니다
 
 ```groovy
 dependencies {
-    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
     // implementation 'com.twelvemonkeys.imageio:imageio-webp:3.15.2' // WebP 이미지를 넣을 때만
 }
 ```
@@ -305,8 +305,8 @@ dependencies {
     implementation 'org.springframework.integration:spring-integration-sftp:6.5.10'
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
-    implementation 'org.aspectj:aspectjweaver:1.9.25.1'
-    implementation 'org.apache.pdfbox:pdfbox:3.0.4'
+    implementation 'org.aspectj:aspectjweaver:1.9.26'
+    implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 }
 ```
 
