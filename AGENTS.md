@@ -1,73 +1,33 @@
-# S2Kit AI 에이전트 개발 및 검증 절대 원칙 (AGENTS.md)
+# s2-kit AI 에이전트 원칙
 
-이 문서는 `s2-kit` 저장소의 코드를 분석, 수정, 생성하는 모든 AI 에이전트가 준수해야 할 **절대 원칙 및 검증 가이드라인**입니다.
+## 필수: 수정 후 전체 검증
+Java·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push 전에 `./gradlew check` 전수 통과를 확인한다. 개별 테스트만으로 끝내지 않는다.
 
----
+## 1. 버전·배포
+- 버전은 `build.gradle.kts` 만 바꾼다. `./gradlew test` 때 `S2BuildUtils` 가 `README` 의 버전·의존성 블록을 동기화한다.
+- `s2-util` 버전이 바뀌면 `gradle/libs.versions.toml` 의 `s2-util` 버전도 함께 바꾼다.
+- 사용자가 요청하지 않으면 배포 태스크(`publish`, `publishToCentralPortal` 등)를 실행하지 않는다.
+- 평소에는 `develop` 브랜치에서 commit·push 한다. `main` 은 Maven Central 배포본과 같아야 하므로, 사용자가 배포를 요청할 때만 `develop` 을 `main` 에 fast-forward 하고 버전 태그를 단다.
 
-## 🚨 [CRITICAL RULE] 코드 수정 후 전체 빌드 및 검증 필수 실행
+## 2. composite build
+- `settings.gradle.kts` 의 `includeBuild("../s2-util")` 로 로컬 `s2-util` 소스가 그대로 빌드에 쓰인다.
+- `s2-util` API 가 바뀌면 `s2-kit` 호출 코드도 함께 고친다. s2-kit 을 고치기 전에 `s2-util` 의 `./gradlew check` 를 먼저 통과시킨다.
 
-Java 소스 코드, Gradle 설정, 문서를 수정한 후에는 **사용자에게 완료를 보고하거나 커밋/푸시하기 전에 반드시 아래 검증 명령어를 실행하여 전수 통과(100% PASS)를 확인**해야 합니다.
+## 3. Java 버전·동시성
+- 기준은 Java 17(`--release 17`). Java 21+ 전용 문법·API 를 직접 쓰지 않는다.
+- 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil.getCommonExecutor()` 를 쓴다(Java 21+ 면 가상 스레드, 17 이면 플랫폼 풀).
 
-### 필수 실행 명령어
-```bash
-./gradlew check
-```
+## 4. 인코딩
+- 모든 소스·설정·문서는 UTF-8 NoBOM.
 
-> ⚠️ 개별 임의 테스트만 실행하고 끝내지 마십시오. 반드시 `./gradlew check`를 통해 모든 단위/통합 테스트가 100% 통과함을 검증해야 합니다.
-
----
-
-## 1. 버전 관리 및 문서 동기화 원칙
-
-1. **버전 변경**:
-   - `build.gradle.kts`의 버전만 변경하십시오.
-   - 빌드 플러그인(`S2BuildUtils`)이 `./gradlew test` 실행 시 모든 `README`의 버전 및 의존성 코드 블록을 자동으로 동기화합니다.
-2. **s2-util 버전 동기화**:
-   - `s2-util`의 버전이 변경되면 `gradle/libs.versions.toml`의 `s2-util` 버전을 반드시 함께 업데이트하십시오.
-3. **배포 안전성**:
-   - 사용자가 명시적으로 배포를 요청하지 않는 한 임의로 배포 태스크(`publish`, `publishToCentralPortal` 등)를 실행하지 마십시오.
-   - 평상시에는 `develop` 브랜치에서 `git commit` 및 `git push`만 수행합니다.
-   - `main` 은 Maven Central 배포본과 같아야 합니다. 사용자가 배포를 요청할 때만 `develop` 을 `main` 에 fast-forward 하고 버전 태그를 답니다.
-
----
-
-## 2. composite build 주의사항
-
-- `settings.gradle.kts`에 `includeBuild("../s2-util")`이 있으므로 로컬의 `s2-util` 소스가 빌드에 직접 반영됩니다.
-- `s2-util`의 API가 변경되면 `s2-kit`의 호출 코드를 반드시 함께 수정하십시오.
-- `s2-util`에 없는 메서드를 호출하는 실수를 방지하기 위해 **s2-kit 수정 전에 s2-util의 `./gradlew check`를 먼저 통과**시키십시오.
-
----
-
-## 3. Java 버전 호환성 원칙 (Java 17 Baseline & Concurrency Reuse)
-
-1. **기본 호환성 (Java 17 Baseline)**:
-   - 모든 소스코드는 Java 17 바이트코드 타깃(`--release 17`) 호환을 엄격히 준수해야 합니다.
-   - 소스코드 내에 Java 21+ 전용 API나 문법을 직접 사용해서는 안 됩니다.
-2. **동시성 및 스레드 풀 재사용 원칙**:
-   - `s2-kit` 내에서는 독자적인 가상 스레드(Virtual Thread) 생성 로직을 직접 구현하지 않습니다.
-   - 비동기/병렬 작업(예: 원격 리소스 병렬 다운로드) 시 반드시 `s2-core`의 `S2ThreadUtil.getCommonExecutor()`를 재사용하십시오.
-   - 이를 통해 애플리케이션 실행 환경이 Java 21 이상이면 자동으로 가상 스레드를 활용하고, Java 17이면 안전하게 플랫폼 풀로 동작합니다.
-
----
-
-## 4. 인코딩 절대 원칙: UTF-8 NoBOM
-
-- 저장소의 모든 소스 파일, 설정 파일, 마크다운 문서는 순수 UTF-8 NoBOM(Byte Order Mark 없음)이어야 합니다.
-
----
-
-## 5. 언어 원칙 (문서·주석·커밋)
-
-외부 사용자가 실제로 읽는 곳(가이드 문서·API 문서)만 영문/한글을 병기하고, 나머지는 한국어로 작성합니다.
-
+## 5. 언어 (문서·주석·커밋)
 | 대상 | 언어 |
 |---|---|
-| `README`·`GUIDE`·`MANUAL`·`CHANGELOG` 등 가이드 문서 | 영문(`*.md`)과 한글(`*.ko.md`) 쌍으로 작성하고 함께 갱신 |
-| Javadoc·JSDoc (클래스·메서드·필드 등 API 문서 주석) | 영문 설명 먼저, 이어서 `<p><b>[한국어 설명]</b></p>` 아래 한글 설명 (기존 형식 유지) |
-| 그 밖의 코드 주석 (`//`, 메서드 내부 블록 주석, 빌드 스크립트 주석) | 한국어만 |
-| 커밋 메시지 | 한국어. Conventional Commits 접두어(`feat:`, `fix:`, `docs:`, `build:` …)와 식별자는 영어 그대로 — 예: `fix: 날짜 검증에서 null 처리 누락 수정` |
-| 예외·로그 메시지 등 사용자에게 그대로 노출되는 문자열 | 영어 유지 (검색·이슈 보고에 쓰이는 공개 텍스트 — 다국어 메시지는 기존 i18n 구조를 따름) |
-| 이슈·PR 답변 | 작성자의 언어로 |
+| `README`·`GUIDE`·`MANUAL`·`CHANGELOG` 등 가이드 문서 | 영문(`*.md`)·한글(`*.ko.md`) 쌍으로 함께 갱신 |
+| Javadoc·JSDoc | 영문 설명 → `<p><b>[한국어 설명]</b></p>` → 한글 설명 (기존 형식) |
+| 그 밖의 주석(`//`, 메서드 내부 블록 주석, 빌드 스크립트) | 한국어 |
+| 커밋 메시지 | 한국어. 접두어(`feat:`, `fix:`, `docs:`, `build:` …)·식별자는 영어 — 예: `fix: 날짜 검증에서 null 처리 누락 수정` |
+| 예외·로그 등 사용자에게 노출되는 문자열 | 영어 (다국어 메시지는 기존 i18n 구조) |
+| 이슈·PR 답변 | 작성자의 언어 |
 
-- 기존 주석·커밋 이력은 일부러 바꾸지 않습니다(번역·정리 목적 수정 금지). 주석은 설명하는 코드가 바뀌었거나 내용이 틀렸을 때만 그 부분을 고치고, 고친 주석은 이 원칙의 언어로 씁니다.
+- 기존 주석·커밋 이력은 번역·정리 목적으로 바꾸지 않는다. 주석은 설명하는 코드가 바뀌었거나 틀렸을 때만 그 부분을 고치고, 고친 주석은 위 원칙의 언어로 쓴다.
