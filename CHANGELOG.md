@@ -53,8 +53,8 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
   opened another `sessionMaxTotal` connections while the old ones were still in use. A busy pool now makes callers wait and
   then fail; the pool is rebuilt only when it fails with sessions to spare. After `close()` calls fail at once instead of
   reopening the pool, and an interrupt while waiting is no longer swallowed.
-- Both SFTP managers open at most 4 new connections at once (`-Ds2.sftp.maxConcurrentConnects`,
-  `sftp.pool.max-concurrent-connects`), so a burst of requests or a cold start stays below OpenSSH's `MaxStartups`, and
+- Both SFTP managers open at most 4 new connections at once (`S2SftpFileManagerImpl` constructor argument
+  `maxConcurrentConnects` or `-Ds2.sftp.maxConcurrentConnects`, Spring `sftp.pool.max-concurrent-connects`), so a burst of requests or a cold start stays below OpenSSH's `MaxStartups`, and
   retries wait a random 0.5–1.5s instead of all at once.
 - Parallel SFTP uploads into a new folder failed when two requests created it at the same time.
 - `S2SftpFileManagerImpl` no longer starts a `Timer` thread for every upload and download; one shared watchdog checks them.

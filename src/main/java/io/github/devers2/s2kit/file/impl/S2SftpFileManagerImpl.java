@@ -186,6 +186,31 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
     public S2SftpFileManagerImpl(String host, int port, String username, String privateKeyPath, String passphrase,
             String password, Integer sessionMaxTotal, Integer sessionMinIdle, Integer sessionMaxWaitMillis,
             String knownHostsPath, boolean allowUnknownHosts) {
+        this(host, port, username, privateKeyPath, passphrase, password, sessionMaxTotal, sessionMinIdle,
+                sessionMaxWaitMillis, knownHostsPath, allowUnknownHosts, null);
+    }
+
+    /**
+     * 호스트 키 검증 방식과 동시 신규 연결 수를 지정해 생성한다.
+     *
+     * @param host                  sftp host
+     * @param port                  sftp port
+     * @param username              sftp username
+     * @param privateKeyPath        sftp private key path
+     * @param passphrase            sftp private key passphrase
+     * @param password              sftp password
+     * @param sessionMaxTotal       세션 풀의 최대 세션 수 (null: 64)
+     * @param sessionMinIdle        세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 8)
+     * @param sessionMaxWaitMillis  세션 풀에서 사용 가능한 세션을 기다리는 최대 시간 (null: 30초)
+     * @param knownHostsPath        호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts})
+     * @param allowUnknownHosts     true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다 (중간자 공격에 노출됨)
+     * @param maxConcurrentConnects 동시에 진행할 신규 연결 수 (null: 시스템 프로퍼티 {@code s2.sftp.maxConcurrentConnects},
+     *                              없으면 4). 그 SFTP 서버의 {@code MaxStartups} 첫 값 &gt; 앱 서버 수 × 이 값이 되게 둔다
+     * @see JschSessionFactory
+     */
+    public S2SftpFileManagerImpl(String host, int port, String username, String privateKeyPath, String passphrase,
+            String password, Integer sessionMaxTotal, Integer sessionMinIdle, Integer sessionMaxWaitMillis,
+            String knownHostsPath, boolean allowUnknownHosts, Integer maxConcurrentConnects) {
         // 디렉토리 캐시 TTL 우선순위: 시스템 프로퍼티 > 기본값
         long ttl = DEFAULT_DIR_CACHE_TTL_MS;
         try {
@@ -219,7 +244,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
         }
 
         jschSessionFactory = new JschSessionFactory(host, port, username, privateKeyPath, passphrase, password,
-                sessionMaxTotal, sessionMinIdle, sessionMaxWaitMillis, knownHostsPath, allowUnknownHosts);
+                sessionMaxTotal, sessionMinIdle, sessionMaxWaitMillis, knownHostsPath, allowUnknownHosts,
+                maxConcurrentConnects);
     }
 
     /**

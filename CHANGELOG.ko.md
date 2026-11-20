@@ -47,8 +47,8 @@
 - ⚠️ `JschSessionFactory`가 모든 세션이 사용 중이라 대여 시간이 다 되면 풀을 통째로 새로 만들어, 부하가 몰릴 때 옛 연결을 쓰는
   중에 `sessionMaxTotal`개를 또 열던 문제. 이제 풀이 바쁘면 호출 측이 기다렸다가 실패하고, 세션이 남는데도 빌리지 못할 때만
   풀을 다시 만듭니다. `close()` 뒤의 호출은 풀을 다시 열지 않고 바로 실패하며, 기다리는 중의 인터럽트도 삼키지 않습니다.
-- 두 SFTP 관리자 모두 신규 연결을 동시에 최대 4개만 엽니다(`-Ds2.sftp.maxConcurrentConnects`,
-  `sftp.pool.max-concurrent-connects`). 요청이 몰리거나 콜드스타트여도 OpenSSH `MaxStartups`에 걸리지 않고, 재시도는 한꺼번에
+- 두 SFTP 관리자 모두 신규 연결을 동시에 최대 4개만 엽니다(`S2SftpFileManagerImpl` 생성자 인자 `maxConcurrentConnects` 또는
+  `-Ds2.sftp.maxConcurrentConnects`, Spring `sftp.pool.max-concurrent-connects`). 요청이 몰리거나 콜드스타트여도 OpenSSH `MaxStartups`에 걸리지 않고, 재시도는 한꺼번에
   몰리지 않도록 0.5~1.5초 사이에서 흩어 기다립니다.
 - 여러 요청이 동시에 같은 새 폴더로 SFTP 업로드하면, 폴더를 함께 만들다 실패하던 문제.
 - `S2SftpFileManagerImpl`이 업로드·다운로드마다 `Timer` 스레드를 만들지 않고, 공용 감시 스레드 하나로 점검합니다.

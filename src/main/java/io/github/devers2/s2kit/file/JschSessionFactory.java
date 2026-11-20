@@ -186,6 +186,17 @@ public class JschSessionFactory {
     }
 
     /**
+     * 동시 신규 연결 수는 시스템 프로퍼티 {@code s2.sftp.maxConcurrentConnects}(없으면 4)를 쓴다.
+     * @see #JschSessionFactory(String, int, String, String, String, String, Integer, Integer, Integer, String, boolean, Integer)
+     */
+    public JschSessionFactory(String host, int port, String username, String privateKeyPath,
+            String passphrase, String password, Integer sessionMaxTotal, Integer sessionMinIdle,
+            Integer sessionMaxWaitMillis, String knownHostsPath, boolean allowUnknownHosts) {
+        this(host, port, username, privateKeyPath, passphrase, password, sessionMaxTotal, sessionMinIdle,
+                sessionMaxWaitMillis, knownHostsPath, allowUnknownHosts, null);
+    }
+
+    /**
      * @param host                 sftp host
      * @param port                 sftp port
      * @param username             sftp username
@@ -199,15 +210,19 @@ public class JschSessionFactory {
      *                             예: {@code ssh-keyscan -p 22 sftp.example.com >> /etc/ssh/known_hosts_sftp}
      * @param allowUnknownHosts    true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다. 중간자 공격(MITM)에
      *                             노출되므로 신뢰할 수 있는 사설망에서만 명시적으로 켠다. {@code knownHostsPath}가 있으면 무시된다.
+     * @param maxConcurrentConnects 동시에 진행할 신규 연결(핸드셰이크·인증) 수. null 이면 시스템 프로퍼티
+     *                             {@code s2.sftp.maxConcurrentConnects}, 그것도 없으면 4. 같은 JVM 에서 SFTP 서버마다 다르게
+     *                             줄 때 쓴다 (그 서버의 {@code MaxStartups} 첫 값 &gt; 앱 서버 수 × 이 값)
      * @apiNote 호스트 키 검증은 기본적으로 켜져 있다(fail-closed). known_hosts 에 서버 키가 없으면 연결이 거부된다.
      *          <p>
-     *          신규 연결은 동시에 최대 4개만 진행한다(-Ds2.sftp.maxConcurrentConnects). 상황별 조절은 SFTP-GUIDE.ko.md, 서버 sshd_config 권장값은
+     *          신규 연결은 기본적으로 동시에 최대 4개만 진행한다. 상황별 조절은 SFTP-GUIDE.ko.md, 서버 sshd_config 권장값은
      *          {@link io.github.devers2.s2kit.file.impl.S2SftpFileManagerImpl#S2SftpFileManagerImpl(String, int, String, String, String, String, Integer, Integer, Integer)}
      *          참고.
      */
     public JschSessionFactory(String host, int port, String username, String privateKeyPath,
             String passphrase, String password, Integer sessionMaxTotal, Integer sessionMinIdle,
-            Integer sessionMaxWaitMillis, String knownHostsPath, boolean allowUnknownHosts) {
+            Integer sessionMaxWaitMillis, String knownHostsPath, boolean allowUnknownHosts,
+            Integer maxConcurrentConnects) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -227,9 +242,15 @@ public class JschSessionFactory {
         this.sessionMaxWaitMillis = sessionMaxWaitMillis != null ? sessionMaxWaitMillis
                 : DEFAULT_SESSION_MAX_WAIT_MILLIS;
 
+        // 우선순위: 생성자 인자 > 시스템 프로퍼티 > 기본값
         var connects = DEFAULT_MAX_CONCURRENT_CONNECTS;
         var prop = System.getProperty("s2.sftp.maxConcurrentConnects");
-        if (prop != null) {
+        if (maxConcurrentConnects != null) {
+            if (maxConcurrentConnects < 1) {
+                throw new IllegalArgumentException("maxConcurrentConnects must be at least 1: " + maxConcurrentConnects);
+            }
+            connects = maxConcurrentConnects;
+        } else if (prop != null) {
             try {
                 connects = Math.max(1, Integer.parseInt(prop.trim()));
             } catch (NumberFormatException e) {

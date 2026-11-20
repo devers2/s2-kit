@@ -65,6 +65,9 @@ class SftpIntegrationTest {
     /** SSH connections open on the server now, and the most seen since the last reset | 서버에 열린 SSH 연결 수, 마지막 초기화 이후 최댓값 */
     private static final AtomicInteger openConnections = new AtomicInteger();
     private static final AtomicInteger peakConnections = new AtomicInteger();
+    private static final AtomicInteger authentications = new AtomicInteger();
+    private static final AtomicInteger peakAuthentications = new AtomicInteger();
+    private static volatile long authDelayMillis = 0;
 
     @BeforeAll
     static void startServer() throws IOException, java.security.GeneralSecurityException {
@@ -75,7 +78,18 @@ class SftpIntegrationTest {
         server.setHost("127.0.0.1");
         server.setPort(0);
         server.setKeyPairProvider(hostKeys);
-        server.setPasswordAuthenticator((user, password, session) -> USER.equals(user) && PASSWORD.equals(password));
+        server.setPasswordAuthenticator((user, password, session) -> {
+            // Counts handshakes in progress; authDelayMillis makes them overlap | 진행 중인 인증 수를 셈 (지연을 주면 겹침)
+            peakAuthentications.accumulateAndGet(authentications.incrementAndGet(), Math::max);
+            try {
+                Thread.sleep(authDelayMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                authentications.decrementAndGet();
+            }
+            return USER.equals(user) && PASSWORD.equals(password);
+        });
         server.setSubsystemFactories(List.of(new SftpSubsystemFactory()));
         server.setFileSystemFactory(new VirtualFileSystemFactory(root));
         server.addSessionListener(new SessionListener() {
@@ -311,6 +325,29 @@ class SftpIntegrationTest {
                 awaitConnectionsAtLeast(baseline + 3);
             }
             awaitConnectionsAtMost(baseline);
+        }
+
+        @Test
+        void theConstructorLimitsParallelNewConnections() throws Exception {
+            authDelayMillis = 200;
+            try {
+                for (var limit : new int[] { 1, 3 }) {
+                    peakAuthentications.set(0);
+                    try (var sftp = new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER, null, null, PASSWORD, 6,
+                            0, 10_000, knownHosts.toString(), false, limit)) {
+                        assertBulkUploads(sftp, "/connects-" + limit, 6);
+                    }
+                    assertTrue(peakAuthentications.get() <= limit,
+                            "limit " + limit + " but " + peakAuthentications.get() + " handshakes overlapped");
+                    if (limit > 1) {
+                        assertTrue(peakAuthentications.get() > 1, "a limit above 1 lets handshakes overlap");
+                    }
+                }
+            } finally {
+                authDelayMillis = 0;
+            }
+            assertThrows(IllegalArgumentException.class, () -> new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER,
+                    null, null, PASSWORD, 2, 0, 1000, knownHosts.toString(), false, 0));
         }
 
         @Test

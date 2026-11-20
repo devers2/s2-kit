@@ -20,7 +20,7 @@
 | 최대 연결(세션) 수 | 생성자 `sessionMaxTotal` | `sftp.pool.max-total` | 64 | 상한일 뿐 연결은 필요할 때만 열고 30분 안 쓰면 닫음. 작은 파일 초당 약 200건 |
 | 미리 열어 둘 연결 수 | 생성자 `sessionMinIdle` | `sftp.pool.min-idle` | 8 | 기동 직후 첫 요청이 연결 맺기를 기다리지 않음 |
 | 한가할 때 남길 연결 수 | (= 최대) | `sftp.pool.max-idle` | 32 | |
-| 동시 신규 연결 | JVM 옵션 `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 앱 2대 × 4 = 8 < `MaxStartups` 첫 값 10 → 서버가 연결을 무작위로 끊지 않음 |
+| 동시 신규 연결 | 생성자 `maxConcurrentConnects` 또는 JVM 옵션 `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 앱 2대 × 4 = 8 < `MaxStartups` 첫 값 10 → 서버가 연결을 무작위로 끊지 않음 |
 | 연결을 기다리는 시간 | 생성자 `sessionMaxWaitMillis` | `sftp.pool.max-wait-millis` | 30초 / 10초 | 넘으면 재시도(최대 3번) 후 실패 |
 | 연결·인증 제한 시간 | (`sessionMaxWaitMillis` 와 같음) | `sftp.timeout-millis` | 30초 | |
 | 큐 동시 전송 수 | `S2UploadQueue.Builder.concurrency` | | 8 | 큐가 풀의 일부만 써서 화면 요청도 연결을 얻음 |
@@ -85,8 +85,8 @@
 ```java
 // 최대 연결 128, 미리 열기 16, 연결 대기 30초 (큰 규모). null 이면 기본값(64, 8, 30초)
 FileManager sftp = new S2SftpFileManagerImpl(host, 22, "app", "/keys/id_ed25519", null, null,
-        128, 16, 30_000, "/etc/ssh/known_hosts_sftp", false);
-// 동시 신규 연결: JVM 옵션 -Ds2.sftp.maxConcurrentConnects=4
+        128, 16, 30_000, "/etc/ssh/known_hosts_sftp", false, 8);   // 마지막: 동시 신규 연결 (null: 4)
+// 같은 JVM 의 모든 JSch 관리자에 한 번에 주려면 JVM 옵션 -Ds2.sftp.maxConcurrentConnects=8 (생성자 인자가 우선)
 ```
 
 **Spring (`application.yml`)**

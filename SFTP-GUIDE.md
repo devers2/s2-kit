@@ -20,7 +20,7 @@ only defaults; every one can be set under the names below (examples in section 6
 | Max connections (sessions) | constructor `sessionMaxTotal` | `sftp.pool.max-total` | 64 | Only a cap: connections open when needed and close after 30 idle minutes. About 200 small files per second |
 | Connections opened in advance | constructor `sessionMinIdle` | `sftp.pool.min-idle` | 8 | The first requests after startup do not wait for handshakes |
 | Idle connections kept | (= max) | `sftp.pool.max-idle` | 32 | |
-| Parallel new connections | JVM option `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 2 app servers × 4 = 8 < first `MaxStartups` value 10, so the server does not drop connections at random |
+| Parallel new connections | constructor `maxConcurrentConnects` or JVM option `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 2 app servers × 4 = 8 < first `MaxStartups` value 10, so the server does not drop connections at random |
 | Wait for a connection | constructor `sessionMaxWaitMillis` | `sftp.pool.max-wait-millis` | 30s / 10s | Then retried (up to 3 times) and failed |
 | Connect and auth timeout | (same as `sessionMaxWaitMillis`) | `sftp.timeout-millis` | 30s | |
 | Queue parallel transfers | `S2UploadQueue.Builder.concurrency` | | 8 | The queue uses part of the pool, so page requests still get connections |
@@ -91,8 +91,8 @@ throughput. Match queue parallelism to the bandwidth instead (2–4 at 100Mbps).
 ```java
 // 128 connections, 16 opened in advance, 30s wait (large). null means the default (64, 8, 30s)
 FileManager sftp = new S2SftpFileManagerImpl(host, 22, "app", "/keys/id_ed25519", null, null,
-        128, 16, 30_000, "/etc/ssh/known_hosts_sftp", false);
-// Parallel new connections: JVM option -Ds2.sftp.maxConcurrentConnects=4
+        128, 16, 30_000, "/etc/ssh/known_hosts_sftp", false, 8);   // last: parallel new connections (null: 4)
+// For every JSch manager in the JVM at once: -Ds2.sftp.maxConcurrentConnects=8 (the constructor argument wins)
 ```
 
 **Spring (`application.yml`)**
