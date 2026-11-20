@@ -47,11 +47,20 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Build and Test
+        env:
+          # Java 17 작업은 컴파일(툴체인 JDK 21, --release 17)은 그대로 두고 시험만 JDK 17 에서 실행한다 (s2-util 과 같은 방식).
+          # JDK 21 이 나중에 설치되어 JAVA_HOME 을 덮어쓰므로, 이 설정이 없으면 시험이 JDK 21 로 돈다.
+          # JAVA_HOME_17_X64 는 setup-java 가 내보내는 JDK 17 경로 — Gradle 이 다운로드 없이 찾게 한다.
+          TEST_JAVA_ARGS: ${{ matrix.java == '17' && '-Ps2.testJavaVersion=17 -Porg.gradle.java.installations.fromEnv=JAVA_HOME_17_X64' || '' }}
         run: |
           # Propagate the Gradle exit code through the pipe so tail's success does not hide build failures. | 파이프를 거쳐도 Gradle 종료코드를 전달하여 tail 의 성공이 빌드 실패를 가리지 않도록 함
           set -o pipefail
           # Keep the full output in build.log; the log view shows the last 150 lines | 전체 출력은 build.log 에 두고 로그 화면에는 마지막 150줄만 표시
-          ./gradlew build --stacktrace 2>&1 | tee build.log | tail -150
+          ./gradlew build --stacktrace $TEST_JAVA_ARGS 2>&1 | tee build.log | tail -150
+      # Java 17 작업의 시험이 실제로 JDK 17 에서 돌았는지 확인한다 (build.gradle.kts 의 s2.testJavaVersion 이 남기는 줄)
+      - name: Verify tests ran on JDK 17
+        if: matrix.java == '17'
+        run: grep -F "[s2.testJavaVersion] Test JDK: 17" build.log
       - name: Show failed tests
         if: failure()
         shell: bash

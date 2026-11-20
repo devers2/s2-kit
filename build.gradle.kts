@@ -383,6 +383,22 @@ subprojects {
     S2BuildUtils.updateReadmeWithVersionAndDependencies(project, "^README(\\..+)?\\.md$")
 }
 
+// --------------------------------------------------------------------------------------
+// 시험 실행 JDK 지정: -Ps2.testJavaVersion=17 이면 컴파일(툴체인 JDK 21, --release 17)은 그대로 두고
+// 시험만 해당 JDK 에서 실행한다 (s2-util 과 같은 방식). CI 의 Java 17 작업이 Java 17 런타임을 실제로 시험하도록 쓴다.
+// --------------------------------------------------------------------------------------
+providers.gradleProperty("s2.testJavaVersion").orNull?.let { testJavaVersion ->
+    tasks.withType<Test>().configureEach {
+        javaLauncher.set(
+            project.extensions.getByType<JavaToolchainService>().launcherFor {
+                languageVersion.set(JavaLanguageVersion.of(testJavaVersion))
+            }
+        )
+        // CI 가 이 줄로 시험 JDK 를 확인한다
+        doFirst { logger.lifecycle("[s2.testJavaVersion] Test JDK: ${javaLauncher.get().metadata.languageVersion}") }
+    }
+}
+
 // ========================================================================
 // ⭐ [JS 시험] 배포되는 JS(src/main/resources 아래)를 node 내장 시험 실행기(node --test)로 확인한다.
 //   - 시험: src/test/js/*.test.mjs (의존성 없음). 날짜 시험이 시간대를 타므로 TZ=Asia/Seoul 로 실행한다.
