@@ -66,6 +66,24 @@ class S2PaginationTest {
     }
 
     @Test
+    void pageNoBeyondTheLastPageStillShowsThePages() {
+        // 3 pages, page 15 asked (e.g. after rows were deleted) | 3쪽인데 15쪽 요청 (행이 지워진 뒤 등)
+        var html = tag("go", 15, 30).renderPagination();
+        assertTrue(html.contains("go(3);"), html);
+        assertTrue(html.contains("go(1);"), html);
+    }
+
+    @Test
+    void largeCountsAreKept() {
+        var vo = new S2SearchVO();
+        vo.setPageNo(300_000);
+        vo.setPageUnit(10_000);
+        var info = new S2PaginationInfo<>(vo, List.of(Map.of("TOTAL", 5_000_000_000L)), "TOTAL");
+        assertEquals(5_000_000_000L, info.getTotalRecordCount(), "a count above Integer.MAX_VALUE is not dropped");
+        assertEquals(5_000_000_000L - 1 - 299_999L * 10_000, info.getRemainRecordCount());
+    }
+
+    @Test
     void pagingIsBounded() {
         var vo = new S2SearchVO();
         vo.setPageNo(-5);

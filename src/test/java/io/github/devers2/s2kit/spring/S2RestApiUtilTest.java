@@ -31,6 +31,7 @@ class S2RestApiUtilTest {
     private final AtomicReference<String> contentType = new AtomicReference<>();
     private final AtomicReference<String> authorization = new AtomicReference<>();
     private final AtomicReference<String> body = new AtomicReference<>();
+    private final AtomicReference<String> query = new AtomicReference<>();
 
     @BeforeEach
     void start() throws IOException {
@@ -38,6 +39,7 @@ class S2RestApiUtilTest {
         server.createContext("/api", exchange -> {
             contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            query.set(exchange.getRequestURI().getRawQuery());
             body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             // A JSON string containing an escaped quote | 이스케이프된 따옴표가 든 JSON 문자열
             var response = "{\"msg\":\"say \\u0022hi\\u0022\"}".getBytes(StandardCharsets.UTF_8);
@@ -73,6 +75,13 @@ class S2RestApiUtilTest {
         var file = S2RestApiUtil.createInputStreamResource(new ByteArrayInputStream(new byte[] { 1, 2 }), "f.bin", 2);
         S2RestApiUtil.callApi(url(), HttpMethod.POST, Map.entry("a", "1"), Map.entry("file", file));
         assertTrue(contentType.get().startsWith("multipart/form-data"), contentType.get());
+    }
+
+    @Test
+    void getEncodesEveryReservedCharacterInValues() {
+        // '+' left as is would reach the server as a space | '+' 를 그대로 두면 서버에서 공백이 됨
+        S2RestApiUtil.callApi(url(), HttpMethod.GET, Map.entry("q", "a+b c&d=e/한"), Map.entry("n", 7));
+        assertEquals("q=a%2Bb%20c%26d%3De%2F%ED%95%9C&n=7", query.get());
     }
 
     @Test

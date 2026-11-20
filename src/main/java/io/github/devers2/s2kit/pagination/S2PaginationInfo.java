@@ -72,7 +72,7 @@ public class S2PaginationInfo<T> {
 
     public S2PaginationInfo(S2SearchVO searchVO, List<T> dataList, String totalRecordCountNm) {
         var totalRecordCount = totalRecordCountNm != null && !totalRecordCountNm.isBlank()
-                && S2Util.isNotEmpty(dataList) ? S2Util.getValue(dataList.get(0), totalRecordCountNm, 0) : 0;
+                && S2Util.isNotEmpty(dataList) ? S2Util.getValue(dataList.get(0), totalRecordCountNm, 0L) : 0L;
         this.searchVO = searchVO;
         this.dataList = dataList;
         this.totalRecordCount = totalRecordCount;
@@ -182,7 +182,8 @@ public class S2PaginationInfo<T> {
      */
     public final long getRemainRecordCount() {
         var currentPageUnit = this.dataList != null ? this.dataList.size() : 0;
-        var previousPageUnit = this.getPageNo() > 1 ? ((this.getPageNo() - 1) * this.getPageUnit()) : 0;
+        // long 으로 곱한다 (큰 pageNo 에서 int 곱이 음수로 넘침)
+        var previousPageUnit = this.getPageNo() > 1 ? ((long) (this.getPageNo() - 1) * this.getPageUnit()) : 0L;
         return totalRecordCount - currentPageUnit - previousPageUnit;
     }
 
@@ -231,7 +232,9 @@ public class S2PaginationInfo<T> {
      * 현재 페이지 목록의 첫번째 페이지
      */
     public final int getFirstPageNoOnPageList() {
-        return ((this.getPageNo() - 1) / this.getPageSize()) * this.getPageSize() + 1;
+        // pageNo 가 마지막 페이지를 넘으면(목록이 줄어든 뒤 등) 마지막 페이지가 있는 목록을 보여 준다 (그대로 두면 페이지 번호가 하나도 안 나옴)
+        var pageNo = Math.min(this.getPageNo(), this.getTotalPageCount());
+        return ((pageNo - 1) / this.getPageSize()) * this.getPageSize() + 1;
     }
 
     /**

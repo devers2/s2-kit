@@ -40,4 +40,20 @@ class S2AnnotationResolverTest {
         // A narrower scan scope gives one match | 스캔 범위를 좁히면 하나
         assertEquals(OtherCat.class, S2AnnotationResolver.resolveType(Animal.class, Kind.class, "cat", FIXTURE + ".dup"));
     }
+    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+    @interface Order {
+        int value();
+    }
+
+    @Order(3)
+    static class Ordered {
+    }
+
+    @Test
+    void stringAndTypedValuesDoNotShareACache() {
+        // A typed String lookup of an int value finds nothing; the string form must still be "3" | int 값을 String 으로 꺼내면 없음, 문자열 조회는 "3"
+        assertNull(S2AnnotationResolver.resolveValue(Ordered.class, Order.class, String.class));
+        assertEquals("3", S2AnnotationResolver.resolveValue(Ordered.class, Order.class));
+        assertEquals(3, S2AnnotationResolver.resolveValue(Ordered.class, Order.class, Integer.class));
+    }
 }

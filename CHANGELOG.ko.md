@@ -25,6 +25,12 @@
   다시 들어갈 수 있던 문제.
 - `JschSessionFactory`의 연결 제한 시간·연결 유지 설정이 적용되지 않던 문제(JSch 는 그 키를 OpenSSH 설정 파일에서만 읽음). 응답 없는
   호스트에 연결하면 끝없이 기다릴 수 있었습니다. 풀을 재초기화할 때 최소 유휴 세션 수 대신 1개만 채우던 문제도 고쳤습니다.
+- `S2RestApiUtil.callApi` GET 이 쿼리 값의 `+`를 인코딩하지 않아 서버가 공백으로 읽던 문제(`a+b` → `a b`). 이제 값을 모두 인코딩합니다.
+- `S2PaginationTag`가 `pageNo`가 마지막 페이지를 넘으면(행이 지워진 뒤 등) 페이지 번호를 하나도 그리지 않던 문제. 이제 마지막 페이지가
+  있는 목록을 보여 줍니다. `S2PaginationInfo`가 전체 건수 컬럼을 `int`로 읽던 문제(`Integer.MAX_VALUE`를 넘으면 0)와
+  `getRemainRecordCount`가 큰 페이지 번호에서 넘치던 문제도 고쳤습니다.
+- `S2AnnotationResolver.resolveValue(clazz, type)`와 `resolveValue(clazz, type, String.class)`가 캐시를 함께 써서, String 이 아닌 값은
+  먼저 부른 쪽 결과가 다른 쪽에 나오던 문제(`null` 또는 `"3"`).
 - `S2FileUtil.getExtension(name, true)`, `S2ServletUtil.isMobile`이 기본 로케일로 소문자를 만들던 문제(터키어에서 `GIF`가 `gıf`).
 - `S2ServletUtil.getValueAll`이 같은 객체가 두 번 나오면(예: 리스트에 같은 맵 두 개) 두 번째를 건너뛰던 문제. 이제 실제 순환만 건너뜁니다.
 - `S2FileUtil.detectExtension`이 항목 경로 중간에 `word/`, `xl/`, `ppt/`, `version.xml`이 있는 zip(예: `keyword/a.txt`)을

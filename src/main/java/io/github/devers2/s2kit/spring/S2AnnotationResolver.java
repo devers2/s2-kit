@@ -757,8 +757,10 @@ public final class S2AnnotationResolver {
 
         ValueKey key = new ValueKey(clazz, annotationType, String.class);
 
+        // resolveValue(clazz, type, String.class) 와 캐시를 나눈다: 이름·키·값 타입이 같으면 한 캐시를 쓰는데, 이쪽은 값을 문자열로
+        // 바꾸고 저쪽은 String 이 아니면 비우므로 먼저 부른 쪽 결과가 다른 쪽에 나온다 (예: int 값이 null 또는 "3")
         return S2Cache.resolve(
-                "s2.annotation.values",
+                "s2.annotation.stringValues",
                 key,
                 ValueKey.class,
                 String.class,

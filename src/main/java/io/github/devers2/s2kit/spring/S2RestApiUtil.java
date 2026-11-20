@@ -24,6 +24,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.core.io.InputStreamResource;
@@ -191,16 +192,20 @@ public class S2RestApiUtil {
             responseEntity = restTemplate.postForEntity(url, requestEntity, String.class);
         } else if (method == HttpMethod.GET) {
             UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(url);
+            // 값은 URI 변수로 넘겨 엄격하게 인코딩한다. build().encode() 는 쿼리에 쓸 수 있는 '+' 를 그대로 두어
+            // 서버가 공백으로 읽는다 (예: "a+b" → "a b").
+            List<Object> values = new ArrayList<>();
             if (params != null) {
                 for (Map.Entry<String, Object> param : params) {
                     if (param != null && param.getKey() != null && param.getValue() != null) {
-                        builder.queryParam(param.getKey(), param.getValue());
+                        builder.queryParam(param.getKey(), "{p" + values.size() + "}");
+                        values.add(param.getValue());
                     }
                 }
             }
 
             // URI 객체를 직접 사용하여 이중 인코딩 방지
-            java.net.URI uri = builder.build().encode().toUri();
+            java.net.URI uri = builder.encode().buildAndExpand(values.toArray()).toUri();
             HttpEntity<Void> requestEntity = new HttpEntity<>(requestHeaders);
             responseEntity = restTemplate.exchange(uri, HttpMethod.GET, requestEntity, String.class);
         } else {

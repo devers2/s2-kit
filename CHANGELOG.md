@@ -30,6 +30,13 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - `JschSessionFactory` ignored its connect timeout and keep-alive settings (JSch reads those keys only from an OpenSSH
   config file), so a connect to an unresponsive host could wait forever; they now take effect. Resetting the pool also
   refilled only one session instead of the minimum idle count.
+- `S2RestApiUtil.callApi` GET left `+` unencoded in query values, so the server read it as a space (`a+b` → `a b`);
+  values are now fully encoded.
+- `S2PaginationTag` rendered no page numbers when `pageNo` was past the last page (for example after rows were deleted);
+  it now shows the page list holding the last page. `S2PaginationInfo` read the total count column as `int` (counts
+  above `Integer.MAX_VALUE` became 0) and `getRemainRecordCount` overflowed for large page numbers.
+- `S2AnnotationResolver.resolveValue(clazz, type)` and `resolveValue(clazz, type, String.class)` shared one cache, so
+  whichever ran first decided the other's result for a non-String value (`null` or `"3"`).
 - `S2FileUtil.getExtension(name, true)` and `S2ServletUtil.isMobile` lower-cased with the default locale (Turkish: `GIF`
   became `gıf`).
 - `S2ServletUtil.getValueAll` skipped an object the second time it appeared (for example the same map twice in a list);
