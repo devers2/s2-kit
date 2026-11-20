@@ -1722,7 +1722,8 @@ final class S2PdfEngine {
      */
     static InputStream convertImageToPdf(InputStream imageStream, boolean shouldCloseStream) throws IOException {
         try {
-            var imageBytes = IOUtils.toByteArray(imageStream);
+            // mergeImagesToPdf 와 같은 한도로 읽는다(한도 없이 읽으면 큰 스트림이 힙을 다 씀).
+            var imageBytes = S2StreamUtil.streamToByteArray(imageStream, false, S2PdfUtil.DEFAULT_MAX_SOURCE_BYTES);
             return convertImageToPdf(imageBytes);
         } finally {
             if (shouldCloseStream) {
