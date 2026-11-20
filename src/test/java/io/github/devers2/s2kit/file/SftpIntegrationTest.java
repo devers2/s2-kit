@@ -114,6 +114,30 @@ class SftpIntegrationTest {
         files.deleteFile(savePath, "same.txt");
     }
 
+    /** Gives some bytes, then fails like a dropped upload | 일부를 준 뒤 끊긴 업로드처럼 실패 */
+    private static java.io.InputStream failingAfter(String text) {
+        return new java.io.SequenceInputStream(data(text), new java.io.InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("source broke");
+            }
+        });
+    }
+
+    /**
+     * A name with sub folders creates them, and a failed new upload leaves no partial file behind | 하위 폴더가 있는 이름은 폴더를 만들고, 실패한 새 업로드는 파일을 남기지 않음
+     */
+    static void assertSubFoldersAndCleanup(FileManager files, String savePath, Path localDir) throws IOException {
+        assertEquals(2, files.writeFile(data("hi"), savePath, "sub/deep/n.txt"));
+        assertEquals("hi", Files.readString(localDir.resolve("sub/deep/n.txt")));
+        files.deleteFile(savePath, "sub/deep/n.txt");
+
+        assertThrows(S2RuntimeException.class, () -> files.writeFile(failingAfter("partial"), savePath, "broken.txt"));
+        assertFalse(Files.exists(localDir.resolve("broken.txt")), "a failed new upload must not leave a partial file");
+        assertEquals(2, files.writeFile(data("ok"), savePath, "broken.txt"), "the name must be free again");
+        files.deleteFile(savePath, "broken.txt");
+    }
+
     private static String read(Path path) {
         try {
             return Files.readString(path);
@@ -152,6 +176,7 @@ class SftpIntegrationTest {
         void overwritesOnlyWhenAsked() throws IOException {
             try (var sftp = manager(knownHosts.toString(), false)) {
                 assertOverwriteContract(sftp, "/ow-jsch", () -> read(root.resolve("ow-jsch/same.txt")));
+                assertSubFoldersAndCleanup(sftp, "/sub-jsch", root.resolve("sub-jsch"));
             }
         }
 
@@ -254,6 +279,8 @@ class SftpIntegrationTest {
             try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
                 assertOverwriteContract(context.getBean(SpringSftpFileManagerImpl.class), "/ow-spring",
                         () -> read(root.resolve("ow-spring/same.txt")));
+                assertSubFoldersAndCleanup(context.getBean(SpringSftpFileManagerImpl.class), "/sub-spring",
+                        root.resolve("sub-spring"));
             }
         }
 

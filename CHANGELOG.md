@@ -20,6 +20,16 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - `S2TypeUtil.compare` rejected values whose `Comparable` comes from a superclass, such as enums and `java.sql.Timestamp`.
 - `S2TypeUtil.createInstance` failed when the thread's context class loader cannot see the class; it now uses the given
   class.
+- SFTP `writeFile` (`S2SftpFileManagerImpl`, `SpringSftpFileManagerImpl`) failed when `saveName` had sub folders
+  (`a/b.txt`): only `savePath` was created. With a relative `savePath`, folders were created under `/` instead of the
+  login directory. Both now create the target file's folder.
+- SFTP `writeFile` left a partial file when a new upload failed midway, so the retry was refused as an existing file;
+  the partial file is now removed, as in the local manager.
+- `S2SftpFileManagerImpl` could return a session to the pool twice when the idle timer and the caller closed a download
+  stream at the same time, putting a session another thread was using back into the pool.
+- `JschSessionFactory` ignored its connect timeout and keep-alive settings (JSch reads those keys only from an OpenSSH
+  config file), so a connect to an unresponsive host could wait forever; they now take effect. Resetting the pool also
+  refilled only one session instead of the minimum idle count.
 - `S2FileUtil.getExtension(name, true)` and `S2ServletUtil.isMobile` lower-cased with the default locale (Turkish: `GIF`
   became `gıf`).
 - `S2ServletUtil.getValueAll` skipped an object the second time it appeared (for example the same map twice in a list);

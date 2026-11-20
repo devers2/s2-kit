@@ -139,13 +139,18 @@ public class SpringSftpFileManagerImpl implements FileManager {
         long fileSize = -1;
         String remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
         SftpSession session = null;
+        // 이 호출이 새로 만든(덮어쓰지 않는) 파일에 쓰기 시작했는지. 실패하면 불완전한 파일을 지운다
+        boolean createdNewFile = false;
 
         try {
             session = borrowSessionSafely();
             try (InputStream bufferedInput = new BufferedInputStream(fileData);
                     CountingInputStream countingInput = new CountingInputStream(bufferedInput)) {
-                // 디렉토리가 없으면 생성
-                createDirectoryIfNotExists(session, savePath);
+                // 디렉토리가 없으면 생성 (saveName 에 하위 폴더가 있을 수 있으므로 대상 파일의 상위 폴더)
+                String remoteDir = parentDirOf(remoteFileFullPath);
+                if (remoteDir != null) {
+                    createDirectoryIfNotExists(session, remoteDir);
+                }
 
                 // SftpSession.write replaces an existing file, so check first (same rule as the other managers) | write 는 기존 파일을 덮으므로 먼저 확인
                 if (!overwrite && session.exists(remoteFileFullPath)) {
@@ -153,15 +158,30 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 }
 
                 // 파일 업로드
+                createdNewFile = !overwrite;
                 session.write(countingInput, remoteFileFullPath);
+                createdNewFile = false; // 전송 완료: 이후 실패해도 파일은 온전하다
                 // 실제 전송한 바이트 수 반환
                 fileSize = countingInput.getByteCount();
                 logger.debug("File uploaded successfully: {}", remoteFileFullPath);
             }
         } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt(); // 재시도 대기 중 인터럽트: 상태를 되살려 호출자가 알 수 있게 한다
+            }
             logger.error("Failed to upload file: {}", remoteFileFullPath, e);
             throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
+            if (createdNewFile && session != null) {
+                // 로컬 구현처럼 불완전한 파일을 남기지 않는다 (남기면 다시 올릴 때 "이미 존재" 로 거부됨)
+                try {
+                    if (session.exists(remoteFileFullPath)) {
+                        session.remove(remoteFileFullPath);
+                    }
+                } catch (IOException | RuntimeException e) {
+                    logger.warn("Failed to remove the partial upload: {} ({})", remoteFileFullPath, e.getMessage());
+                }
+            }
             if (session != null) {
                 try {
                     sessionPool.returnObject(session);
@@ -217,6 +237,9 @@ public class SpringSftpFileManagerImpl implements FileManager {
             success = true; // Mark as success only before returning the stream
             return resultStream;
         } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt(); // 재시도 대기 중 인터럽트: 상태를 되살려 호출자가 알 수 있게 한다
+            }
             logger.error("Failed to open download stream for file: {}", remoteFileFullPath, e);
             throw new S2RuntimeException("원격 파일 다운로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
@@ -252,10 +275,10 @@ public class SpringSftpFileManagerImpl implements FileManager {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("Failed to delete file (interrupted): {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Failed to delete file: " + e);
+            throw new S2RuntimeException("Failed to delete file: " + e, e);
         } catch (Exception e) {
             logger.error("Failed to delete file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Failed to delete file: " + e);
+            throw new S2RuntimeException("Failed to delete file: " + e, e);
         } finally {
             if (session != null) {
                 try {
@@ -277,12 +300,17 @@ public class SpringSftpFileManagerImpl implements FileManager {
         try {
             String[] folders = path.split("/");
             StringBuilder fullPath = new StringBuilder();
+            // 상대 경로는 접속 계정의 홈 기준이므로 앞에 "/" 를 붙이지 않는다 (붙이면 파일과 다른 곳에 폴더가 생김)
+            boolean absolute = path.startsWith("/");
 
             for (String folder : folders) {
                 if (folder.isBlank())
                     continue;
 
-                fullPath.append("/").append(folder);
+                if (absolute || fullPath.length() > 0) {
+                    fullPath.append("/");
+                }
+                fullPath.append(folder);
                 if (!session.exists(fullPath.toString())) {
                     session.mkdir(fullPath.toString());
                     logger.debug("Created directory: {}", fullPath);
@@ -290,8 +318,17 @@ public class SpringSftpFileManagerImpl implements FileManager {
             }
         } catch (IOException e) {
             logger.error("Failed to create directory: {}", path, e);
-            throw new S2RuntimeException("Failed to create directory: " + e);
+            throw new S2RuntimeException("Failed to create directory: " + e, e);
         }
+    }
+
+    /** 정규화된 원격 파일 경로의 상위 폴더 (상위 폴더가 홈이면 null) */
+    private static String parentDirOf(String remoteFilePath) {
+        int index = remoteFilePath.lastIndexOf('/');
+        if (index < 0) {
+            return null;
+        }
+        return index == 0 ? "/" : remoteFilePath.substring(0, index);
     }
 
     private static class CountingInputStream extends FilterInputStream {

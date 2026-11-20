@@ -109,6 +109,11 @@ public class JschSessionFactory {
 
     private static final int MAX_RETRY_COUNT = 3;
 
+    /* 서버 연결 유지 확인 간격 (밀리초) */
+    private static final int SERVER_ALIVE_INTERVAL_MILLIS = 60_000;
+    /* 연결 유지 확인 실패 허용 횟수 */
+    private static final int SERVER_ALIVE_COUNT_MAX = 3;
+
     /**
      * 기본 풀 크기로 생성한다. 호스트 키는 {@code ~/.ssh/known_hosts}로 검증한다.
      *
@@ -240,7 +245,7 @@ public class JschSessionFactory {
         public void activateObject(PooledObject<Session> p) throws Exception {
             var session = p.getObject();
             if (!session.isConnected()) {
-                session.connect();
+                session.connect(sessionMaxWaitMillis);
             }
         }
 
@@ -256,10 +261,10 @@ public class JschSessionFactory {
         public PooledObject<Session> makeObject() throws Exception {
             var jsch = new JSch();
             var session = jsch.getSession(username, host, port);
-            session.setConfig("ConnectTimeout", String.valueOf(sessionMaxWaitMillis)); // SFTP 연결
-            // 타임아웃
-            session.setConfig("ServerAliveInterval", "60000"); // 서버 연결 유지 확인 간격 (60초)
-            session.setConfig("ServerAliveCountMax", "3"); // 연결 유지 실패 허용 횟수
+            // ConnectTimeout·ServerAlive* 는 setConfig 로 넘기면 무시된다(JSch 는 OpenSSH 설정 파일에서만 읽음).
+            // 연결 제한 시간은 connect(timeout) 인자로, 연결 유지 확인은 전용 setter 로 지정한다.
+            session.setServerAliveInterval(SERVER_ALIVE_INTERVAL_MILLIS); // 서버 연결 유지 확인 간격 (60초)
+            session.setServerAliveCountMax(SERVER_ALIVE_COUNT_MAX); // 연결 유지 실패 허용 횟수
 
             // Secrets go to JSch as bytes (the String overloads are deprecated) and are wiped after use, as JSch
             // itself did | 비밀값은 바이트로 넘기고(String 오버로드는 deprecated) 쓴 뒤 지운다 (JSch 가 내부에서 하던 방식과 동일)
@@ -281,7 +286,7 @@ public class JschSessionFactory {
             }
 
             configureHostKeyChecking(jsch, session);
-            session.connect();
+            session.connect(sessionMaxWaitMillis); // SFTP 연결 타임아웃
             return new DefaultPooledObject<>(session);
         }
 
@@ -327,7 +332,7 @@ public class JschSessionFactory {
                 if (session != null) {
                     if (!session.isConnected()) {
                         try {
-                            session.connect();
+                            session.connect(sessionMaxWaitMillis);
                         } catch (Exception e) {
                             invalidateSession(session);
                             throw e;
@@ -394,21 +399,14 @@ public class JschSessionFactory {
             // 2. 새로운 세션 풀 생성
             // 2~3. 새로운 세션 풀 생성 및 공통 설정 적용 (생성자에서 지정된 커스텀 크기를 그대로 유지한다)
             var newPool = createSessionPool(sessionMaxTotal, sessionMinIdle);
-            // 초기 min-idle 세션을 채우는 아래 5번 단계가 무한 대기하지 않도록 이 풀 인스턴스에만 별도로 제한을 둔다.
-            newPool.setMaxWait(Duration.ofSeconds(30));
 
             // 4. 기존 풀 참조 교체
             this.sessionPool = newPool;
             this.lastPoolResetAtMillis = System.currentTimeMillis();
 
-            // 5. 최소 세션 생성
+            // 5. 최소 세션 생성 (빌렸다 바로 반납하면 같은 세션만 되돌아와 1개만 생기므로 preparePool 로 minIdle 개를 채운다)
             try {
-                for (var i = 0; i < sessionMinIdle; i++) {
-                    var session = this.sessionPool.borrowObject();
-                    if (session != null) {
-                        this.sessionPool.returnObject(session);
-                    }
-                }
+                newPool.preparePool();
             } catch (Exception e) {
                 logger.error("초기 세션 생성 실패: {}", e.getMessage(), e);
             }

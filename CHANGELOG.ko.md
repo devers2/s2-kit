@@ -16,6 +16,15 @@
 - `S2FileUtil.copy`·`move`가 대상이 아직 없으면(새 경로로 복사·이동) `NoSuchFileException`으로 실패하던 문제.
 - `S2TypeUtil.compare`가 enum, `java.sql.Timestamp`처럼 `Comparable`을 상위 클래스에서 물려받은 값을 비교하지 못하던 문제.
 - `S2TypeUtil.createInstance`가 스레드 컨텍스트 클래스 로더에서 보이지 않는 클래스면 실패하던 문제(이제 넘겨받은 클래스를 씁니다).
+- SFTP `writeFile`(`S2SftpFileManagerImpl`, `SpringSftpFileManagerImpl`)이 `saveName`에 하위 폴더가 있으면(`a/b.txt`) 실패하던
+  문제(`savePath`만 만들었음). 상대 `savePath`면 폴더를 접속 계정의 홈이 아니라 `/` 아래에 만들던 문제도 함께 고쳐, 이제 대상 파일의
+  폴더를 만듭니다.
+- SFTP `writeFile`이 새 업로드가 중간에 실패하면 불완전한 파일을 남겨, 다시 올릴 때 "이미 존재"로 거부되던 문제. 이제 로컬 관리자처럼
+  지웁니다.
+- `S2SftpFileManagerImpl` 다운로드 스트림을 유휴 타이머와 호출 측이 동시에 닫으면 세션을 두 번 반납해, 다른 스레드가 쓰는 세션이 풀에
+  다시 들어갈 수 있던 문제.
+- `JschSessionFactory`의 연결 제한 시간·연결 유지 설정이 적용되지 않던 문제(JSch 는 그 키를 OpenSSH 설정 파일에서만 읽음). 응답 없는
+  호스트에 연결하면 끝없이 기다릴 수 있었습니다. 풀을 재초기화할 때 최소 유휴 세션 수 대신 1개만 채우던 문제도 고쳤습니다.
 - `S2FileUtil.getExtension(name, true)`, `S2ServletUtil.isMobile`이 기본 로케일로 소문자를 만들던 문제(터키어에서 `GIF`가 `gıf`).
 - `S2ServletUtil.getValueAll`이 같은 객체가 두 번 나오면(예: 리스트에 같은 맵 두 개) 두 번째를 건너뛰던 문제. 이제 실제 순환만 건너뜁니다.
 - `S2FileUtil.detectExtension`이 항목 경로 중간에 `word/`, `xl/`, `ppt/`, `version.xml`이 있는 zip(예: `keyword/a.txt`)을

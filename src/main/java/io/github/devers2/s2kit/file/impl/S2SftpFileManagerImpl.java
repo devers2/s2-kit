@@ -26,6 +26,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.jcraft.jsch.ChannelSftp;
@@ -206,8 +207,12 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
     public long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite) {
         var fileSize = -1L;
         var remoteFileFullPath = S2FileUtil.resolveRemoteWithin(savePath, saveName);
+        // saveName 에 하위 폴더가 있을 수 있으므로 savePath 가 아니라 대상 파일의 상위 폴더를 만든다
+        var remoteDir = parentDirOf(remoteFileFullPath);
         Session session = null;
         ChannelSftp channel = null;
+        // 이 호출이 새로 만든(덮어쓰지 않는) 파일에 쓰기 시작했는지. 실패하면 불완전한 파일을 지운다
+        var createdNewFile = false;
 
         // 커스텀 진행률 모니터 인스턴스 생성 (클래스는 static nested로 변경하여 클래스 로딩 비용 절감)
         var monitor = new SizeTrackingMonitor();
@@ -220,17 +225,17 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             channel.connect(CHANNEL_CONNECT_TIMEOUT);
 
             // 디렉토리 존재 여부 확인 및 생성 (TTL 캐시로 네트워크 호출 최소화)
-            if (!isDirCached(savePath)) {
+            if (remoteDir != null && !isDirCached(remoteDir)) {
                 try {
-                    createDirectoryIfNotExists(channel, savePath);
-                    putDirCache(savePath);
+                    createDirectoryIfNotExists(channel, remoteDir);
+                    putDirCache(remoteDir);
                 } catch (Exception e) {
                     if (logger.isErrorEnabled()) {
-                        logger.error("원격 디렉토리 생성 실패: {}", savePath, e);
+                        logger.error("원격 디렉토리 생성 실패: {}", remoteDir, e);
                     } else {
-                        logger.error("원격 디렉토리 생성 실패: {}", savePath);
+                        logger.error("원격 디렉토리 생성 실패: {}", remoteDir);
                     }
-                    throw new S2RuntimeException("원격 디렉토리 생성 실패: " + savePath);
+                    throw new S2RuntimeException("원격 디렉토리 생성 실패: " + remoteDir);
                 }
             }
 
@@ -245,7 +250,9 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             var watchdog = startTransferIdleWatchdog(channel, monitor, TRANSFER_IDLE_MILLIS,
                     TRANSFER_IDLE_CHECK_INTERVAL_MILLIS);
             try {
+                createdNewFile = !overwrite;
                 channel.put(bufferedInput, remoteFileFullPath, monitor);
+                createdNewFile = false; // 전송 완료: 이후 실패해도 파일은 온전하다
             } finally {
                 watchdog.cancel();
             }
@@ -267,6 +274,10 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             }
             throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
+            if (createdNewFile && session != null) {
+                // 로컬 구현처럼 불완전한 파일을 남기지 않는다 (남기면 다시 올릴 때 "이미 존재" 로 거부됨)
+                removeQuietly(session, channel, remoteFileFullPath);
+            }
             if (channel != null && channel.isConnected()) {
                 channel.disconnect();
             }
@@ -387,16 +398,58 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
     private void createDirectoryIfNotExists(ChannelSftp channel, String path) throws Exception {
         var folders = path.split("/");
         var fullPath = new StringBuilder();
+        // 상대 경로는 접속 계정의 홈 기준이므로 앞에 "/" 를 붙이지 않는다 (붙이면 파일과 다른 곳에 폴더가 생김)
+        var absolute = path.startsWith("/");
 
         for (var folder : folders) {
             if (folder.isBlank())
                 continue;
 
-            fullPath.append("/").append(folder);
+            if (absolute || fullPath.length() > 0) {
+                fullPath.append("/");
+            }
+            fullPath.append(folder);
             // lstat 으로 존재 여부만 확인한다. cd()는 채널의 현재 작업 디렉토리를 바꾸는 부작용이 있어
             // 이후 상대경로 기반의 exists()/put() 호출이 엉뚱한 위치를 가리키게 될 수 있으므로 사용하지 않는다.
             if (!exists(channel, fullPath.toString())) {
                 channel.mkdir(fullPath.toString());
+            }
+        }
+    }
+
+    /**
+     * 정규화된 원격 파일 경로의 상위 폴더를 반환한다 (상위 폴더가 홈이면 null).
+     * @param remoteFilePath {@link S2FileUtil#resolveRemoteWithin}이 돌려준 경로
+     * @return 상위 폴더 경로, 없으면 null
+     */
+    private static String parentDirOf(String remoteFilePath) {
+        var index = remoteFilePath.lastIndexOf('/');
+        if (index < 0) {
+            return null;
+        }
+        return index == 0 ? "/" : remoteFilePath.substring(0, index);
+    }
+
+    /**
+     * 실패한 업로드가 남긴 파일을 지운다. 감시 타이머가 채널을 끊었을 수 있으므로 그때는 새 채널을 연다. 실패는 기록만 한다.
+     */
+    private static void removeQuietly(Session session, ChannelSftp channel, String path) {
+        ChannelSftp cleanup = null;
+        try {
+            if (channel != null && channel.isConnected()) {
+                channel.rm(path);
+            } else if (session.isConnected()) {
+                cleanup = (ChannelSftp) session.openChannel("sftp");
+                cleanup.connect(CHANNEL_CONNECT_TIMEOUT);
+                cleanup.rm(path);
+            }
+        } catch (Exception e) {
+            if (!(e instanceof SftpException se && se.id == ChannelSftp.SSH_FX_NO_SUCH_FILE)) {
+                logger.warn("실패한 업로드의 원격 파일을 지우지 못했습니다: {} ({})", path, e.getMessage());
+            }
+        } finally {
+            if (cleanup != null && cleanup.isConnected()) {
+                cleanup.disconnect();
             }
         }
     }
@@ -480,6 +533,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
         @SuppressWarnings("unused")
         private final long idleTimeoutMillis;
         private volatile long lastActivityAtMillis;
+        private final AtomicBoolean closing = new AtomicBoolean();
 
         AutoClosingResourceInputStream(InputStream buffered, InputStream raw, ChannelSftp channel, Session session,
                 long idleTimeoutMillis, long idleCheckIntervalMillis, JschSessionFactory sessionFactory) {
@@ -542,7 +596,9 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
         @Override
         public void close() {
-            if (!this.isClosed()) {
+            // 감시 타이머와 호출 측이 동시에 닫을 수 있다. isClosed() 확인만으로는 둘 다 통과해 세션을 두 번 반납할 수 있고,
+            // 그사이 다른 스레드가 빌린 세션이 풀에 다시 들어가므로 한 번만 정리되도록 원자적으로 막는다.
+            if (closing.compareAndSet(false, true)) {
                 try {
                     super.close();
                 } finally {
