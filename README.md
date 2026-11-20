@@ -306,7 +306,7 @@ dependencies {
     implementation 'org.springframework.integration:spring-integration-sftp:6.5.10'
     implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
     implementation 'jakarta.servlet.jsp:jakarta.servlet.jsp-api:4.0.0'
-    implementation 'org.aspectj:aspectjweaver:1.9.26'
+    implementation 'org.aspectj:aspectjweaver:1.9.27'
     implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 }
 ```
