@@ -1935,8 +1935,10 @@ export const S2Util = {
               }
 
               case 'minValue': {
-                const minValue = Number(element.getAttribute(check).replace(/[^0-9]/g, ''));
-                if (minValue) {
+                // 0·음수·소수·쉼표 표기를 받는다 (예전에는 숫자만 남겨 0 이면 검사하지 않고 '-5' 를 5 로 읽었다)
+                const minValueText = String(element.getAttribute(check) || '').replace(/,/g, '').trim();
+                const minValue = minValueText === '' ? NaN : Number(minValueText);
+                if (!isNaN(minValue)) {
                   let value = '$undefined';
 
                   switch (type) {
@@ -1954,7 +1956,10 @@ export const S2Util = {
                       break;
                   }
 
-                  if (value !== '$undefined' && minValue > value) {
+                  // 빈 값은 required 가 맡는다. 숫자로 바꿔 비교하고, 숫자가 아니면 최솟값을 만족하지 못한 것으로 본다
+                  const valueText = value === '$undefined' ? '' : String(value).replace(/,/g, '').trim();
+                  const numberValue = Number(valueText);
+                  if (valueText !== '' && (isNaN(numberValue) || numberValue < minValue)) {
                     valid = false;
                     checkMessage = _josa(title, '은', ` ${minValue}보다 적을수 없습니다.`);
                     S2Util.setFormErrorMessage(
@@ -2910,7 +2915,8 @@ export const S2Util = {
       };
 
       const handleAlertKeydown = (event) => {
-        if (event.key !== 'Enter' && event.key !== 'Escape') {
+        // 여러 창이 겹쳐 있으면 맨 위 창만 처리한다 (먼저 등록된 아래 창이 키를 가로채 닫히지 않도록)
+        if ((event.key !== 'Enter' && event.key !== 'Escape') || !S2Util._isTopDialog(alertDiv)) {
           return;
         }
         event.preventDefault();
@@ -2953,6 +2959,16 @@ export const S2Util = {
    *   console.log('사용자가 확인했습니다.');
    * });
    */
+  /**
+   * @private
+   * alert·confirm 창 중 가장 나중에 붙은(맨 위) 창인지 확인한다.
+   * @param {Element} dialog 확인할 창
+   * @returns {boolean} 맨 위 창이면 true
+   */
+  _isTopDialog(dialog) {
+    const dialogs = document.querySelectorAll('#alert.s2, #confirm.s2');
+    return dialogs.length === 0 || dialogs[dialogs.length - 1] === dialog;
+  },
   confirm(message, callback) {
     const existingConfirms = Array.from(document.querySelectorAll('#confirm.s2'));
     const activeConfirm = existingConfirms.find(
@@ -3014,7 +3030,8 @@ export const S2Util = {
       };
 
       const handleConfirmKeydown = (event) => {
-        if (event.key !== 'Enter' && event.key !== 'Escape') {
+        // 여러 창이 겹쳐 있으면 맨 위 창만 처리한다 (먼저 등록된 아래 창이 키를 가로채 닫히지 않도록)
+        if ((event.key !== 'Enter' && event.key !== 'Escape') || !S2Util._isTopDialog(confirmDiv)) {
           return;
         }
         event.preventDefault();

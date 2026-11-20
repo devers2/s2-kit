@@ -24,8 +24,12 @@ import java.io.BufferedInputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.pool2.impl.GenericObjectPool;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.integration.sftp.session.SftpSession;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +37,7 @@ import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
 import io.github.devers2.s2kit.file.S2FileExistsException;
 import io.github.devers2.s2kit.file.S2ResourceInputStream;
+import io.github.devers2.s2kit.file.impl.S2TransferWatchdog;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
 import io.github.devers2.s2kit.support.S2FileUtil;
@@ -47,8 +52,25 @@ public class SpringSftpFileManagerImpl implements FileManager {
 
     private final GenericObjectPool<SftpSession> sessionPool;
 
+    /* 다운로드 스트림을 마지막으로 읽은 뒤 이 시간 동안 더 읽지 않으면 자동으로 닫는 기본값 (밀리초) */
+    private static final long DEFAULT_DOWNLOAD_IDLE_MILLIS = 60_000L;
+
+    private final long downloadIdleMillis;
+
     public SpringSftpFileManagerImpl(GenericObjectPool<SftpSession> sessionPool) {
+        this(sessionPool, DEFAULT_DOWNLOAD_IDLE_MILLIS);
+    }
+
+    /**
+     * @param sessionPool        SFTP 세션 풀
+     * @param downloadIdleMillis {@link #readFile}이 돌려준 스트림을 마지막으로 읽은 뒤 이 시간 동안 더 읽지 않으면 자동으로 닫고 세션을
+     *                           반납한다 (호출 측이 close() 를 빠뜨려도 풀이 고갈되지 않게). 설정: {@code sftp.download-idle-timeout-millis}
+     */
+    @Autowired
+    public SpringSftpFileManagerImpl(GenericObjectPool<SftpSession> sessionPool,
+            @Value("${sftp.download-idle-timeout-millis:60000}") long downloadIdleMillis) {
         this.sessionPool = sessionPool;
+        this.downloadIdleMillis = Math.max(1L, downloadIdleMillis);
     }
 
     /**
@@ -211,26 +233,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
             InputStream rawInputStream = session.readRaw(remoteFileFullPath);
             logger.debug("File download stream opened successfully: {}", remoteFileFullPath);
 
-            final SftpSession finalSession = session;
-            InputStream resultStream = new S2ResourceInputStream(rawInputStream) {
-                private volatile boolean closed = false;
-
-                @Override
-                public synchronized void close() {
-                    if (!closed) {
-                        try {
-                            super.close();
-                        } finally {
-                            try {
-                                sessionPool.returnObject(finalSession);
-                            } catch (IllegalStateException | IllegalArgumentException e) {
-                                logger.warn("Failed to return SFTP session to pool", e);
-                            }
-                            closed = true;
-                        }
-                    }
-                }
-            };
+            // 호출 측이 닫지 않아도 마지막 읽기 이후 downloadIdleMillis 동안 읽지 않으면 닫고 세션을 반납한다
+            InputStream resultStream = new IdleClosingStream(rawInputStream, sessionPool, session, downloadIdleMillis);
             success = true; // Mark as success only before returning the stream
             return resultStream;
         } catch (IOException | InterruptedException e) {
@@ -437,6 +441,72 @@ public class SpringSftpFileManagerImpl implements FileManager {
             return null;
         }
         return index == 0 ? "/" : remoteFilePath.substring(0, index);
+    }
+
+    /**
+     * 다운로드 스트림. 닫으면(또는 마지막 읽기 이후 idleMillis 동안 읽지 않아 자동으로 닫히면) 세션을 한 번만 반납한다.
+     */
+    private static final class IdleClosingStream extends S2ResourceInputStream {
+        private final GenericObjectPool<SftpSession> pool;
+        private final SftpSession session;
+        private final AtomicBoolean closing = new AtomicBoolean();
+        private final ScheduledFuture<?> idleCheck;
+        private volatile long lastActivityAtMillis = System.currentTimeMillis();
+
+        IdleClosingStream(InputStream raw, GenericObjectPool<SftpSession> pool, SftpSession session, long idleMillis) {
+            super(raw);
+            this.pool = pool;
+            this.session = session;
+            this.idleCheck = S2TransferWatchdog.scheduleCheck(() -> {
+                if (!closing.get() && System.currentTimeMillis() - lastActivityAtMillis >= idleMillis) {
+                    logger.warn("Closing an SFTP download stream left open for {}ms", idleMillis);
+                    S2TransferWatchdog.runCleanup(this::close);
+                }
+            }, Math.min(30_000L, Math.max(1L, idleMillis / 2)));
+        }
+
+        private <T> T touch(T result) {
+            lastActivityAtMillis = System.currentTimeMillis();
+            return result;
+        }
+
+        @Override
+        public int read() throws IOException {
+            return touch(super.read());
+        }
+
+        @Override
+        public int read(byte[] b) throws IOException {
+            return touch(super.read(b));
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            return touch(super.read(b, off, len));
+        }
+
+        @Override
+        public long skip(long n) throws IOException {
+            return touch(super.skip(n));
+        }
+
+        @Override
+        public void close() {
+            // 감시 스레드와 호출 측이 동시에 닫아도 세션은 한 번만 반납한다
+            if (!closing.compareAndSet(false, true)) {
+                return;
+            }
+            idleCheck.cancel(false);
+            try {
+                super.close();
+            } finally {
+                try {
+                    pool.returnObject(session);
+                } catch (IllegalStateException | IllegalArgumentException e) {
+                    logger.warn("Failed to return SFTP session to pool", e);
+                }
+            }
+        }
     }
 
     private static class CountingInputStream extends FilterInputStream {

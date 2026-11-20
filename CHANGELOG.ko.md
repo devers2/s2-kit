@@ -8,6 +8,8 @@
 
 ### 추가
 
+- `SpringSftpFileManagerImpl`이 `sftp.download-idle-timeout-millis`(기본 60초) 동안 읽지 않은 다운로드 스트림을 닫고 세션을
+  반납합니다(`S2SftpFileManagerImpl`과 같음). 예전에는 호출 측이 닫지 않은 스트림이 35분 동안 세션을 붙잡았습니다.
 - JS: `S2Util.loginUrl`(401 응답 때 이동할 주소, 기본 `/login`), `maxByte`의 계산 방식 `S2Util.byteCharset`와 `byteCharset`
   속성(기본 `EUC-KR`, `UTF-8`이면 한글 3바이트), `S2Util.byteLength`/`truncateBytes`.
 - `src/test/js`의 JS 시험을 `./gradlew check`가 `node --test`로 실행합니다(node 18 이상이 없으면 경고 후 건너뜀, CI 에서는
@@ -33,6 +35,9 @@
 
 ### 수정
 
+- `S2Util.alert`/`confirm`을 겹쳐 띄우면 Enter·Esc 로 아래 창이 먼저 닫히던 문제. 이제 맨 위 창만 반응합니다.
+- `S2Util.validate`의 `minValue`가 `0`이면 검사하지 않고, `-5`를 `5`로 읽고, 비어 있는 선택 입력을 오류로 보고, 숫자가 아닌 값을
+  통과시키던 문제.
 - ⚠️ `S2Util.jsonToQueryString`(`S2Util.fetch` GET 요청과 `downloadFile`이 사용)이 키·값을 인코딩하지 않던 문제. `A&B`가 다른
   매개변수로 쪼개지고 `#`에서 URL 이 잘리며 `+`가 공백이 됐습니다. 이제 인코딩하고, `0`·`false`를 보내고, 주어진 URL 의 `=`가 든
   값을 지키고, `#해시`는 맨 끝에 둡니다. `queryStringToJson`은 인코딩을 풀고, 앞의 `?`를 받으며, 첫 `=`에서만 나눕니다.

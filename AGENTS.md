@@ -1,7 +1,7 @@
 # s2-kit AI 에이전트 원칙
 
 ## 필수: 수정 후 전체 검증
-Java·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push 전에 `./gradlew check` 전수 통과를 확인한다. 개별 테스트만으로 끝내지 않는다.
+Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push 전에 `./gradlew check` 전수 통과를 확인한다(JS 시험 `jsTest` 포함). 개별 테스트만으로 끝내지 않는다.
 
 ## 1. 버전·배포
 - 버전은 `build.gradle.kts` 만 바꾼다. `./gradlew test` 때 `S2BuildUtils` 가 `README` 의 버전·의존성 블록을 동기화한다.
@@ -13,8 +13,10 @@ Java·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push 전�
 - `settings.gradle.kts` 의 `includeBuild("../s2-util")` 로 로컬 `s2-util` 소스가 그대로 빌드에 쓰인다.
 - `s2-util` API 가 바뀌면 `s2-kit` 호출 코드도 함께 고친다. s2-kit 을 고치기 전에 `s2-util` 의 `./gradlew check` 를 먼저 통과시킨다.
 
-## 3. Java 버전·동시성
+## 3. Java·JS 버전·동시성
 - 기준은 Java 17(`--release 17`). Java 21+ 전용 문법·API 를 직접 쓰지 않는다.
+- 웹 자원 JS(`src/main/resources/META-INF/resources/s2-kit/js`)는 **ES2020 까지**(ES 모듈). 지원 브라우저 Chrome·Edge 80, Firefox 74, Safari 13.1 — 숫자 구분자(`5_000` 대신 `5 * 1000`), `??=`·`||=`, `.at()`, `replaceAll`, `#private` 등 ES2021+ 문법·API 금지(`src/test/js/es2020.test.mjs` 가 검사).
+- JS 를 고치면 `src/test/js` 시험도 함께 고친다(`node --test`, 의존성 없음).
 - 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil.getCommonExecutor()` 를 쓴다(Java 21+ 면 가상 스레드, 17 이면 플랫폼 풀).
 
 ## 4. 인코딩

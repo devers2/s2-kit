@@ -515,6 +515,47 @@ class SftpIntegrationTest {
         }
 
         @Test
+        void anAbandonedDownloadStreamIsClosedAndItsSessionReturned() throws Exception {
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString(),
+                    "sftp.download-idle-timeout-millis", 300))) {
+                var sftp = context.getBean(SpringSftpFileManagerImpl.class);
+                @SuppressWarnings("unchecked")
+                var pool = (org.apache.commons.pool2.impl.GenericObjectPool<Object>) context.getBean(
+                        org.apache.commons.pool2.impl.GenericObjectPool.class);
+                sftp.writeFile(data("idle"), "/idle", "i.txt", true);
+                var stream = sftp.readFile("/idle", "i.txt"); // never closed by the caller | 호출 측이 닫지 않음
+                assertEquals(1, pool.getNumActive());
+                var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                while (pool.getNumActive() > 0 && System.nanoTime() < deadline) {
+                    Thread.sleep(50);
+                }
+                assertEquals(0, pool.getNumActive(), "the idle stream gave its session back");
+                assertThrows(IOException.class, stream::read, "the stream is closed");
+                stream.close(); // closing again is harmless | 다시 닫아도 문제없음
+                assertEquals(0, pool.getNumActive());
+                sftp.deleteFile("/idle", "i.txt");
+            }
+        }
+
+        @Test
+        void aStreamInUseIsNotClosed() throws Exception {
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString(),
+                    "sftp.download-idle-timeout-millis", 400))) {
+                var sftp = context.getBean(SpringSftpFileManagerImpl.class);
+                sftp.writeFile(data("abcdefghij"), "/busy", "b.txt", true);
+                try (var stream = sftp.readFile("/busy", "b.txt")) {
+                    var read = new StringBuilder();
+                    for (var i = 0; i < 10; i++) {
+                        read.append((char) stream.read()); // slow, but active | 느리지만 계속 읽음
+                        Thread.sleep(100);
+                    }
+                    assertEquals("abcdefghij", read.toString());
+                }
+                sftp.deleteFile("/busy", "b.txt");
+            }
+        }
+
+        @Test
         void resumesAPartialUpload() throws IOException {
             try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
                 assertResume(context.getBean(SpringSftpFileManagerImpl.class), "/resume-spring", root.resolve("resume-spring"));

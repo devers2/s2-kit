@@ -8,6 +8,9 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Added
 
+- `SpringSftpFileManagerImpl` closes a download stream left unread for `sftp.download-idle-timeout-millis` (60s by
+  default) and returns its session, as `S2SftpFileManagerImpl` does; before, a stream the caller forgot to close held its
+  session for 35 minutes.
 - JS: `S2Util.loginUrl` (where a 401 response leads, `/login` by default), `S2Util.byteCharset` and the `byteCharset`
   attribute for `maxByte` (`EUC-KR` by default, `UTF-8` counts Korean as 3 bytes), and `S2Util.byteLength` /
   `truncateBytes`.
@@ -34,6 +37,9 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Fixed
 
+- `S2Util.alert`/`confirm` stacked on top of each other: Enter and Escape closed the one underneath first; only the top
+  one answers now.
+- `S2Util.validate` `minValue` skipped `0`, read `-5` as `5`, flagged empty optional fields and let non-numbers pass.
 - ⚠️ `S2Util.jsonToQueryString` (used by `S2Util.fetch` GET requests and `downloadFile`) did not encode keys and values:
   `A&B` split into another parameter, `#` cut the URL and `+` became a space. Values are now encoded, `0` and `false`
   are kept, values containing `=` in the given URL survive, and a `#hash` stays at the end. `queryStringToJson` now
