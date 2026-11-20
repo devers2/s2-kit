@@ -15,8 +15,7 @@ Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push �
 
 ## 3. Java·JS 버전·동시성
 - 기준은 Java 17(`--release 17`). Java 21+ 전용 문법·API 를 직접 쓰지 않는다.
-- 소비자 프로젝트가 불러가는 JS(jar 에 들어가는 `src/main/resources` 아래 JS 전체)는 **ES2020 까지**(ES 모듈). 시험·도구용 JS(`src/test/js` 등)는 제외. 지원 브라우저 Chrome·Edge 80, Firefox 74, Safari 13.1 — 숫자 구분자(`5_000` 대신 `5 * 1000`), `??=`·`||=`, `.at()`, `replaceAll`, 클래스 필드 선언(`x = 1;` — 생성자에서 초기화), `#private` 등 ES2021+ 문법·API 금지(`src/test/js/es2020.test.mjs` 가 검사).
-- JS 를 고치면 `src/test/js` 시험도 함께 고친다(`node --test`, 의존성 없음).
+- 배포되는 JS(`src/main/resources` 아래)는 **ES2020 까지**(`es2020.test.mjs` 가 검사). JS 를 고치면 `src/test/js` 시험도 함께 고친다.
 - 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil.getCommonExecutor()` 를 쓴다(Java 21+ 면 가상 스레드, 17 이면 플랫폼 풀).
 
 ## 4. 인코딩
@@ -29,8 +28,8 @@ Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push �
 | Javadoc·JSDoc | 영문 설명 → `<p><b>[한국어 설명]</b></p>` → 한글 설명 (기존 형식) |
 | 그 밖의 주석(`//`, 메서드 내부 블록 주석, 빌드 스크립트) | 한국어 |
 | 커밋 메시지 | 한국어. 접두어(`feat:`, `fix:`, `docs:`, `build:` …)·식별자는 영어 — 예: `fix: 날짜 검증에서 null 처리 누락 수정` |
-| 예외 메시지 | 영어, 원인 분석용 세부 정보 포함. **사용자가 행동으로 해결할 수 있는 실패**(다시 시도·파일 바꾸기·크기 줄이기 등)에만 `S2KitMessages.key(...)` 를 붙이고 `messages(_ko).properties` 에 문구를 둔다. 개발자 실수·설정·내부 오류에는 붙이지 않는다(사용자에게는 `S2Localizable.localizedMessageOrDefault` 의 일반 문구) |
-| 로그 | s2-core 처럼 `if (S2Util.isKorean()) { 한국어 } else { 영어 }` 로 함께 쓰거나 영어만 (`MessageLanguageTest`가 검사) |
+| 예외 메시지 | 영어(세부 정보 포함). 사용자가 해결할 수 있는 실패에만 `S2KitMessages.key(...)` + `messages(_ko).properties` |
+| 로그 | `if (S2Util.isKorean())` 로 한·영 함께, 또는 영어만 (`MessageLanguageTest` 가 검사) |
 | 이슈·PR 답변 | 작성자의 언어 |
 
 - 기존 주석·커밋 이력은 번역·정리 목적으로 바꾸지 않는다. 주석은 설명하는 코드가 바뀌었거나 틀렸을 때만 그 부분을 고치고, 고친 주석은 위 원칙의 언어로 쓴다.
