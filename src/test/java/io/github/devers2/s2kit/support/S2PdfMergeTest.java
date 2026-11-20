@@ -127,6 +127,11 @@ class S2PdfMergeTest {
         }
         var e = assertThrows(IOException.class, () -> S2PdfUtil.mergePdfPaths(restricted, pdf("ok.pdf", "OK")));
         assertTrue(e.getMessage().contains("encryption or permission restrictions"), e.getMessage());
+        // What a user is shown, in the request's language | 사용자에게 보일 문구 (요청 언어)
+        assertEquals("보안 제한이 있는 PDF 는 처리할 수 없습니다. 제한을 해제한 뒤 다시 시도해 주세요.",
+                io.github.devers2.s2util.message.S2Localizable.findLocalizedMessage(e, java.util.Locale.KOREAN).orElseThrow());
+        assertEquals("This PDF has security restrictions and cannot be processed. Remove the restrictions and try again.",
+                io.github.devers2.s2util.message.S2Localizable.findLocalizedMessage(e, java.util.Locale.ENGLISH).orElseThrow());
     }
 
     @Test

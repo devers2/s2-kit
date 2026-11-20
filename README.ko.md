@@ -275,6 +275,23 @@ queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
 - 대용량 업로드(Spring·nginx 설정, 큐 크기 정하기): [SFTP-GUIDE.ko.md 8절](./SFTP-GUIDE.ko.md#8-대용량-업로드-수백-mb).
 - 큐는 메모리에만 있어 종료 때 끝나지 않은 업로드는 사라집니다. 결과를 (상태 컬럼 등에) 기록하십시오.
 
+#### 사용자에게 보여 줄 문구 (`S2Localizable`)
+
+예외 메시지는 로그용으로 영어입니다. 사용자에게 보일 수 있는 실패(이미 있는 파일, 가득 찬 업로드 큐, 너무 큰 파일, 읽을 수 없는
+이미지, 암호가 걸린 PDF 등)는 메시지 키를 함께 담고, **요청한 사용자**의 언어로 문구를 만듭니다(한국어·영어 포함, s2-util
+`S2Localizable`).
+
+```java
+@ExceptionHandler(Exception.class)
+ResponseEntity<String> handle(Exception e, Locale locale) {
+    return ResponseEntity.badRequest()
+            .body(S2Localizable.findLocalizedMessage(e, locale).orElse("오류가 발생했습니다."));
+}
+```
+
+- 키와 문구: `io/github/devers2/s2kit/messages(_ko).properties`(`S2KitMessages`). 문구를 바꾸려면 앱 번들
+  (`S2ResourceBundle.setDefaultBasename`)에 같은 `s2kit.*` 키를 둡니다. 사용자 문구에는 서버 경로를 넣지 않습니다.
+
 #### AOP 파라미터 (`S2ContextUtil`)
 
 ```java

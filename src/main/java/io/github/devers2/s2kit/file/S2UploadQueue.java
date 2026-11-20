@@ -40,6 +40,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2kit.support.S2FileUtil;
 import io.github.devers2.s2kit.support.S2StreamUtil;
 import io.github.devers2.s2util.core.S2ThreadUtil;
@@ -211,7 +212,8 @@ public final class S2UploadQueue implements AutoCloseable {
                 if (e instanceof RuntimeException runtime) {
                     throw runtime;
                 }
-                throw new S2RuntimeException("Cannot save the upload to a temporary file: " + saveName, e);
+                throw new S2RuntimeException("Cannot save the upload to a temporary file: " + saveName, e,
+                        S2KitMessages.key("s2kit.upload.failed", saveName));
             }
         } finally {
             // 닫다 난 오류로 실패를 알리면 안 된다 (이미 큐에 넣었을 수 있음): 조용히 닫는다
@@ -306,7 +308,7 @@ public final class S2UploadQueue implements AutoCloseable {
     /* 큐에 넣는다. 실행기가 받지 않으면 예외로 알린다 (슬롯·임시 파일 정리는 호출 측이 한다) */
     private CompletableFuture<Long> enqueue(Job job) {
         if (closed) {
-            throw new RejectedExecutionException("Upload queue is closed");
+            throw new S2UploadRejectedException("Upload queue is closed", S2KitMessages.key("s2kit.upload.queueClosed"));
         }
         jobs.add(job);
         try {
@@ -407,10 +409,11 @@ public final class S2UploadQueue implements AutoCloseable {
 
     private void acquireSlot() {
         if (closed) {
-            throw new RejectedExecutionException("Upload queue is closed");
+            throw new S2UploadRejectedException("Upload queue is closed", S2KitMessages.key("s2kit.upload.queueClosed"));
         }
         if (!slots.tryAcquire()) {
-            throw new RejectedExecutionException("Upload queue is full (" + maxQueued + " uploads waiting); try again later");
+            throw new S2UploadRejectedException("Upload queue is full (" + maxQueued + " uploads waiting); try again later",
+                    S2KitMessages.key("s2kit.upload.queueFull"));
         }
     }
 
@@ -433,8 +436,8 @@ public final class S2UploadQueue implements AutoCloseable {
         }
         var usable = Files.getFileStore(tempDir).getUsableSpace();
         if (usable < minFreeDiskBytes) {
-            throw new RejectedExecutionException("Not enough disk space for upload temp files: " + usable + " bytes free, "
-                    + minFreeDiskBytes + " required");
+            throw new S2UploadRejectedException("Not enough disk space for upload temp files: " + usable + " bytes free, "
+                    + minFreeDiskBytes + " required", S2KitMessages.key("s2kit.upload.noDiskSpace"));
         }
     }
 
@@ -446,11 +449,25 @@ public final class S2UploadQueue implements AutoCloseable {
             while ((read = in.read(buffer)) != -1) {
                 total += read;
                 if (maxFileBytes > 0 && total > maxFileBytes) {
-                    throw new S2RuntimeException("Upload is larger than " + maxFileBytes + " bytes");
+                    throw new S2RuntimeException("Upload is larger than " + maxFileBytes + " bytes",
+                            S2KitMessages.key("s2kit.upload.tooLarge", readableSize(maxFileBytes)));
                 }
                 out.write(buffer, 0, read);
             }
         }
+    }
+
+    /* 사용자에게 보여 줄 크기 (예: 500 MB) */
+    private static String readableSize(long bytes) {
+        var units = new String[] { "bytes", "KB", "MB", "GB", "TB" };
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit++;
+        }
+        return (value == Math.rint(value) ? String.valueOf((long) value) : String.format(java.util.Locale.ROOT, "%.1f", value))
+                + " " + units[unit];
     }
 
     /* 비정상 종료로 남은 오래된 임시 파일을 지운다 (지금 다른 큐가 쓰는 파일은 지우지 않도록 하루 지난 것만) */

@@ -29,6 +29,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Paths;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.impl.S2FileManagerImpl;
@@ -219,7 +220,8 @@ public interface FileManager {
             connection.setReadTimeout(DOWNLOAD_READ_TIMEOUT_MILLIS);
             var status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
-                throw new S2RuntimeException("Remote file request failed [HTTP " + status + "]: " + fileUrl);
+                throw new S2RuntimeException("Remote file request failed [HTTP " + status + "]: " + fileUrl,
+                        S2KitMessages.key("s2kit.file.remoteDownloadFailed"));
             }
             var remoteFile = new S2RemoteFile(connection);
             try (var inputStream = connection.getInputStream()) {
@@ -233,7 +235,8 @@ public interface FileManager {
             } else {
                 logger.error("Cannot download the remote file: {}", fileUrl, e);
             }
-            throw new S2RuntimeException("Cannot download the remote file: " + fileUrl, e);
+            throw new S2RuntimeException("Cannot download the remote file: " + fileUrl, e,
+                    S2KitMessages.key("s2kit.file.remoteDownloadFailed"));
         } finally {
             if (connection != null) {
                 connection.disconnect();

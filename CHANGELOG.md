@@ -21,6 +21,11 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Added
 
+- User-facing messages in the request's language (English and Korean) for failures a user may see: existing files,
+  missing files, failed transfers, busy file server, full or closed upload queue, too-large uploads, short disk space,
+  unreadable or too-large images, password-protected or restricted PDFs. They use s2-util `S2Localizable`
+  (`S2Localizable.findLocalizedMessage(e, locale)`); exception messages stay English. New types keep the old ones:
+  `S2UploadRejectedException` is a `RejectedExecutionException`, `S2LocalizedIOException` an `IOException`.
 - `SpringSftpFileManagerImpl` closes a download stream left unread for `sftp.download-idle-timeout-millis` (60s by
   default) and returns its session, as `S2SftpFileManagerImpl` does; before, a stream the caller forgot to close held its
   session for 35 minutes.
@@ -132,8 +137,8 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Dependencies
 
-- `s2-core` 2.1.0 → 2.2.0 (required: `S2UploadQueue` relies on `S2ThreadUtil.newExecutor` limiting virtual threads,
-  fixed in 2.2.0). Publish s2-util 2.2.0 before this release.
+- `s2-core` 2.1.0 → 2.2.0 (required: user-facing messages use `S2Localizable`, new in 2.2.0, and `S2UploadQueue`
+  relies on `S2ThreadUtil.newExecutor` limiting virtual threads, fixed in 2.2.0). Publish s2-util 2.2.0 before this release.
 - Apache PDFBox 3.0.4 → 3.0.8 (security and bug-fix patches), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
   Caffeine 3.2.3 → 3.3.1, jackson-databind 3.0.3 → 3.2.4. Applications using `S2PdfUtil` should use PDFBox 3.0.8 (any 3.0.x
   still works).

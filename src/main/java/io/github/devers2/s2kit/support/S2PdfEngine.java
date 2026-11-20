@@ -66,6 +66,7 @@ import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.util.Matrix;
 import io.nayuki.qrcodegen.QrCode;
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.S2ResourceInputStream;
@@ -2111,7 +2112,8 @@ final class S2PdfEngine {
         withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0),
+                        S2KitMessages.key("s2kit.image.tooLarge"));
             }
             return null;
         });
@@ -2121,7 +2123,8 @@ final class S2PdfEngine {
         return withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0),
+                        S2KitMessages.key("s2kit.image.tooLarge"));
             }
             return reader.read(0);
         });
@@ -2135,9 +2138,10 @@ final class S2PdfEngine {
         try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             var readers = input == null ? null : ImageIO.getImageReaders(input);
             if (readers == null || !readers.hasNext()) {
-                throw new IOException(isWebp(bytes)
+                throw new S2LocalizedIOException(isWebp(bytes)
                         ? "Add com.twelvemonkeys.imageio:imageio-webp to the dependencies to read WebP images"
-                        : "Unsupported image format or damaged image file (supported: " + String.join(", ", ImageIO.getReaderFormatNames()) + ")");
+                        : "Unsupported image format or damaged image file (supported: " + String.join(", ", ImageIO.getReaderFormatNames()) + ")",
+                        S2KitMessages.key("s2kit.image.unreadable"));
             }
             var reader = readers.next();
             try {
@@ -2169,7 +2173,8 @@ final class S2PdfEngine {
             assertDocumentAccessible(doc, sourceHint);
         } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
             var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : pdfFile.getName();
-            throw new IOException("Cannot process a password-protected PDF: " + name + " (remove the password and try again)", e);
+            throw new S2LocalizedIOException("Cannot process a password-protected PDF: " + name + " (remove the password and try again)", e,
+                    S2KitMessages.key("s2kit.pdf.passwordProtected"));
         }
     }
 
@@ -2188,8 +2193,9 @@ final class S2PdfEngine {
             var permission = document.getCurrentAccessPermission();
             if (permission != null && !permission.canExtractContent()) {
                 var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : "the PDF";
-                throw new IOException("Cannot process a PDF with encryption or permission restrictions: " + name
-                        + " (remove the document security or print/extract restrictions and try again)");
+                throw new S2LocalizedIOException("Cannot process a PDF with encryption or permission restrictions: " + name
+                        + " (remove the document security or print/extract restrictions and try again)",
+                        S2KitMessages.key("s2kit.pdf.restricted"));
             }
         }
     }

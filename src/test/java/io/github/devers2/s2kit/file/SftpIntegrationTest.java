@@ -143,6 +143,9 @@ class SftpIntegrationTest {
         assertEquals(3, files.writeFile(data("one"), savePath, "same.txt"));
         var e = assertThrows(S2RuntimeException.class, () -> files.writeFile(data("two"), savePath, "same.txt"));
         assertTrue(causes(e).contains("already exists"), causes(e));
+        // Every manager reports it in the user's language, through its wrapping exceptions | 모든 관리자가 사용자 언어로 (감싼 예외 너머)
+        assertEquals("same.txt은(는) 이미 있는 파일입니다.",
+                io.github.devers2.s2util.message.S2Localizable.findLocalizedMessage(e, java.util.Locale.KOREAN).orElseThrow());
         assertEquals("one", stored.get(), "a refused write must not change the file");
 
         assertEquals(5, files.writeFile(data("three"), savePath, "same.txt", true));

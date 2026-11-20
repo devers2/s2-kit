@@ -33,6 +33,7 @@ import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.SftpProgressMonitor;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
@@ -263,7 +264,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
             // 기존 파일 존재 여부 확인
             if (!overwrite && exists(channel, remoteFileFullPath)) {
-                throw new S2FileExistsException("Remote file already exists: " + remoteFileFullPath);
+                throw new S2FileExistsException("Remote file already exists: " + remoteFileFullPath, null,
+                        S2KitMessages.key("s2kit.file.exists", saveName));
             }
 
             // 스트림 직접 전송 및 크기 추적. 마지막 진행(count()) 이후 TRANSFER_IDLE_MILLIS 동안
@@ -298,7 +300,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             } else {
                 logger.error("Failed to upload file: {}", saveName);
             }
-            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.uploadFailed", saveName));
         } finally {
             if (createdNewFile && session != null) {
                 // 로컬 구현처럼 불완전한 파일을 남기지 않는다 (남기면 다시 올릴 때 "이미 존재" 로 거부됨)
@@ -339,7 +342,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             channel.connect(CHANNEL_CONNECT_TIMEOUT);
 
             if (!exists(channel, remoteFileFullPath)) {
-                throw new S2RuntimeException("Remote file not found: " + remoteFileFullPath);
+                throw new S2RuntimeException("Remote file not found: " + remoteFileFullPath,
+                        S2KitMessages.key("s2kit.file.notFound", saveName));
             }
 
             var rawInputStream = channel.get(remoteFileFullPath);
@@ -363,7 +367,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             } else {
                 logger.error("Cannot open the remote file download stream: {}", saveName, e);
             }
-            throw new S2RuntimeException("Cannot download the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot download the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.downloadFailed", saveName));
         }
     }
 
@@ -392,7 +397,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             } else {
                 logger.error("Cannot delete the remote file: {}", saveName, e);
             }
-            throw new S2RuntimeException("Cannot delete the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot delete the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.deleteFailed", saveName));
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect(); // 채널 종료
@@ -509,7 +515,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             ensureRemoteDir(channel, parentDirOf(target));
 
             if (!overwrite && exists(channel, target)) {
-                throw new S2FileExistsException("Remote file already exists: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target, null,
+                        S2KitMessages.key("s2kit.file.exists", saveName));
             }
             var resume = exists(channel, part);
             if (resume && channel.lstat(part).getSize() > sourceSize) {
@@ -541,7 +548,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             }
             if (!overwrite && exists(channel, target)) {
                 channel.rm(part);
-                throw new S2FileExistsException("Remote file already exists: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target, null,
+                        S2KitMessages.key("s2kit.file.exists", saveName));
             }
             try {
                 channel.rename(part, target); // posix-rename 을 지원하면 대상을 원자적으로 바꾼다
@@ -558,7 +566,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             throw e;
         } catch (Exception e) {
             logger.error("Failed to upload file (resumable): {}", saveName, e);
-            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.uploadFailed", saveName));
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect();

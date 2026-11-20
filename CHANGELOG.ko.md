@@ -20,6 +20,10 @@
 
 ### 추가
 
+- 사용자에게 보일 수 있는 실패의 문구를 요청 언어(영어·한국어)로: 이미 있는 파일, 없는 파일, 전송 실패, 바쁜 파일 서버, 가득
+  차거나 닫힌 업로드 큐, 너무 큰 업로드, 디스크 부족, 읽을 수 없거나 너무 큰 이미지, 암호·보안 제한이 있는 PDF. s2-util
+  `S2Localizable`(`S2Localizable.findLocalizedMessage(e, locale)`)을 쓰며 예외 메시지는 영어로 둡니다. 새 예외 종류는 기존 종류를
+  유지합니다: `S2UploadRejectedException`은 `RejectedExecutionException`, `S2LocalizedIOException`은 `IOException`.
 - `SpringSftpFileManagerImpl`이 `sftp.download-idle-timeout-millis`(기본 60초) 동안 읽지 않은 다운로드 스트림을 닫고 세션을
   반납합니다(`S2SftpFileManagerImpl`과 같음). 예전에는 호출 측이 닫지 않은 스트림이 35분 동안 세션을 붙잡았습니다.
 - JS: `S2Util.loginUrl`(401 응답 때 이동할 주소, 기본 `/login`), `maxByte`의 계산 방식 `S2Util.byteCharset`와 `byteCharset`
@@ -117,8 +121,8 @@
 
 ### 의존성
 
-- `s2-core` 2.1.0 → 2.2.0 (필수: `S2UploadQueue`가 2.2.0 에서 고친 `S2ThreadUtil.newExecutor`의 가상 스레드 동시 실행 제한에
-  기댐). 이 버전보다 s2-util 2.2.0 을 먼저 배포해야 합니다.
+- `s2-core` 2.1.0 → 2.2.0 (필수: 사용자용 문구가 2.2.0 에 새로 생긴 `S2Localizable`을 쓰고, `S2UploadQueue`가 2.2.0 에서 고친
+  `S2ThreadUtil.newExecutor`의 가상 스레드 동시 실행 제한에 기댐). 이 버전보다 s2-util 2.2.0 을 먼저 배포해야 합니다.
 - Apache PDFBox 3.0.4 → 3.0.8 (보안·버그 수정 패치), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
   Caffeine 3.2.3 → 3.3.1, jackson-databind 3.0.3 → 3.2.4. `S2PdfUtil`을 쓰는 앱은 PDFBox 3.0.8 을 권장합니다 (3.0.x 는 그대로 동작).
 

@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.Paths;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
 import io.github.devers2.s2kit.file.S2FileExistsException;
@@ -80,14 +81,16 @@ public class S2FileManagerImpl implements FileManager {
                 // Files.copy without REPLACE_EXISTING creates the file with CREATE_NEW (atomic) | REPLACE_EXISTING 없이는 CREATE_NEW 로 생성 (원자적)
                 return Files.copy(in, target);
             } catch (FileAlreadyExistsException e) {
-                throw new S2FileExistsException("File already exists: " + target, e);
+                throw new S2FileExistsException("File already exists: " + target, e,
+                        S2KitMessages.key("s2kit.file.exists", target.getFileName()));
             } catch (IOException e) {
                 // Remove the partial file this call created | 이 호출이 만든 불완전한 파일 삭제
                 Files.deleteIfExists(target);
                 throw e;
             }
         } catch (IOException e) {
-            throw new S2RuntimeException("Cannot save the file: " + target + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot save the file: " + target + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.saveFailed", target.getFileName()));
         }
     }
 

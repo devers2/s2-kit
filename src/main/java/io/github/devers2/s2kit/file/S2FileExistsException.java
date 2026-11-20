@@ -21,6 +21,7 @@
 package io.github.devers2.s2kit.file;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
+import io.github.devers2.s2util.message.S2MessageKey;
 
 /**
  * Thrown by {@link FileManager#writeFile} when a file with the same name already exists and overwriting was not asked
@@ -58,6 +59,20 @@ public class S2FileExistsException extends S2RuntimeException {
      */
     public S2FileExistsException(String message, Throwable cause) {
         super(message, cause);
+    }
+
+    /**
+     * Creates the exception with a key for the user-facing message.
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 사용자용 문구 키와 함께 예외를 만듭니다.
+     * @param message    English message for logs | 로그용 영어 메시지
+     * @param cause      Cause ({@code null} allowed) | 원인 ({@code null} 가능)
+     * @param messageKey Key of the user-facing message | 사용자용 문구 키
+     */
+    public S2FileExistsException(String message, Throwable cause, S2MessageKey messageKey) {
+        super(message, cause, messageKey);
     }
 
 }

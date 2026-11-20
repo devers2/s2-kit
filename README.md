@@ -277,6 +277,23 @@ queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
 - Large uploads (Spring and nginx settings, sizing the queue): [SFTP-GUIDE.md §8](./SFTP-GUIDE.md#8-large-uploads-hundreds-of-mb).
 - The queue is in memory: uploads unfinished at shutdown are lost, so record each result (for example a status column).
 
+#### Messages for users (`S2Localizable`)
+
+Exception messages are English (for logs). Failures a user may see — an existing file, a full upload queue, a file too
+large, an unreadable image, a password-protected PDF and so on — also carry a message key, rendered in the **request's**
+language (Korean and English included; s2-util `S2Localizable`):
+
+```java
+@ExceptionHandler(Exception.class)
+ResponseEntity<String> handle(Exception e, Locale locale) {
+    return ResponseEntity.badRequest()
+            .body(S2Localizable.findLocalizedMessage(e, locale).orElse("Something went wrong."));
+}
+```
+
+- Keys and texts: `io/github/devers2/s2kit/messages(_ko).properties` (`S2KitMessages`). Put the same `s2kit.*` key in
+  your bundle (`S2ResourceBundle.setDefaultBasename`) to change a text. User texts never contain server paths.
+
 #### AOP parameters (`S2ContextUtil`)
 
 ```java

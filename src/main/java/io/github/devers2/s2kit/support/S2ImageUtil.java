@@ -39,6 +39,7 @@ import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.S2File;
 
@@ -255,7 +256,8 @@ public class S2ImageUtil {
         try (var imageInput = ImageIO.createImageInputStream(new ByteArrayInputStream(image))) {
             var readers = imageInput == null ? null : ImageIO.getImageReaders(imageInput);
             if (readers == null || !readers.hasNext()) {
-                throw new IOException("Cannot read the image (unsupported format or damaged file)");
+                throw new S2LocalizedIOException("Cannot read the image (unsupported format or damaged file)",
+                        S2KitMessages.key("s2kit.image.unreadable"));
             }
             var reader = readers.next();
             BufferedImage decoded;
@@ -266,7 +268,8 @@ public class S2ImageUtil {
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
                 if ((long) width * height > MAX_PIXELS) {
-                    throw new IOException("Image resolution is too large: " + width + "x" + height);
+                    throw new S2LocalizedIOException("Image resolution is too large: " + width + "x" + height,
+                            S2KitMessages.key("s2kit.image.tooLarge"));
                 }
                 // Limits in stored orientation | 저장된 방향 기준 한도
                 int limitW = quarter ? maxHeight : maxWidth;
@@ -468,14 +471,16 @@ public class S2ImageUtil {
         try (var imageInput = ImageIO.createImageInputStream(in)) {
             var readers = imageInput == null ? null : ImageIO.getImageReaders(imageInput);
             if (readers == null || !readers.hasNext()) {
-                throw new IOException("Cannot read the image (unsupported format or damaged file)");
+                throw new S2LocalizedIOException("Cannot read the image (unsupported format or damaged file)",
+                        S2KitMessages.key("s2kit.image.unreadable"));
             }
             var reader = readers.next();
             try {
                 reader.setInput(imageInput, true, true);
                 var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
                 if (pixels > MAX_PIXELS) {
-                    throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                    throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0),
+                            S2KitMessages.key("s2kit.image.tooLarge"));
                 }
                 return reader.read(0);
             } finally {

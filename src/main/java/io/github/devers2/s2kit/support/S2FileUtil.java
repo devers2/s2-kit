@@ -62,6 +62,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.core.S2StringUtil;
 import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
@@ -668,7 +669,8 @@ public class S2FileUtil {
     public static InputStream fileToInputStream(Path fileFullPath) {
         Objects.requireNonNull(fileFullPath, "fileFullPath");
         if (!Files.isRegularFile(fileFullPath)) {
-            throw new S2RuntimeException("File not found: " + fileFullPath);
+            throw new S2RuntimeException("File not found: " + fileFullPath,
+                    S2KitMessages.key("s2kit.file.notFound", fileFullPath.getFileName()));
         }
         try {
             return Files.newInputStream(fileFullPath);

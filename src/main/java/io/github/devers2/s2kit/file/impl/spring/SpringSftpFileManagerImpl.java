@@ -33,6 +33,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.integration.sftp.session.SftpSession;
 import org.springframework.stereotype.Component;
 
+import io.github.devers2.s2kit.S2KitMessages;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
 import io.github.devers2.s2kit.file.S2FileExistsException;
@@ -135,7 +136,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
 
         throw new S2RuntimeException(
                 "Cannot get an SFTP session: " + (lastException != null ? lastException.getMessage() : "retries exhausted"),
-                lastException);
+                lastException, S2KitMessages.key("s2kit.file.busy"));
     }
 
     /** 여러 스레드가 같은 순간에 다시 몰리지 않도록 흩뜨려 기다린다 (0.5~1.5초) */
@@ -173,7 +174,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
 
                 // SftpSession.write replaces an existing file, so check first (same rule as the other managers) | write 는 기존 파일을 덮으므로 먼저 확인
                 if (!overwrite && session.exists(remoteFileFullPath)) {
-                    throw new S2FileExistsException("Remote file already exists: " + remoteFileFullPath);
+                    throw new S2FileExistsException("Remote file already exists: " + remoteFileFullPath, null,
+                            S2KitMessages.key("s2kit.file.exists", saveName));
                 }
 
                 // 파일 업로드
@@ -189,7 +191,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 Thread.currentThread().interrupt(); // 재시도 대기 중 인터럽트: 상태를 되살려 호출자가 알 수 있게 한다
             }
             logger.error("Failed to upload file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.uploadFailed", saveName));
         } finally {
             if (createdNewFile && session != null) {
                 // 로컬 구현처럼 불완전한 파일을 남기지 않는다 (남기면 다시 올릴 때 "이미 존재" 로 거부됨)
@@ -242,7 +245,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 Thread.currentThread().interrupt(); // 재시도 대기 중 인터럽트: 상태를 되살려 호출자가 알 수 있게 한다
             }
             logger.error("Failed to open download stream for file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Cannot download the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot download the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.downloadFailed", saveName));
         } finally {
             if (!success && session != null) {
                 try {
@@ -276,10 +280,10 @@ public class SpringSftpFileManagerImpl implements FileManager {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("Failed to delete file (interrupted): {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Failed to delete file: " + e, e);
+            throw new S2RuntimeException("Failed to delete file: " + e, e, S2KitMessages.key("s2kit.file.deleteFailed", saveName));
         } catch (Exception e) {
             logger.error("Failed to delete file: {}", remoteFileFullPath, e);
-            throw new S2RuntimeException("Failed to delete file: " + e, e);
+            throw new S2RuntimeException("Failed to delete file: " + e, e, S2KitMessages.key("s2kit.file.deleteFailed", saveName));
         } finally {
             if (session != null) {
                 try {
@@ -351,7 +355,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 createDirectoryIfNotExists(session, remoteDir);
             }
             if (!overwrite && session.exists(target)) {
-                throw new S2FileExistsException("Remote file already exists: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target, null,
+                        S2KitMessages.key("s2kit.file.exists", saveName));
             }
             var client = session.getClientInstance();
             long offset = session.exists(part) ? client.stat(part).getSize() : 0L;
@@ -376,7 +381,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
             }
             if (!overwrite && session.exists(target)) {
                 session.remove(part);
-                throw new S2FileExistsException("Remote file already exists: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target, null,
+                        S2KitMessages.key("s2kit.file.exists", saveName));
             }
             session.rename(part, target); // 대상이 있으면 덮어씀 (overwrite 가 아니면 바로 위에서 확인함)
             return size;
@@ -385,7 +391,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 Thread.currentThread().interrupt();
             }
             logger.error("Failed to upload file (resumable): {}", target, e);
-            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e,
+                    S2KitMessages.key("s2kit.file.uploadFailed", saveName));
         } finally {
             if (session != null) {
                 try {
