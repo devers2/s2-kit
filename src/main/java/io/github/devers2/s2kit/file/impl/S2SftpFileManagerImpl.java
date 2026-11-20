@@ -142,8 +142,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 32)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 4)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 64)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 8)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
      * @apiNote 세션 풀의 각 세션은 SFTP 서버와의 독립적인 SSH 연결이고, 한 연결에서 SFTP 채널은 한 번에 하나만 연다.
      *          그래서 서버의 {@code MaxSessions}(연결당 채널 수, 기본 10)는 늘릴 필요가 없다.
@@ -176,8 +176,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (null: 32)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 4)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (null: 64)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 8)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간 (null: 30초)
      * @param knownHostsPath       호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts})
      * @param allowUnknownHosts    true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다 (중간자 공격에 노출됨)

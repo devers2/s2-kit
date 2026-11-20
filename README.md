@@ -246,8 +246,9 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as the name is rejected
 ```
 
-- Defaults suit a small file server (2 vCPU / 4GB, 1–2 app servers, OpenSSH defaults): up to 32 connections, 4 opened
-  right after creation, and at most 4 new connections at a time, so no `sshd_config` change is needed. Each connection
+- Defaults suit a typical file server (4 vCPU / 8GB / 1Gbps, 2 app servers, OpenSSH defaults): up to 64 connections, 8
+  opened right after creation, and at most 4 new connections at a time, so no `sshd_config` change is needed. Every value
+  can be set (constructor arguments, Spring `sftp.*` properties). Each connection
   opens one SFTP channel at a time, so `MaxSessions` never needs raising.
 - A full pool makes callers wait and then fail; it never opens more connections than the maximum.
 - What to adjust for which symptom, starting points by size, `sshd_config` and Spring properties:
@@ -261,7 +262,7 @@ background transfers send it, so neither request threads nor the file server are
 ```java
 // One per application; close it on shutdown (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
-        .concurrency(4)            // parallel transfers = connections it uses
+        .concurrency(8)            // parallel transfers = connections it uses
         .maxQueued(1000)           // more are rejected at once with RejectedExecutionException
         .maxFileBytes(500L << 20)  // optional size limit
         .build();

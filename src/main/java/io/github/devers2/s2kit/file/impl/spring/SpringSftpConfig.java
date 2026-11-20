@@ -113,10 +113,10 @@ public class SpringSftpConfig {
     private String knownHostsPath;
 
     /*
-     * ── 기본값 기준: "일반적인 최소 서버" ──
-     *   SFTP 서버 2 vCPU / 4GB RAM / 100Mbps~1Gbps, 앱 서버 1~2대, OpenSSH 기본 설정(MaxStartups 10:30:100) 그대로.
-     *   - max-total 32: 앱 2대 × 32 = 연결 64개. sshd 는 연결마다 프로세스를 띄우므로 메모리·프로세스 한도에 여유를 둔다.
-     *   - min-idle 4: 기동 직후 미리 열어 첫 요청이 연결 맺기를 기다리지 않게 한다. max-idle 16: 한가할 때 남길 최대 연결 수.
+     * ── 기본값 기준: 일반 운영 서버 ──
+     *   SFTP 서버 4 vCPU / 8GB RAM / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정(MaxStartups 10:30:100) 그대로.
+     *   - max-total 64: 상한일 뿐이고 연결은 필요할 때만 연다. 앱 2대 × 64 = 연결 128개 — 디스크·대역폭과 프로세스 한도가 먼저 한계.
+     *   - min-idle 8: 기동 직후 미리 열어 첫 요청이 연결 맺기를 기다리지 않게 한다. max-idle 32: 한가할 때 남길 최대 연결 수.
      *   - max-concurrent-connects 4: 앱 2대 × 4 = 8 < MaxStartups 첫 값 10.
      *
      * ── 상황별 조절 (자세한 것은 SFTP-GUIDE.ko.md) ──
@@ -124,15 +124,16 @@ public class SpringSftpConfig {
      *   - 큰 파일·일괄 업로드로 실패한다 → 풀을 키우지 말고 S2UploadQueue 로 동시 전송 수를 묶는다.
      *   - 기동 직후 첫 요청이 느리다 → min-idle 을 올린다.
      *   - 앱 서버가 3대 이상이다 → 서버 MaxStartups 첫 값을 (앱 서버 수 × max-concurrent-connects)보다 크게, 또는 이 값을 낮춘다.
+     *   - SFTP 서버가 작거나(2 vCPU / 4GB) 다른 서비스와 함께 쓴다 → max-total 32, max-idle 16, min-idle 4 로 낮춘다.
      *   - 서버가 멀거나 느리다 → timeout-millis, max-wait-millis 를 늘린다.
      */
-    @Value("${sftp.pool.max-total:32}")
+    @Value("${sftp.pool.max-total:64}")
     private int maxTotal;
 
-    @Value("${sftp.pool.max-idle:16}")
+    @Value("${sftp.pool.max-idle:32}")
     private int maxIdle;
 
-    @Value("${sftp.pool.min-idle:4}")
+    @Value("${sftp.pool.min-idle:8}")
     private int minIdle;
 
     /* 세션 대여 대기 시간 (밀리초) */

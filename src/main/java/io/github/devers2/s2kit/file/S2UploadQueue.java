@@ -62,7 +62,7 @@ import io.github.devers2.s2util.log.S2Logger;
  * are deleted). Record the result of each future (for example a status column) if that matters.</li>
  * </ul>
  * <pre>{@code
- * S2UploadQueue queue = S2UploadQueue.builder(fileManager).concurrency(4).build();   // one per application
+ * S2UploadQueue queue = S2UploadQueue.builder(fileManager).concurrency(8).build();   // one per application
  * queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
  *      .whenComplete((size, error) -> repository.markUploaded(id, error == null));
  * }</pre>
@@ -486,7 +486,7 @@ public final class S2UploadQueue implements AutoCloseable {
      */
     public static final class Builder {
         private final FileManager fileManager;
-        private int concurrency = 4;
+        private int concurrency = 8;
         private int maxQueued = 1000;
         private int maxAttempts = 3;
         private Duration retryDelay = Duration.ofSeconds(2);
@@ -499,13 +499,13 @@ public final class S2UploadQueue implements AutoCloseable {
         }
 
         /**
-         * Parallel transfers (default 4, sized for a small file server). Keep it well below the SFTP pool size so other
+         * Parallel transfers (default 8, sized for a typical file server with a 1Gbps link). Keep it well below the SFTP pool size so other
          * requests still get sessions. Raise it when transfers are small and the server has spare CPU and bandwidth; lower
          * it when large files saturate the link (more parallel transfers only make each one slower).
          * <p>
          * <b>[한국어 설명]</b>
          * </p>
-         * 동시 전송 수 (기본 4, 작은 파일 서버 기준). 다른 요청도 세션을 얻을 수 있도록 SFTP 풀 크기보다 충분히 작게 둡니다. 작은
+         * 동시 전송 수 (기본 8, 1Gbps 일반 파일 서버 기준). 다른 요청도 세션을 얻을 수 있도록 SFTP 풀 크기보다 충분히 작게 둡니다. 작은
          * 파일이 많고 서버 CPU·대역폭에 여유가 있으면 올리고, 큰 파일로 회선이 꽉 차면 낮춥니다 (동시 전송을 늘려도 한 건씩
          * 느려질 뿐입니다).
          * @param concurrency Parallel transfers (1 or more) | 동시 전송 수 (1 이상)

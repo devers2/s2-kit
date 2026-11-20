@@ -17,9 +17,9 @@
 
 ### 변경
 
-- ⚠️ SFTP 풀 기본값을 작은 파일 서버(2 vCPU / 4GB, 앱 서버 1~2대, OpenSSH 기본 설정) 기준으로 낮췄습니다. 최대 연결 128 → 32,
-  유지 연결 16 → 4(`S2SftpFileManagerImpl`), Spring 은 `sftp.pool.max-total` 32, `max-idle` 16, `min-idle` 4. 큰 서버는 값을
-  지정하십시오(`SFTP-GUIDE.ko.md` 참고).
+- ⚠️ SFTP 풀 기본값을 일반 파일 서버(4 vCPU / 8GB / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정) 기준으로 맞췄습니다. 최대 연결
+  128 → 64, 유지 연결 16 → 8(`S2SftpFileManagerImpl`), Spring 은 `sftp.pool.max-total` 128 → 64(`min-idle` 8, `max-idle` 32 는
+  그대로). 다른 서버는 값을 지정하십시오(`SFTP-GUIDE.ko.md` 참고).
 
 ### 수정
 

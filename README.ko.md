@@ -245,8 +245,9 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에 "../x" 는 거부됨
 ```
 
-- 기본값은 작은 파일 서버(2 vCPU / 4GB, 앱 서버 1~2대, OpenSSH 기본 설정) 기준입니다. 연결은 최대 32개, 만든 직후 4개를 미리
-  열고, 신규 연결은 동시에 4개까지만 맺으므로 `sshd_config`를 바꾸지 않아도 됩니다. 연결마다 SFTP 채널을 한 번에 하나만 열어
+- 기본값은 일반 파일 서버(4 vCPU / 8GB / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정) 기준입니다. 연결은 최대 64개, 만든 직후 8개를
+  미리 열고, 신규 연결은 동시에 4개까지만 맺으므로 `sshd_config`를 바꾸지 않아도 됩니다. 값은 모두 바꿀 수 있습니다(생성자 인자,
+  Spring `sftp.*` 설정). 연결마다 SFTP 채널을 한 번에 하나만 열어
   `MaxSessions`는 늘릴 필요가 없습니다.
 - 풀이 가득 차면 호출 측은 기다렸다가 실패하며, 최대치보다 많은 연결을 열지 않습니다.
 - 증상별로 무엇을 조절할지, 규모별 출발점, `sshd_config`와 Spring 설정: **[SFTP-GUIDE.ko.md](./SFTP-GUIDE.ko.md)**.
@@ -259,7 +260,7 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
 ```java
 // 애플리케이션마다 하나, 종료 때 닫기 (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
-        .concurrency(4)            // 동시 전송 수 = 쓰는 연결 수
+        .concurrency(8)            // 동시 전송 수 = 쓰는 연결 수
         .maxQueued(1000)           // 넘으면 RejectedExecutionException 으로 바로 거절
         .maxFileBytes(500L << 20)  // 선택: 크기 제한
         .build();

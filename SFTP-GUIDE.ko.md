@@ -4,29 +4,31 @@
 
 `S2SftpFileManagerImpl`(JSch), `SpringSftpConfig`(Spring Integration), `S2UploadQueue`의 기본값과 조절 방법을 정리합니다.
 
-## 1. 기본값의 기준: 일반적인 최소 서버
+## 1. 기본값의 기준: 일반 운영 서버
 
 | 항목 | 기준 |
 |---|---|
-| SFTP 서버 | 2 vCPU / 4GB RAM / 100Mbps~1Gbps |
-| 앱 서버 | 1~2대 |
+| SFTP 서버 | 4 vCPU / 8GB RAM / 1Gbps |
+| 앱 서버 | 2대 |
 | sshd_config | OpenSSH 기본값 그대로 (`MaxStartups 10:30:100`) |
 
-이 환경에서 **서버 설정을 바꾸지 않아도** 연결이 끊기거나 서버가 무리하지 않도록 기본값을 잡았습니다.
+이 환경에서 **서버 설정을 바꾸지 않아도** 연결이 끊기거나 서버가 무리하지 않도록 기본값을 잡았습니다. 기본값일 뿐이며 모두
+아래 이름으로 바꿀 수 있습니다(6절 예시).
 
 | 설정 | JSch (`S2SftpFileManagerImpl`) | Spring (`application.yml`) | 기본값 | 이유 |
 |---|---|---|---|---|
-| 최대 연결(세션) 수 | `sessionMaxTotal` | `sftp.pool.max-total` | 32 | 앱 2대 × 32 = 연결 64개. sshd 는 연결마다 프로세스를 띄우므로 4GB 서버에 여유를 둠 |
-| 미리 열어 둘 연결 수 | `sessionMinIdle` | `sftp.pool.min-idle` | 4 | 기동 직후 첫 요청이 연결 맺기를 기다리지 않음 |
-| 한가할 때 남길 연결 수 | (= 최대) | `sftp.pool.max-idle` | 16 | |
-| 동시 신규 연결 | `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 앱 2대 × 4 = 8 < `MaxStartups` 첫 값 10 → 서버가 연결을 무작위로 끊지 않음 |
-| 연결을 기다리는 시간 | `sessionMaxWaitMillis` | `sftp.pool.max-wait-millis` | 30초 / 10초 | 넘으면 재시도(최대 3번) 후 실패 |
+| 최대 연결(세션) 수 | 생성자 `sessionMaxTotal` | `sftp.pool.max-total` | 64 | 상한일 뿐 연결은 필요할 때만 열고 30분 안 쓰면 닫음. 작은 파일 초당 약 200건 |
+| 미리 열어 둘 연결 수 | 생성자 `sessionMinIdle` | `sftp.pool.min-idle` | 8 | 기동 직후 첫 요청이 연결 맺기를 기다리지 않음 |
+| 한가할 때 남길 연결 수 | (= 최대) | `sftp.pool.max-idle` | 32 | |
+| 동시 신규 연결 | JVM 옵션 `-Ds2.sftp.maxConcurrentConnects` | `sftp.pool.max-concurrent-connects` | 4 | 앱 2대 × 4 = 8 < `MaxStartups` 첫 값 10 → 서버가 연결을 무작위로 끊지 않음 |
+| 연결을 기다리는 시간 | 생성자 `sessionMaxWaitMillis` | `sftp.pool.max-wait-millis` | 30초 / 10초 | 넘으면 재시도(최대 3번) 후 실패 |
 | 연결·인증 제한 시간 | (`sessionMaxWaitMillis` 와 같음) | `sftp.timeout-millis` | 30초 | |
-| 큐 동시 전송 수 | `S2UploadQueue.Builder.concurrency` | | 4 | 큐가 풀의 일부만 써서 화면 요청도 연결을 얻음 |
+| 큐 동시 전송 수 | `S2UploadQueue.Builder.concurrency` | | 8 | 큐가 풀의 일부만 써서 화면 요청도 연결을 얻음 |
 | 큐 대기 상한 | `maxQueued` | | 1000 | 넘으면 바로 거절 (`RejectedExecutionException`) |
 | 임시 디스크 여유 | `minFreeDiskBytes` | | 1GB | 임시 파일이 앱 서버 디스크를 채우지 않음 |
 
-`sshd` 프로세스당 메모리는 서버 환경마다 다르므로, 운영 서버에서 연결 수를 늘려 가며 한 번 재 보는 것이 가장 정확합니다.
+연결 수의 실제 한계는 메모리보다 **디스크 I/O·대역폭**(동시 전송을 늘려도 한 건씩 느려짐)과 **계정 프로세스·파일 수 한도
+(`ulimit -u`/`-n`)**입니다. sshd 는 연결마다 프로세스를 띄우므로, 앱 2대 × 64 = 연결 128개가 그 한도 안에 드는지 확인합니다.
 
 ## 2. 어떻게 동작하나
 
@@ -56,8 +58,9 @@
 
 | 규모 | SFTP 서버 | 앱 서버 | 최대 연결 | 미리 열기 | 동시 신규 연결 | 큐 동시 수 | sshd_config |
 |---|---|---|---|---|---|---|---|
-| 최소 (기본값) | 2C / 4GB | 1~2대 | 32 | 4 | 4 | 4 | 바꾸지 않음 |
-| 중간 | 4C / 8GB | 2~4대 | 64 | 8 | 4 | 8 | `MaxStartups 30:30:200`, `Subsystem sftp internal-sftp` |
+| 작은 서버 | 2C / 4GB, 다른 서비스와 공유 | 1~2대 | 32 | 4 | 4 | 4 | 바꾸지 않음 |
+| 일반 (기본값) | 4C / 8GB | 2대 | 64 | 8 | 4 | 8 | 바꾸지 않음 (`internal-sftp` 권장) |
+| 중간 | 4~8C / 8~16GB | 3~4대 | 64 | 8 | 4 | 8 | `MaxStartups 30:30:200`, `Subsystem sftp internal-sftp` |
 | 큰 규모 | 8C / 16GB 이상 | 4대 이하 | 128 | 16 | 8 | 16 | `MaxStartups 60:30:400`, `internal-sftp`, 계정 `ulimit -u`/`-n` 확인 |
 
 - `MaxStartups` 첫 값은 항상 **(앱 서버 수 × 동시 신규 연결)보다 크게** 둡니다.
@@ -68,9 +71,9 @@
 
 **동시 전송 수 ≈ 초당 전송 건수 × 전송 1건에 걸리는 시간(초)**
 
-| 파일 | 1건 시간 | 연결 32개로 | 한계 |
+| 파일 | 1건 시간 | 연결 64개로 | 한계 |
 |---|---|---|---|
-| 1MB 이하 (문서·이미지) | 0.1~0.3초 | 초당 약 100~300건 | 연결 수 |
+| 1MB 이하 (문서·이미지) | 0.1~0.3초 | 초당 약 200~600건 | 연결 수 |
 | 10MB | 대역폭에 따라 | 100Mbps 에서 초당 약 1건, 1Gbps 에서 약 11건 | 대역폭 |
 | 100MB | 대역폭에 따라 | 1Gbps 에서 초당 약 1건 | 대역폭 |
 
@@ -80,9 +83,9 @@
 
 **JSch**
 ```java
-// 최대 연결 64, 미리 열기 8, 연결 대기 30초 (중간 규모)
+// 최대 연결 128, 미리 열기 16, 연결 대기 30초 (큰 규모). null 이면 기본값(64, 8, 30초)
 FileManager sftp = new S2SftpFileManagerImpl(host, 22, "app", "/keys/id_ed25519", null, null,
-        64, 8, 30_000, "/etc/ssh/known_hosts_sftp", false);
+        128, 16, 30_000, "/etc/ssh/known_hosts_sftp", false);
 // 동시 신규 연결: JVM 옵션 -Ds2.sftp.maxConcurrentConnects=4
 ```
 
@@ -96,9 +99,9 @@ sftp:
   known-hosts-path: /etc/ssh/known_hosts_sftp
   timeout-millis: 30000          # 연결·인증 제한 시간
   pool:
-    max-total: 32                # 최대 연결 수
-    max-idle: 16
-    min-idle: 4                  # 기동 직후 미리 열 연결 수
+    max-total: 64                # 최대 연결 수 (기본값 64, 생략 가능)
+    max-idle: 32
+    min-idle: 8                  # 기동 직후 미리 열 연결 수
     max-wait-millis: 10000       # 연결을 기다리는 시간
     max-concurrent-connects: 4   # 동시 신규 연결
 ```
@@ -106,7 +109,7 @@ sftp:
 **업로드 큐**
 ```java
 S2UploadQueue queue = S2UploadQueue.builder(sftp)
-        .concurrency(4)              // 큐 동시 전송 수 (최대 연결 수보다 충분히 작게)
+        .concurrency(8)              // 큐 동시 전송 수 (최대 연결 수보다 충분히 작게)
         .maxQueued(1000)
         .maxFileBytes(500L << 20)
         .tempDir(Path.of("/data/upload-tmp"))

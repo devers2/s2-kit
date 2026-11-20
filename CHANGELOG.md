@@ -17,9 +17,9 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Changed
 
-- ⚠️ SFTP pool defaults now suit a small file server (2 vCPU / 4GB, 1–2 app servers, OpenSSH defaults): at most 32
-  connections instead of 128 and 4 kept open instead of 16 (`S2SftpFileManagerImpl`); Spring `sftp.pool.max-total` 32,
-  `max-idle` 16, `min-idle` 4. Pass larger values for bigger servers (see `SFTP-GUIDE.md`).
+- ⚠️ SFTP pool defaults now suit a typical file server (4 vCPU / 8GB / 1Gbps, 2 app servers, OpenSSH defaults): at most
+  64 connections instead of 128 and 8 kept open instead of 16 (`S2SftpFileManagerImpl`); Spring `sftp.pool.max-total` 64
+  (was 128), `min-idle` 8, `max-idle` 32 unchanged. Set them for other servers (see `SFTP-GUIDE.md`).
 
 ### Fixed
 
