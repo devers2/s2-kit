@@ -16,7 +16,7 @@ Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push �
 ## 3. Java·JS 버전·동시성
 - 기준은 Java 17(`--release 17`). Java 21+ 전용 문법·API 를 직접 쓰지 않는다.
 - 배포되는 JS(`src/main/resources` 아래)는 **ES2020 까지**(`es2020.test.mjs` 가 검사). JS 를 고치면 `src/test/js` 시험도 함께 고친다.
-- 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil.getCommonExecutor()` 를 쓴다(Java 21+ 면 가상 스레드, 17 이면 플랫폼 풀).
+- 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil` 을 쓴다(`getCommonExecutor()`, 동시 수 제한은 `newExecutor(n)`). 지연·주기 실행용 데몬 스케줄러 스레드(예: `S2TransferWatchdog`)만 직접 만든다.
 
 ## 4. 인코딩
 - 모든 소스·설정·문서는 UTF-8 NoBOM.
