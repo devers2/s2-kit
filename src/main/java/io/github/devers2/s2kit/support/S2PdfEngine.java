@@ -2112,7 +2112,8 @@ final class S2PdfEngine {
         withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0),
+                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0) + " ("
+                            + pixels + " pixels, limit " + MAX_IMAGE_PIXELS + ")",
                         S2KitMessages.key("s2kit.image.tooLarge"));
             }
             return null;
@@ -2123,7 +2124,8 @@ final class S2PdfEngine {
         return withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0),
+                throw new S2LocalizedIOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0) + " ("
+                            + pixels + " pixels, limit " + MAX_IMAGE_PIXELS + ")",
                         S2KitMessages.key("s2kit.image.tooLarge"));
             }
             return reader.read(0);
