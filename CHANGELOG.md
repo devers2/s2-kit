@@ -30,6 +30,19 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - `JschSessionFactory` ignored its connect timeout and keep-alive settings (JSch reads those keys only from an OpenSSH
   config file), so a connect to an unresponsive host could wait forever; they now take effect. Resetting the pool also
   refilled only one session instead of the minimum idle count.
+- ⚠️ `SpringSftpConfig` used a shared session: every pooled `SftpSession` wrapped the same SFTP client, so all transfers
+  went through one channel and a dropped connection failed them all at once. Each pooled session now has its own SSH
+  connection. It also sets a connect/auth timeout (`sftp.timeout-millis`, 30s) and keep-alive checks that drop dead
+  connections, and `sftp.pool.max-wait-millis` replaces the fixed 10s wait.
+- ⚠️ `JschSessionFactory` rebuilt the whole pool when a borrow timed out because every session was busy, so under load it
+  opened another `sessionMaxTotal` connections while the old ones were still in use. A busy pool now makes callers wait and
+  then fail; the pool is rebuilt only when it fails with sessions to spare. After `close()` calls fail at once instead of
+  reopening the pool, and an interrupt while waiting is no longer swallowed.
+- Both SFTP managers open at most 8 new connections at once (`-Ds2.sftp.maxConcurrentConnects`,
+  `sftp.pool.max-concurrent-connects`), so a burst of requests or a cold start stays below OpenSSH's `MaxStartups`, and
+  retries wait a random 0.5–1.5s instead of all at once.
+- Parallel SFTP uploads into a new folder failed when two requests created it at the same time.
+- `S2SftpFileManagerImpl` no longer starts a `Timer` thread for every upload and download; one shared watchdog checks them.
 - `S2RestApiUtil.callApi` GET left `+` unencoded in query values, so the server read it as a space (`a+b` → `a b`);
   values are now fully encoded.
 - `S2PaginationTag` rendered no page numbers when `pageNo` was past the last page (for example after rows were deleted);

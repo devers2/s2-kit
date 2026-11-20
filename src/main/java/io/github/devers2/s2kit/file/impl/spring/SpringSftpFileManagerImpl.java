@@ -73,17 +73,8 @@ public class SpringSftpFileManagerImpl implements FileManager {
         int maxRetries = 3;
         while (attempts < maxRetries) {
             try {
-                if (sessionPool.getNumActive() >= sessionPool.getMaxTotal()) {
-                    logger.warn("Session pool is full. Triggering eviction and retry...");
-                    try {
-                        sessionPool.evict();
-                    } catch (Exception ignore) {
-                        // evict() 메서드는 Exception만을 처리 함
-                        logger.debug("Ignored exception during pool eviction", ignore);
-                    }
-                    Thread.sleep(500);
-                }
-
+                // 풀이 가득 차면 borrowObject 가 maxWait 동안 반납을 기다린다 (정상적인 backpressure). 예전처럼 evict() 를
+                // 부르는 것은 유휴 세션만 정리하므로 도움이 안 되고, 고정 대기는 대량 요청에서 지연만 늘린다.
                 // 풀에서만 대여 (직접 생성 금지)
                 SftpSession session = sessionPool.borrowObject();
                 if (session != null && session.isOpen()) {
@@ -107,14 +98,14 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 logger.warn("Failed to get session, attempt {}/{}: {}", attempts, maxRetries, e.getMessage());
 
                 if (attempts < maxRetries) {
-                    Thread.sleep(1000);
+                    backoff();
                 }
             } catch (Exception e) {
                 lastException = e;
                 attempts++;
                 logger.warn("Failed to get session, attempt {}/{}: {}", attempts, maxRetries, e.getMessage());
                 if (attempts < maxRetries) {
-                    Thread.sleep(1000);
+                    backoff();
                 }
             }
         }
@@ -122,6 +113,11 @@ public class SpringSftpFileManagerImpl implements FileManager {
         throw new S2RuntimeException(
                 "SFTP 세션 획득 실패: " + (lastException != null ? lastException.getMessage() : "최대 재시도 횟수 초과"),
                 lastException);
+    }
+
+    /** 여러 스레드가 같은 순간에 다시 몰리지 않도록 흩뜨려 기다린다 (0.5~1.5초) */
+    private static void backoff() throws InterruptedException {
+        Thread.sleep(500L + java.util.concurrent.ThreadLocalRandom.current().nextLong(1000L));
     }
 
     /**
@@ -312,8 +308,15 @@ public class SpringSftpFileManagerImpl implements FileManager {
                 }
                 fullPath.append(folder);
                 if (!session.exists(fullPath.toString())) {
-                    session.mkdir(fullPath.toString());
-                    logger.debug("Created directory: {}", fullPath);
+                    try {
+                        session.mkdir(fullPath.toString());
+                        logger.debug("Created directory: {}", fullPath);
+                    } catch (IOException e) {
+                        // 동시에 같은 폴더로 올리는 다른 요청이 먼저 만들었을 수 있다 (확인과 생성 사이의 경쟁). 생겼으면 성공으로 본다
+                        if (!session.exists(fullPath.toString())) {
+                            throw e;
+                        }
+                    }
                 }
             }
         } catch (IOException e) {

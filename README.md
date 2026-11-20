@@ -246,6 +246,15 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as the name is rejected
 ```
 
+- Each pooled session is its own SSH connection with one SFTP channel at a time, so the server's `MaxSessions` (channels
+  per connection) does not need raising. The Spring version (`SpringSftpConfig`) works the same way.
+- At most 8 new connections are opened at once (`-Ds2.sftp.maxConcurrentConnects`, Spring: `sftp.pool.max-concurrent-connects`),
+  below OpenSSH's default `MaxStartups 10:30:100`, which starts dropping unauthenticated connections past 10. When several
+  app servers share one SFTP server, keep (app servers × 8) below the first `MaxStartups` value, for example
+  `MaxStartups 30:30:200`. `Subsystem sftp internal-sftp` avoids one extra process per connection.
+- A full pool makes callers wait (`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) and then fails; it never
+  opens more connections than `sessionMaxTotal`. Spring also has `sftp.timeout-millis` (connect and auth timeout, 30s).
+
 #### AOP parameters (`S2ContextUtil`)
 
 ```java

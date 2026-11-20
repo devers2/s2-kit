@@ -13,9 +13,16 @@ import java.security.PublicKey;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.sshd.common.config.keys.PublicKeyEntry;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
+import org.apache.sshd.common.session.Session;
+import org.apache.sshd.common.session.SessionListener;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
@@ -55,6 +62,10 @@ class SftpIntegrationTest {
     private static Path emptyKnownHosts;
     private static Path wrongKnownHosts;
 
+    /** SSH connections open on the server now, and the most seen since the last reset | 서버에 열린 SSH 연결 수, 마지막 초기화 이후 최댓값 */
+    private static final AtomicInteger openConnections = new AtomicInteger();
+    private static final AtomicInteger peakConnections = new AtomicInteger();
+
     @BeforeAll
     static void startServer() throws IOException, java.security.GeneralSecurityException {
         root = Files.createDirectories(temp.resolve("sftp-root"));
@@ -67,6 +78,17 @@ class SftpIntegrationTest {
         server.setPasswordAuthenticator((user, password, session) -> USER.equals(user) && PASSWORD.equals(password));
         server.setSubsystemFactories(List.of(new SftpSubsystemFactory()));
         server.setFileSystemFactory(new VirtualFileSystemFactory(root));
+        server.addSessionListener(new SessionListener() {
+            @Override
+            public void sessionCreated(Session session) {
+                peakConnections.accumulateAndGet(openConnections.incrementAndGet(), Math::max);
+            }
+
+            @Override
+            public void sessionClosed(Session session) {
+                openConnections.decrementAndGet();
+            }
+        });
         server.start();
 
         PublicKey hostKey = hostKeys.loadKeys(null).iterator().next().getPublic();
@@ -138,6 +160,49 @@ class SftpIntegrationTest {
         files.deleteFile(savePath, "broken.txt");
     }
 
+    /** Starts counting the peak from the connections open now | 지금 열린 연결 수부터 최댓값을 다시 셈 */
+    private static int resetPeak() {
+        var now = openConnections.get();
+        peakConnections.set(now);
+        return now;
+    }
+
+    /** Waits until the server has at most the given number of connections | 서버 연결 수가 주어진 수 이하가 될 때까지 기다림 */
+    private static void awaitConnectionsAtMost(int count) throws InterruptedException {
+        var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (openConnections.get() > count && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertTrue(openConnections.get() <= count, "connections left open: " + openConnections.get());
+    }
+
+    /**
+     * Many parallel uploads through a small pool all succeed and never open more connections than the pool allows | 작은 풀로
+     * 많은 업로드를 동시에 해도 모두 성공하고 풀 상한보다 많은 연결을 열지 않음
+     */
+    static void assertBulkUploads(FileManager files, String savePath, int maxConnections) throws Exception {
+        var baseline = resetPeak();
+        var executor = Executors.newFixedThreadPool(16);
+        try {
+            var futures = new java.util.ArrayList<Future<Long>>();
+            for (var i = 0; i < 60; i++) {
+                var n = i;
+                Callable<Long> upload = () -> files.writeFile(data("file-" + n), savePath, "b" + n + ".txt");
+                futures.add(executor.submit(upload));
+            }
+            for (var future : futures) {
+                future.get(120, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        for (var i = 0; i < 60; i++) {
+            assertEquals("file-" + i, read(root.resolve(savePath.substring(1)).resolve("b" + i + ".txt")));
+        }
+        assertTrue(peakConnections.get() - baseline <= maxConnections,
+                "opened " + (peakConnections.get() - baseline) + " connections for a pool of " + maxConnections);
+    }
+
     private static String read(Path path) {
         try {
             return Files.readString(path);
@@ -178,6 +243,44 @@ class SftpIntegrationTest {
                 assertOverwriteContract(sftp, "/ow-jsch", () -> read(root.resolve("ow-jsch/same.txt")));
                 assertSubFoldersAndCleanup(sftp, "/sub-jsch", root.resolve("sub-jsch"));
             }
+        }
+
+        @Test
+        void bulkUploadsStayWithinThePool() throws Exception {
+            try (var sftp = manager(knownHosts.toString(), false)) {
+                assertBulkUploads(sftp, "/bulk-jsch", 2);
+            }
+        }
+
+        @Test
+        void aFullPoolMakesCallersWaitInsteadOfOpeningMore() throws Exception {
+            var baseline = resetPeak();
+            try (var sftp = new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER, null, null, PASSWORD, 2, 0, 500,
+                    knownHosts.toString(), false)) {
+                sftp.writeFile(data("x"), "/full", "x.txt", true);
+                // Two open downloads hold both sessions | 열린 다운로드 두 개가 세션 두 개를 모두 붙잡음
+                try (var first = sftp.readFile("/full", "x.txt"); var second = sftp.readFile("/full", "x.txt")) {
+                    var e = assertThrows(S2RuntimeException.class, () -> sftp.readFile("/full", "x.txt"));
+                    assertTrue(causes(e).contains("최대 재시도"), causes(e));
+                    assertTrue(peakConnections.get() - baseline <= 2,
+                            "a busy pool must not be rebuilt with more connections: " + (peakConnections.get() - baseline));
+                }
+                // Sessions are free again once the streams are closed | 스트림을 닫으면 세션을 다시 쓸 수 있음
+                try (var in = sftp.readFile("/full", "x.txt")) {
+                    assertEquals("x", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                }
+                sftp.deleteFile("/full", "x.txt");
+            }
+        }
+
+        @Test
+        void aClosedManagerFailsAtOnce() {
+            var sftp = manager(knownHosts.toString(), false);
+            sftp.close();
+            var started = System.nanoTime();
+            var e = assertThrows(S2RuntimeException.class, () -> sftp.writeFile(data("x"), "/closed", "x.txt"));
+            assertTrue(causes(e).contains("closed"), causes(e));
+            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 1000, "no retries after close");
         }
 
         @Test
@@ -282,6 +385,28 @@ class SftpIntegrationTest {
                 assertSubFoldersAndCleanup(context.getBean(SpringSftpFileManagerImpl.class), "/sub-spring",
                         root.resolve("sub-spring"));
             }
+        }
+
+        @Test
+        void bulkUploadsStayWithinThePool() throws Exception {
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
+                assertBulkUploads(context.getBean(SpringSftpFileManagerImpl.class), "/bulk-spring", 2);
+            }
+        }
+
+        @Test
+        void eachPooledSessionHasItsOwnConnectionAndClosingReleasesThem() throws Exception {
+            var baseline = resetPeak();
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
+                var sftp = context.getBean(SpringSftpFileManagerImpl.class);
+                sftp.writeFile(data("y"), "/own", "y.txt", true);
+                try (var first = sftp.readFile("/own", "y.txt"); var second = sftp.readFile("/own", "y.txt")) {
+                    // A shared session would put both on one connection | 공유 세션이면 둘이 연결 하나에 올라감
+                    assertEquals(baseline + 2, openConnections.get());
+                }
+                sftp.deleteFile("/own", "y.txt");
+            }
+            awaitConnectionsAtMost(baseline);
         }
 
         @Test

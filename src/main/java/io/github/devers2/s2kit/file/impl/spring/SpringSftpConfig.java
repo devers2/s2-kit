@@ -22,6 +22,8 @@ package io.github.devers2.s2kit.file.impl.spring;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.pool2.BasePooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
@@ -32,6 +34,7 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
 import org.springframework.integration.sftp.session.SftpSession;
@@ -48,8 +51,12 @@ public class SpringSftpConfig {
     private static final int EVICTION_RUN_INTERVAL_SECONDS = 60;
     /* 사용하지 않은 유휴 세션의 최대 보관 시간 (분) */
     private static final int MIN_EVICTABLE_IDLE_MINUTES = 30;
-    /* 세션 대여 대기 시간 (초) */
-    private static final int MAX_WAIT_FOR_BORROW_SECONDS = 10;
+    /* 연결 유지 확인 간격 (초): 방화벽·NAT 가 유휴 연결을 끊지 않게 하고, 죽은 연결을 찾는다 */
+    private static final int HEARTBEAT_INTERVAL_SECONDS = 60;
+    /* 연결 유지 확인 응답 대기 시간 (초) */
+    private static final int HEARTBEAT_REPLY_WAIT_SECONDS = 30;
+    /* 연결 유지 확인에 연달아 응답이 없으면 연결을 끊는 횟수 */
+    private static final int HEARTBEAT_NO_REPLY_MAX = 3;
     /* 반납되지 않은(대여 상태로 방치된) 세션 강제 회수 시간 (분) */
     private static final int ABANDONED_TIMEOUT_MINUTES = 35;
 
@@ -112,15 +119,40 @@ public class SpringSftpConfig {
     @Value("${sftp.pool.min-idle:8}")
     private int minIdle;
 
+    /* 세션 대여 대기 시간 (밀리초) */
+    @Value("${sftp.pool.max-wait-millis:10000}")
+    private long maxWaitMillis;
+
+    /*
+     * 동시에 진행하는 신규 SSH 연결(핸드셰이크·인증) 수 상한. OpenSSH 는 인증 전 연결이 MaxStartups 첫 값(기본 10)을 넘으면
+     * 무작위로 끊으므로, 대량 요청이나 콜드스타트에 연결을 한꺼번에 열지 않도록 줄 세운다. 앱 서버가 여러 대면
+     * (앱 서버 수 × 이 값)이 서버 MaxStartups 첫 값보다 작게 한다.
+     */
+    @Value("${sftp.pool.max-concurrent-connects:8}")
+    private int maxConcurrentConnects;
+
+    /* SSH 연결·인증 제한 시간 (밀리초) */
+    @Value("${sftp.timeout-millis:30000}")
+    private int timeoutMillis;
+
     @SuppressWarnings("null")
     @Bean
     public DefaultSftpSessionFactory sftpSessionFactory() throws IOException {
         // ssh 키 생성시에는 PEM 형식으로 할 것 !!!!!
         // ssh-keygen -p -m PEM -f /Users/eseun/.ssh/sftp_key
-        DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(true);
+        // 공유하지 않는다(false): 공유(true)면 getSession() 이 모두 같은 SftpClient(SSH 연결·SFTP 채널 하나)를 돌려주므로 풀에
+        // 몇 개가 있든 모든 전송이 채널 하나로 몰리고, 그 연결이 끊기면 진행 중인 전송이 한꺼번에 실패한다.
+        // 공유하지 않으면 풀의 세션마다 자기 SSH 연결을 가진다 (연결당 채널 1개라 서버 MaxSessions 는 늘릴 필요 없음).
+        DefaultSftpSessionFactory factory = new DefaultSftpSessionFactory(false);
         factory.setHost(sftpHost);
         factory.setPort(sftpPort);
         factory.setUser(sftpUser);
+        factory.setTimeout(timeoutMillis); // 연결·인증이 응답 없는 서버에서 멈추지 않도록
+        factory.setSshClientConfigurer(client -> {
+            CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, Duration.ofSeconds(HEARTBEAT_INTERVAL_SECONDS));
+            CoreModuleProperties.HEARTBEAT_REPLY_WAIT.set(client, Duration.ofSeconds(HEARTBEAT_REPLY_WAIT_SECONDS));
+            CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(client, HEARTBEAT_NO_REPLY_MAX);
+        });
 
         // 호스트 키 검증: known-hosts-path 가 설정되면 그 파일 기준으로 항상 검증한다(allowUnknownHosts와
         // 무관하게 우선 적용됨). known-hosts-path 가 없으면 allowUnknownHosts 값을 따르는데, 기본값(false)
@@ -161,17 +193,28 @@ public class SpringSftpConfig {
         config.setTestWhileIdle(true);
         // 고갈 시 대기 설정
         config.setBlockWhenExhausted(true);
-        config.setMaxWait(Duration.ofSeconds(MAX_WAIT_FOR_BORROW_SECONDS));
+        config.setMaxWait(Duration.ofMillis(maxWaitMillis));
         // 에빅션 설정 (30분 이상 유휴 세션 제거, 60초 주기 검사)
         config.setTimeBetweenEvictionRuns(Duration.ofSeconds(EVICTION_RUN_INTERVAL_SECONDS));
         config.setMinEvictableIdleDuration(Duration.ofMinutes(MIN_EVICTABLE_IDLE_MINUTES));
         // JMX 비활성화
         config.setJmxEnabled(false);
 
+        Semaphore connectPermits = new Semaphore(Math.max(1, maxConcurrentConnects), true);
+        long connectWaitMillis = Math.max(0L, maxWaitMillis);
         GenericObjectPool<SftpSession> pool = new GenericObjectPool<>(new BasePooledObjectFactory<SftpSession>() {
             @Override
-            public SftpSession create() {
-                return sessionFactory.getSession();
+            public SftpSession create() throws InterruptedException {
+                // 동시 신규 연결 수 상한 안에서 연결한다
+                if (!connectPermits.tryAcquire(connectWaitMillis, TimeUnit.MILLISECONDS)) {
+                    throw new IllegalStateException("Too many SFTP connections are opening at once (limit "
+                            + maxConcurrentConnects + "); no turn within " + connectWaitMillis + "ms");
+                }
+                try {
+                    return sessionFactory.getSession();
+                } finally {
+                    connectPermits.release();
+                }
             }
 
             @Override

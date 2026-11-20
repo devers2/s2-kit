@@ -26,6 +26,9 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -114,6 +117,19 @@ public class JschSessionFactory {
     /* 연결 유지 확인 실패 허용 횟수 */
     private static final int SERVER_ALIVE_COUNT_MAX = 3;
 
+    /*
+     * 동시에 진행하는 신규 SSH 연결(핸드셰이크·인증) 수 상한 기본값. 시스템 프로퍼티로 바꿀 수 있다: -Ds2.sftp.maxConcurrentConnects=8
+     * - 대량 요청이 몰리거나 배포 직후 풀이 비어 있으면 수십 개의 연결을 한꺼번에 열게 되는데, OpenSSH 는 인증 전 연결이
+     *   MaxStartups(기본 10:30:100)의 첫 값(10)을 넘으면 무작위로 끊는다. 앱 한 대가 그 값보다 적게 열도록 줄 세운다.
+     * - 같은 SFTP 서버를 여러 앱 서버가 함께 쓰면 (앱 서버 수 × 이 값)이 MaxStartups 첫 값보다 작도록 낮추거나 서버 값을 올린다.
+     */
+    private static final int DEFAULT_MAX_CONCURRENT_CONNECTS = 8;
+    private final Semaphore connectPermits;
+    private final int maxConcurrentConnects;
+
+    /* close() 이후에는 풀을 다시 만들지 않고 즉시 실패한다 */
+    private volatile boolean closed = false;
+
     /**
      * 기본 풀 크기로 생성한다. 호스트 키는 {@code ~/.ssh/known_hosts}로 검증한다.
      *
@@ -165,8 +181,7 @@ public class JschSessionFactory {
      *                             노출되므로 신뢰할 수 있는 사설망에서만 명시적으로 켠다. {@code knownHostsPath}가 있으면 무시된다.
      * @apiNote 호스트 키 검증은 기본적으로 켜져 있다(fail-closed). known_hosts 에 서버 키가 없으면 연결이 거부된다.
      *          <p>
-     *          기본값(128/16)을 그대로 쓰려면 대상 SFTP 서버(단일 서버 기준)의 sshd_config 에
-     *          {@code MaxStartups 20:30:128} 설정을 권장한다. 자세한 근거는
+     *          신규 연결은 동시에 최대 8개만 진행한다(-Ds2.sftp.maxConcurrentConnects). 서버 sshd_config 권장값은
      *          {@link io.github.devers2.s2kit.file.impl.S2SftpFileManagerImpl#S2SftpFileManagerImpl(String, int, String, String, String, String, Integer, Integer, Integer)}
      *          참고.
      */
@@ -191,6 +206,33 @@ public class JschSessionFactory {
 
         this.sessionMaxWaitMillis = sessionMaxWaitMillis != null ? sessionMaxWaitMillis
                 : DEFAULT_SESSION_MAX_WAIT_MILLIS;
+
+        var connects = DEFAULT_MAX_CONCURRENT_CONNECTS;
+        var prop = System.getProperty("s2.sftp.maxConcurrentConnects");
+        if (prop != null) {
+            try {
+                connects = Math.max(1, Integer.parseInt(prop.trim()));
+            } catch (NumberFormatException e) {
+                logger.warn("s2.sftp.maxConcurrentConnects 값을 읽지 못해 기본값 {} 을 씁니다: {}", DEFAULT_MAX_CONCURRENT_CONNECTS, prop);
+            }
+        }
+        this.maxConcurrentConnects = connects;
+        this.connectPermits = new Semaphore(connects, true);
+    }
+
+    /**
+     * 동시 신규 연결 수 상한 안에서 연결한다. 차례를 sessionMaxWaitMillis 안에 얻지 못하면 실패한다.
+     */
+    private void connectLimited(Session session) throws Exception {
+        if (!connectPermits.tryAcquire(sessionMaxWaitMillis, TimeUnit.MILLISECONDS)) {
+            throw new IllegalStateException("Too many SFTP connections are opening at once (limit " + maxConcurrentConnects
+                    + "); no turn within " + sessionMaxWaitMillis + "ms");
+        }
+        try {
+            session.connect(sessionMaxWaitMillis); // SFTP 연결 타임아웃
+        } finally {
+            connectPermits.release();
+        }
     }
 
     /**
@@ -245,7 +287,7 @@ public class JschSessionFactory {
         public void activateObject(PooledObject<Session> p) throws Exception {
             var session = p.getObject();
             if (!session.isConnected()) {
-                session.connect(sessionMaxWaitMillis);
+                connectLimited(session);
             }
         }
 
@@ -286,7 +328,7 @@ public class JschSessionFactory {
             }
 
             configureHostKeyChecking(jsch, session);
-            session.connect(sessionMaxWaitMillis); // SFTP 연결 타임아웃
+            connectLimited(session);
             return new DefaultPooledObject<>(session);
         }
 
@@ -318,21 +360,29 @@ public class JschSessionFactory {
         }
     }
 
+    /**
+     * 풀에서 세션을 빌린다. 실패하면 잠시 기다렸다가 최대 {@code MAX_RETRY_COUNT}번 시도한다.
+     * @return 연결된 세션 (사용 후 {@link #returnSession(Session)}으로 반납)
+     * @throws IllegalStateException {@link #close()} 이후에 호출했을 때
+     * @throws InterruptedException  기다리는 중 인터럽트되었을 때 (인터럽트 상태는 유지됨)
+     * @throws Exception             재시도해도 세션을 얻지 못했을 때
+     */
     public Session getSession() throws Exception {
         int retryCount = 0;
         Exception lastException = null;
 
         while (retryCount < MAX_RETRY_COUNT) {
+            if (closed) {
+                throw new IllegalStateException("SFTP session factory is closed");
+            }
+            var pool = sessionPool;
             try {
-                // 풀 사용률이 높은 것("바쁨")만으로는 초기화하지 않는다. blockWhenExhausted +
-                // sessionMaxWaitMillis 대기가 정상적인 backpressure 역할을 하므로, 여기서
-                // 대여를 그대로 시도하고 실제로 실패(타임아웃/풀 close 등, 즉 "고장")했을 때만
-                // 아래 catch 에서 forceResetPool() 로 복구한다.
-                var session = sessionPool.borrowObject(Duration.ofMillis(sessionMaxWaitMillis));
+                // 풀이 가득 차면 blockWhenExhausted + sessionMaxWaitMillis 대기가 정상적인 backpressure 역할을 한다.
+                var session = pool.borrowObject(Duration.ofMillis(sessionMaxWaitMillis));
                 if (session != null) {
                     if (!session.isConnected()) {
                         try {
-                            session.connect(sessionMaxWaitMillis);
+                            connectLimited(session);
                         } catch (Exception e) {
                             invalidateSession(session);
                             throw e;
@@ -340,27 +390,41 @@ public class JschSessionFactory {
                     }
                     return session;
                 }
+            } catch (InterruptedException e) {
+                // 인터럽트는 재시도하지 않는다 (종료 중인 실행기 등이 알 수 있도록 상태를 되살려 전파)
+                Thread.currentThread().interrupt();
+                throw e;
             } catch (Exception e) {
                 lastException = e;
-                logger.error("세션 획득 실패 (시도 {}) - ", (retryCount + 1) + "/" + MAX_RETRY_COUNT, e);
+                if (closed) {
+                    throw new IllegalStateException("SFTP session factory is closed", e);
+                }
+                if (retryCount + 1 < MAX_RETRY_COUNT) {
+                    logger.warn("세션 획득 실패 (시도 {}/{}) - {} [{}]", retryCount + 1, MAX_RETRY_COUNT, e.toString(),
+                            getPoolStatus());
+                } else {
+                    logger.error("세션 획득 실패 (시도 {}/{}) [{}]", retryCount + 1, MAX_RETRY_COUNT, getPoolStatus(), e);
+                }
 
-                // borrowObject() 타임아웃(NoSuchElementException) 또는 풀이 닫혀버린 경우처럼
-                // 풀이 실제로 "고장"난 신호일 때만 강제 초기화한다. forceResetPool() 내부의
-                // 디바운스(MIN_RESET_INTERVAL_MILLIS)가 짧은 시간 내 반복 초기화를 막아준다.
-                if (e instanceof NoSuchElementException
-                        || (e.getMessage() != null && e.getMessage().contains("Pool not open"))) {
+                // 모든 세션이 사용 중이라 기다리다 시간이 다 된 것은 정상적인 과부하이므로 풀을 다시 만들지 않는다. 다시 만들면
+                // 옛 풀의 세션이 살아 있는 채로 새 풀이 또 maxTotal 개까지 열어, 서버를 더 압박하고 연결 수가 상한을 넘는다.
+                // 사용 중인 세션이 상한보다 적은데도 빌리지 못했을 때만 풀 고장으로 보고 재초기화한다 (디바운스 적용).
+                if (e instanceof NoSuchElementException && pool == sessionPool
+                        && pool.getNumActive() < pool.getMaxTotal()) {
                     forceResetPool();
                 }
             }
             retryCount++;
 
             if (retryCount < MAX_RETRY_COUNT) {
-                Thread.sleep(1000);
+                // 여러 스레드가 같은 순간에 다시 몰리지 않도록 대기 시간을 흩뜨린다 (0.5~1.5초)
+                Thread.sleep(500L + ThreadLocalRandom.current().nextLong(1000L));
             }
         }
 
         throw new Exception(
-                "최대 재시도 횟수 초과 - 마지막 오류: " + (lastException != null ? lastException.getMessage() : "알 수 없는 오류"));
+                "최대 재시도 횟수 초과 - 마지막 오류: " + (lastException != null ? lastException.getMessage() : "알 수 없는 오류"),
+                lastException);
     }
 
     private void invalidateSession(Session session) {
@@ -379,6 +443,9 @@ public class JschSessionFactory {
     }
 
     private synchronized void forceResetPool() {
+        if (closed) {
+            return;
+        }
         // synchronized 로 직렬화되어 들어온 뒤에도, 직전 호출이 이미 최근에 풀을 새로 만들었다면
         // (다른 스레드가 동시에 같은 고갈 상태를 감지해 대기했던 경우) 중복 초기화를 건너뛴다.
         if (System.currentTimeMillis() - lastPoolResetAtMillis < MIN_RESET_INTERVAL_MILLIS) {
@@ -417,32 +484,35 @@ public class JschSessionFactory {
         }
     }
 
+    /**
+     * 세션을 풀에 반납한다. 연결이 끊긴 세션은 버린다 (반납 시 검증(testOnReturn)이 연결 유지 메시지로 한 번 더 확인함).
+     * @param session 반납할 세션 (null 이면 무시)
+     */
     public void returnSession(Session session) {
-        if (session != null) {
+        if (session == null) {
+            return;
+        }
+        if (!session.isConnected()) {
+            invalidateSession(session);
+            return;
+        }
+        try {
+            sessionPool.returnObject(session);
+        } catch (Exception e) {
+            // 재초기화 전의 풀에서 빌린 세션 등: 이 풀 소속이 아니므로 연결만 끊는다
+            logger.debug("세션을 풀에 반납하지 못해 연결을 끊습니다: {}", e.getMessage());
             try {
-                if (!session.isConnected()) {
-                    invalidateSession(session);
-                    return;
-                }
-
-                try {
-                    session.sendKeepAliveMsg();
-                    sessionPool.returnObject(session);
-                } catch (Exception e) {
-                    logger.warn("세션 반환 실패 - 세션을 무효화합니다: {}", e.getMessage());
-                    invalidateSession(session);
-                }
-            } catch (Exception e) {
-                logger.error("세션 반환/무효화 중 오류 발생: {}", e.getMessage(), e);
-                try {
-                    session.disconnect();
-                } catch (Exception ignored) {
-                }
+                session.disconnect();
+            } catch (Exception ignored) {
             }
         }
     }
 
+    /**
+     * 세션 풀을 닫는다. 이후 {@link #getSession()}은 {@link IllegalStateException}을 던진다.
+     */
     public void close() {
+        closed = true;
         sessionPool.close(); // 세션 풀만 종료
     }
 

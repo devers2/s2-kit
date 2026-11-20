@@ -245,6 +245,15 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에 "../x" 는 거부됨
 ```
 
+- 풀의 세션마다 자기 SSH 연결을 갖고, 한 연결에서 SFTP 채널은 한 번에 하나만 엽니다. 그래서 서버의 `MaxSessions`(연결당 채널
+  수)는 늘릴 필요가 없습니다. Spring 버전(`SpringSftpConfig`)도 같습니다.
+- 신규 연결은 동시에 최대 8개만 엽니다(`-Ds2.sftp.maxConcurrentConnects`, Spring: `sftp.pool.max-concurrent-connects`).
+  OpenSSH 기본값 `MaxStartups 10:30:100`은 인증 전 연결이 10개를 넘으면 무작위로 끊기 때문입니다. 앱 서버 여러 대가 SFTP 서버
+  하나를 쓰면 (앱 서버 수 × 8)이 `MaxStartups` 첫 값보다 작게 합니다(예: `MaxStartups 30:30:200`).
+  `Subsystem sftp internal-sftp`로 두면 연결마다 프로세스를 하나 더 띄우지 않습니다.
+- 풀이 가득 차면 호출 측은 기다렸다가(`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) 실패하며, 연결을
+  `sessionMaxTotal`보다 많이 열지 않습니다. Spring 은 `sftp.timeout-millis`(연결·인증 제한 시간, 30초)도 있습니다.
+
 #### AOP 파라미터 (`S2ContextUtil`)
 
 ```java

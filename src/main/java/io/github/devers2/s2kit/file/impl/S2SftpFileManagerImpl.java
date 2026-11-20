@@ -22,10 +22,12 @@ package io.github.devers2.s2kit.file.impl;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -34,6 +36,7 @@ import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.SftpProgressMonitor;
 
+import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
 import io.github.devers2.s2kit.file.JschSessionFactory;
@@ -81,6 +84,43 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
     private final JschSessionFactory jschSessionFactory;
 
+    /*
+     * 전송 감시용 공용 스케줄러. 예전처럼 전송마다 Timer 스레드를 만들면 대량 요청에서 요청 수만큼 스레드가 생겼다 사라진다.
+     * 점검만 데몬 스레드 1개가 하고, 네트워크를 쓰는 정리(채널 끊기·세션 반납)는 공용 실행기로 넘겨 점검이 밀리지 않게 한다.
+     */
+    private static final ScheduledThreadPoolExecutor WATCHDOG = createWatchdog();
+
+    private static ScheduledThreadPoolExecutor createWatchdog() {
+        var executor = new ScheduledThreadPoolExecutor(1, task -> {
+            var thread = new Thread(task, "s2-sftp-watchdog");
+            thread.setDaemon(true);
+            return thread;
+        });
+        executor.setRemoveOnCancelPolicy(true); // 끝난 전송의 점검 작업이 큐에 쌓이지 않도록
+        return executor;
+    }
+
+    /** 정리 작업을 공용 실행기에서 돌린다. 실행기가 받지 않으면(종료 중 등) 그 자리에서 돌린다. */
+    private static void runCleanup(Runnable cleanup) {
+        try {
+            S2ThreadUtil.getCommonExecutor().execute(cleanup);
+        } catch (RejectedExecutionException e) {
+            cleanup.run();
+        }
+    }
+
+    /** 주기 점검을 등록한다. */
+    private static ScheduledFuture<?> scheduleCheck(Runnable check, long intervalMillis) {
+        var interval = Math.max(1L, intervalMillis);
+        return WATCHDOG.scheduleWithFixedDelay(() -> {
+            try {
+                check.run();
+            } catch (RuntimeException e) {
+                logger.warn("SFTP 전송 감시 중 오류: {}", e.toString()); // 예외가 나가면 이후 점검이 멈추므로 삼킨다
+            }
+        }, interval, interval, TimeUnit.MILLISECONDS);
+    }
+
     /**
      * @param host           sftp host
      * @param port           sftp port
@@ -104,22 +144,19 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
      * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
-     * @apiNote 세션 풀의 각 세션은 SFTP 서버와의 독립적인 SSH 연결이다. 기본값(128/16)을 그대로
-     *          사용하려면 대상 SFTP 서버(단일 서버 기준)의 sshd_config 를 아래와 같이 맞추는 것을
-     *          권장한다. (설정하지 않아도 평상시엔 문제없지만, 배포 직후 콜드스타트나 병렬 배치
-     *          작업처럼 다수의 신규 세션이 한꺼번에 필요한 순간에는 OpenSSH 기본값(MaxStartups
-     *          10:30:100)의 동시 신규 연결 제한에 걸려 간헐적인 연결 실패가 발생할 수 있다 — 이
-     *          라이브러리의 재시도 로직이 대부분 흡수하지만, 아래 설정으로 애초에 피하는 것이 좋다)
+     * @apiNote 세션 풀의 각 세션은 SFTP 서버와의 독립적인 SSH 연결이고, 한 연결에서 SFTP 채널은 한 번에 하나만 연다.
+     *          그래서 서버의 {@code MaxSessions}(연결당 채널 수, 기본 10)는 늘릴 필요가 없다.
+     *          신규 연결은 동시에 최대 8개만 진행하도록 줄 세우므로(-Ds2.sftp.maxConcurrentConnects 로 변경), 앱 서버가 한 대면
+     *          OpenSSH 기본값({@code MaxStartups 10:30:100}, 인증 전 연결이 10개를 넘으면 무작위로 끊음)으로도 콜드스타트나
+     *          대량 요청 때 연결이 끊기지 않는다. 운영 환경에서는 아래를 권장한다.
      *
      *          <pre>{@code
-     * 1단계) 서버 sshd_config:
-     *   MaxStartups 20:30:128
-     *   - 20  : 동시 신규 연결 20개까지는 무조건 허용 (minIdle 예열 + 평상시 트래픽 증가분 커버)
-     *   - 30  : 20개 초과 시 30%부터 시작해 선형으로 거부 확률 증가
-     *   - 128 : sessionMaxTotal 과 동일하게 맞춤. 이 풀은 구조상 이 값을 넘는 신규 연결을
-     *           동시에 요청하지 않으므로 "무조건 거부" 구간에는 도달하지 않는다.
+     * 서버 sshd_config:
+     *   MaxStartups 30:30:200          # 같은 SFTP 서버를 앱 서버 여러 대가 쓰면 첫 값 > 앱 서버 수 × 8
+     *   Subsystem sftp internal-sftp   # 연결마다 sftp-server 프로세스를 따로 띄우지 않음
+     *   # 계정 프로세스·파일 수 한도(ulimit -u / -n)가 (앱 서버 수 × sessionMaxTotal)을 감당하는지 확인
      *
-     * 2단계) 클라이언트 생성자 (단일 서버 기준, 위 설정을 적용했다면 기본값 그대로 사용):
+     * 클라이언트 (기본값 사용):
      *   new S2SftpFileManagerImpl(host, port, username, privateKeyPath, passphrase, password);
      * }</pre>
      */
@@ -254,7 +291,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
                 channel.put(bufferedInput, remoteFileFullPath, monitor);
                 createdNewFile = false; // 전송 완료: 이후 실패해도 파일은 온전하다
             } finally {
-                watchdog.cancel();
+                watchdog.cancel(false);
             }
             var transferSize = monitor.getTotalBytesTransferred();
 
@@ -412,7 +449,14 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             // lstat 으로 존재 여부만 확인한다. cd()는 채널의 현재 작업 디렉토리를 바꾸는 부작용이 있어
             // 이후 상대경로 기반의 exists()/put() 호출이 엉뚱한 위치를 가리키게 될 수 있으므로 사용하지 않는다.
             if (!exists(channel, fullPath.toString())) {
-                channel.mkdir(fullPath.toString());
+                try {
+                    channel.mkdir(fullPath.toString());
+                } catch (SftpException e) {
+                    // 동시에 같은 폴더로 올리는 다른 요청이 먼저 만들었을 수 있다 (확인과 생성 사이의 경쟁). 생겼으면 성공으로 본다
+                    if (!exists(channel, fullPath.toString())) {
+                        throw e;
+                    }
+                }
             }
         }
     }
@@ -495,26 +539,21 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param monitor             진행 시각을 추적하는 모니터
      * @param idleTimeoutMillis   마지막 진행 이후 이 시간 동안 진행이 없으면 강제 종료
      * @param checkIntervalMillis idle 여부 점검 주기
-     * @return 전송 완료 후 반드시 cancel() 해야 하는 Timer
+     * @return 전송 완료 후 반드시 cancel() 해야 하는 점검 작업
      */
-    private static Timer startTransferIdleWatchdog(ChannelSftp channel, SizeTrackingMonitor monitor,
+    private static ScheduledFuture<?> startTransferIdleWatchdog(ChannelSftp channel, SizeTrackingMonitor monitor,
             long idleTimeoutMillis, long checkIntervalMillis) {
-        var timer = new Timer("s2-sftp-transfer-watchdog", true);
-        var interval = Math.max(1L, checkIntervalMillis);
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                if (System.currentTimeMillis() - monitor.getLastProgressAtMillis() >= idleTimeoutMillis) {
+        return scheduleCheck(() -> {
+            if (System.currentTimeMillis() - monitor.getLastProgressAtMillis() >= idleTimeoutMillis
+                    && channel.isConnected()) {
+                runCleanup(() -> {
                     try {
-                        if (channel.isConnected()) {
-                            channel.disconnect(); // 블로킹 중인 put()/get() 을 예외로 깨운다
-                        }
+                        channel.disconnect(); // 블로킹 중인 put()/get() 을 예외로 깨운다
                     } catch (Exception ignored) {
                     }
-                }
+                });
             }
-        }, interval, interval);
-        return timer;
+        }, checkIntervalMillis);
     }
 
     /*
@@ -522,14 +561,13 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * - 마지막 read() 이후 경과 시간(idle time) 기준이므로, 계속 읽고 있는 정상적인 대용량/저속
      *   다운로드는 끊기지 않고 진짜로 방치된 스트림만 정리 대상이 된다.
      * - 세션/채널 누수 방지 목적
-     * - Java 8 호환을 위해 java.util.Timer 사용
+     * - 점검은 공용 스케줄러(WATCHDOG)가 한다
      */
     private static class AutoClosingResourceInputStream extends S2ResourceInputStream {
         private final ChannelSftp channel;
         private final Session session;
         private final JschSessionFactory sessionFactory;
-        private final Timer timer;
-        private final TimerTask task;
+        private final ScheduledFuture<?> task;
         @SuppressWarnings("unused")
         private final long idleTimeoutMillis;
         private volatile long lastActivityAtMillis;
@@ -543,23 +581,11 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             this.sessionFactory = sessionFactory;
             this.idleTimeoutMillis = idleTimeoutMillis;
             this.lastActivityAtMillis = System.currentTimeMillis();
-            this.timer = new Timer("s2-sftp-autoclose", true);
-            this.task = new TimerTask() {
-                @Override
-                public void run() {
-                    if (System.currentTimeMillis() - lastActivityAtMillis >= idleTimeoutMillis) {
-                        try {
-                            AutoClosingResourceInputStream.this.close();
-                        } catch (Exception ignored) {
-                        }
-                    }
+            this.task = scheduleCheck(() -> {
+                if (!closing.get() && System.currentTimeMillis() - lastActivityAtMillis >= idleTimeoutMillis) {
+                    runCleanup(this::close);
                 }
-            };
-            try {
-                var interval = Math.max(1L, idleCheckIntervalMillis);
-                this.timer.scheduleAtFixedRate(this.task, interval, interval);
-            } catch (Exception ignored) {
-            }
+            }, idleCheckIntervalMillis);
         }
 
         private void markActivity() {
@@ -604,12 +630,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
                 } finally {
                     try {
                         if (task != null)
-                            task.cancel();
-                    } catch (Exception ignored) {
-                    }
-                    try {
-                        if (timer != null)
-                            timer.cancel();
+                            task.cancel(false);
                     } catch (Exception ignored) {
                     }
                     try {
