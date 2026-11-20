@@ -93,7 +93,7 @@ class S2Day {
 
     // 문자열 처리 로직
     if (typeof dateInput === 'string') {
-      // 파싱 시 누락된 연/월/일의 기본값을 현재 시각으로 설정
+      // 파싱 시 누락된 연/월/일의 기본값을 현재 시각으로 설정 (단, 상위 단위가 있으면 빠진 월·일은 1 — 아래 참고)
       const now = new Date();
       let year = now.getFullYear(),
         month = now.getMonth() + 1,
@@ -141,11 +141,19 @@ class S2Day {
         }
         // (values.YYYY나 YY가 없으면 기본값인 'now.getFullYear()' 유지)
 
-        if (values.MM || values.M) {
+        // 연도만 있으면 1월, 연·월이 있고 일이 없으면 1일로 둔다 (dayjs·moment 와 같음). 오늘 날짜로 채우면 'YYYYMM' 으로
+        // 읽은 '202502' 가 31일에는 2월 31일이 되어 잘못된 날짜로 판정된다.
+        const hasYear = !!(values.YYYY || values.YY);
+        const hasMonth = !!(values.MM || values.M);
+        if (hasMonth) {
           month = parseInt(values.MM || values.M);
+        } else if (hasYear) {
+          month = 1;
         }
         if (values.DD || values.D) {
           day = parseInt(values.DD || values.D);
+        } else if (hasYear || hasMonth) {
+          day = 1;
         }
 
         hour = parseInt(values.HH || values.H || values.hh || values.h || 0);
@@ -280,11 +288,11 @@ class S2Day {
     switch (typeof unit === 'string' ? unit.toLowerCase() : unit) {
       case 'year':
       case 'years':
-        newDate.setFullYear(newDate.getFullYear() + value);
+        _addMonthsClamped(newDate, value * 12);
         break;
       case 'month':
       case 'months':
-        newDate.setMonth(newDate.getMonth() + value);
+        _addMonthsClamped(newDate, value);
         break;
       case 'day':
       case 'days':
@@ -596,6 +604,8 @@ class S2Day {
     const daysInMonthByYMOffset = (y, m) => {
       return new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
     };
+    // add() 와 같이 월말을 넘기면 그 달의 마지막 날로 맞춘다 (1/31 에서 1개월 뒤는 2/28)
+    const clampDay = (y, m, d) => Math.min(d, new Date(Date.UTC(y, m + 1, 0)).getUTCDate());
     const buildMsFromYMDHMSOffset = (y, m, d, hh, mm, ss, ms, offsetMinutes) => {
       return Date.UTC(y, m, d, hh, mm, ss, ms) - offsetMinutes * 60000;
     };
@@ -636,7 +646,8 @@ class S2Day {
           const ss0 = bShift.getUTCSeconds();
           const ms0 = bShift.getUTCMilliseconds();
 
-          const anchorMs = buildMsFromYMDHMSOffset(y0, m0 + result, d0, hh0, mm0, ss0, ms0, off);
+          const d1 = clampDay(y0, m0 + result, d0);
+          const anchorMs = buildMsFromYMDHMSOffset(y0, m0 + result, d1, hh0, mm0, ss0, ms0, off);
 
           if (diffMs > 0) {
             if (thisMs < anchorMs) result -= 1;
@@ -682,7 +693,8 @@ class S2Day {
           const mm0 = bShift.getUTCMinutes();
           const ss0 = bShift.getUTCSeconds();
           const ms0 = bShift.getUTCMilliseconds();
-          const anchorMs = buildMsFromYMDHMSOffset(y0, m0 + monthDiff, d0, hh0, mm0, ss0, ms0, off);
+          const d1 = clampDay(y0, m0 + monthDiff, d0);
+          const anchorMs = buildMsFromYMDHMSOffset(y0, m0 + monthDiff, d1, hh0, mm0, ss0, ms0, off);
 
           if (diffMs > 0) {
             if (thisMs < anchorMs) monthDiff -= 1;
@@ -1179,6 +1191,21 @@ function _formatDate(
 }
 
 /** 문자열을 정규식 리터럴로 이스케이프하는 헬퍼 */
+/**
+ * 월을 더하되, 원래 일이 결과 달에 없으면 그 달의 마지막 날로 맞춘다 (dayjs·moment 와 같음).
+ * Date#setMonth 를 그대로 쓰면 1/31 + 1개월이 3/3, 3/31 - 1개월이 3/3 처럼 다음 달로 넘어간다.
+ * @private
+ * @param {Date} date - 바꿀 날짜 (직접 바뀜)
+ * @param {number} months - 더할 개월 수 (음수면 뺌)
+ */
+function _addMonthsClamped(date, months) {
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  date.setDate(Math.min(day, lastDay));
+}
+
 function _escapeRegex(s) {
   return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 }

@@ -96,6 +96,7 @@ export class S2DropZone {
    */
   disable() {
     this.enableDrop = false;
+    this.dropZone.classList.remove('dragover');
   }
 
   /**
@@ -113,6 +114,7 @@ export class S2DropZone {
     this.dropZone.removeEventListener('dragleave', this._onDragLeave);
     this.dropZone.removeEventListener('dragover', this._onDragOver);
     this.dropZone.removeEventListener('drop', this._onDrop);
+    this.dropZone.classList.remove('dragover');
   }
 
   /**
@@ -121,6 +123,15 @@ export class S2DropZone {
    */
   setupEventListeners() {
     const self = this;
+    // 비활성 상태에서도 기본 동작은 막는다. 그냥 두면 브라우저가 떨어뜨린 파일을 탭에서 열어 페이지(작성 중인 입력)를 벗어난다.
+    // dropEffect 'none' 으로 놓을 수 없다는 커서를 보여 준다.
+    const rejectDrop = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'none';
+      }
+    };
 
     // 나중에 destroy()에서 removeEventListener로 해제할 수 있도록 핸들러를 인스턴스에 보관해둔다.
     this._onDragEnter = function (e) {
@@ -152,7 +163,10 @@ export class S2DropZone {
     };
 
     this._onDragOver = function (e) {
-      if (self.enableDrop === false) return;
+      if (self.enableDrop === false) {
+        rejectDrop(e);
+        return;
+      }
 
       e.stopPropagation();
       e.preventDefault();
@@ -166,7 +180,10 @@ export class S2DropZone {
     };
 
     this._onDrop = function (e) {
-      if (self.enableDrop === false) return;
+      if (self.enableDrop === false) {
+        rejectDrop(e);
+        return;
+      }
 
       e.stopPropagation();
       e.preventDefault();

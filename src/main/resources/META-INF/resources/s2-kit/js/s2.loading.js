@@ -66,8 +66,9 @@ const controlProgressBar = (timeout) => {
  * @param {number} percent - 진행률 (0-100)
  */
 const setProgressBar = (percent) => {
-  const progressBar = document.querySelector('.progress-bar');
-  const progressPercent = document.querySelector('.progress-text');
+  // 오버레이 안에서만 찾는다 (페이지에 Bootstrap .progress-bar 가 있으면 그쪽을 바꾸게 됨)
+  const progressBar = document.querySelector('.s2-loading-overlay .progress-bar');
+  const progressPercent = document.querySelector('.s2-loading-overlay .progress-text');
   if (progressBar) progressBar.style.width = percent + '%';
   if (progressPercent) progressPercent.textContent = percent + '%';
 };
@@ -132,10 +133,15 @@ export const showS2Loading = (options) => {
                         </div>
                     </div>
                 </div>
-                <div class="progress-wrap ${options && options.showProgress ? '' : 'd-none'}">
+                ${
+                  // 프로그레스 바를 쓰지 않으면 그리지 않는다 (숨김용 d-none 은 Bootstrap 클래스라 없는 페이지에서는 빈 바가 보였음)
+                  options && options.showProgress
+                    ? `<div class="progress-wrap">
                     <span class="progress-text"></span>
                     <div class="progress-bar"></div>
-                </div>
+                </div>`
+                    : ''
+                }
             </div>
         </div>
     `;

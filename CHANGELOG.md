@@ -27,6 +27,27 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Fixed
 
+- ⚠️ `S2Util.jsonToQueryString` (used by `S2Util.fetch` GET requests and `downloadFile`) did not encode keys and values:
+  `A&B` split into another parameter, `#` cut the URL and `+` became a space. Values are now encoded, `0` and `false`
+  are kept, values containing `=` in the given URL survive, and a `#hash` stays at the end. `queryStringToJson` now
+  decodes, accepts a leading `?` and splits at the first `=`.
+- ⚠️ `S2Date.add`/`subtract` with months or years ran past the month end (`2025-03-31` minus a month gave `2025-03-03`,
+  `2025-01-31` plus a month `2025-03-03`); the day is now clamped to the month's last day, as in dayjs. `diff` in months
+  and years follows. Parsing a date without a day (`YYYYMM`) used today's day, so `202502` was invalid on the 29th–31st
+  (and `S2Util.validate` rejected it); a missing day is now 1, and a missing month 1 when a year is given.
+- `S2Util.fetch` saved Korean file names from s2-kit servers as underscores: it read the ASCII `filename=` before
+  `filename*=UTF-8''`. New `S2Util.getContentDispositionFilename` reads `filename*` first.
+- `initializeS2DomEvents` threw on pages with `[sort-nm]` table headers (`querySelector('> ...')` is not a valid
+  selector), stopping the rest of the setup.
+- `S2Util.goPage`/`prepareActionForm` dropped `0` and `false` values, lost parameters named like form properties
+  (`action`, `name`, `target`, `id`) and failed with a parameter named `submit`.
+- `S2Util.template` replaced placeholders key by key, so a value containing `{{-otherKey}}` received another field's
+  unescaped value; all placeholders are now replaced in one pass.
+- `S2Util.showModal` could reuse an open modal's id after an earlier modal was closed; toasts stayed on screen when no
+  `transitionend` arrived; the cookie fallback of `getLocalStorage` returned encoded values; `validate` repeated one
+  message per checkbox and rejected e-mail domains longer than three letters and `name+tag` addresses.
+- `showS2Loading` changed the first `.progress-bar` on the page (a Bootstrap one, for example) and showed an empty bar
+  without Bootstrap; `S2DropZone.disable()` let the browser open a dropped file and leave the page.
 - ⚠️ `S2PdfUtil.stamp` (and `addPageNumbers`) ignored the default font: text, page numbers and prefixes were drawn with
   Helvetica unless each element named a font, so Korean text was left out silently (the whole line, Latin letters
   included) even with `setDefaultFont` or an installed Korean font. They now use the default font, and text that the

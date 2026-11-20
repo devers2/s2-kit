@@ -398,6 +398,42 @@ export const S2Util = {
    * @param {string} text 확인할 문자열
    * @returns {boolean} 받침이 있으면 true
    */
+  /**
+   * Content-Disposition 헤더에서 파일명을 꺼낸다. RFC 5987 의 `filename*=UTF-8''...`를 먼저 쓰고, 없으면 `filename=`을
+   * 쓴다. (s2-kit 서버는 `filename="___.pdf"; filename*=UTF-8''%ED%95%9C.pdf` 처럼 ASCII 대체 이름과 함께 보내므로,
+   * `filename=`을 먼저 읽으면 한글 파일명이 밑줄로 저장된다.)
+   *
+   * @param {string} contentDisposition - Content-Disposition 헤더 값
+   * @returns {string} 파일명 (없으면 빈 문자열)
+   *
+   * @example
+   * S2Util.getContentDispositionFilename("attachment; filename=\"__.pdf\"; filename*=UTF-8''%ED%95%9C.pdf"); // '한.pdf'
+   */
+  getContentDispositionFilename(contentDisposition) {
+    if (!contentDisposition || typeof contentDisposition !== 'string') {
+      return '';
+    }
+    const extended = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(contentDisposition);
+    if (extended) {
+      try {
+        return decodeURIComponent(extended[2].trim().replace(/^"|"$/g, ''));
+      } catch {
+        // 잘못된 퍼센트 인코딩이면 filename= 을 쓴다
+      }
+    }
+    const plain = /filename\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^;]*))/i.exec(contentDisposition);
+    if (!plain) {
+      return '';
+    }
+    const name = plain[1] !== undefined ? plain[1].replace(/\\(.)/g, '$1') : plain[2].trim();
+    try {
+      // 퍼센트 인코딩한 이름을 filename= 에 넣는 서버도 있어 풀어 본다 (예전 동작 유지)
+      return decodeURIComponent(name);
+    } catch {
+      return name;
+    }
+  },
+
   hasBatchim(text) {
     const target = S2Util._resolveTargetChar(text);
     if (!target || (!target.isKorean && !target.isNumber)) return false;
@@ -995,20 +1031,12 @@ export const S2Util = {
             let filename = '';
 
             const contentDisposition = response.headers.get('Content-Disposition');
-            if (contentDisposition && contentDisposition.includes('attachment')) {
-              const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-              const matches = filenameRegex.exec(contentDisposition);
-              if (matches != null && matches[1]) {
-                filename = matches[1].replace(/['"]/g, '');
-              }
+            if (contentDisposition) {
+              filename = S2Util.getContentDispositionFilename(contentDisposition);
             }
 
             result['data'] = response.blob();
-            try {
-              result['filename'] = decodeURIComponent(filename);
-            } catch {
-              result['filename'] = filename;
-            }
+            result['filename'] = filename;
             break;
           }
           case 'HTML':
@@ -1208,16 +1236,21 @@ export const S2Util = {
             let replacedHtml = template;
 
             // 템플릿 변수 치환
+            // 한 번에 치환한다. 키마다 차례로 치환하면 앞 값에 들어 있던 '{{-다른키}}' 가 다음 차례에 다른 필드의 (이스케이프하지
+            // 않은) 원본 값으로 바뀐다. 데이터에 없는 키는 그대로 두어 아래에서 경고 후 지운다.
+            const keys = new Set();
             for (const key in props) {
-              const value = props[key];
-              // key에 정규식 특수문자(., (, ) 등)가 포함되어 있어도 리터럴 그대로 매칭되도록 이스케이프한다.
-              const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const text = value || value === 0 ? value : '';
-              // A function replacement keeps "$&" etc. in values literal | 함수로 치환해야 값의 "$&" 등이 패턴으로 해석되지 않음
-              replacedHtml = replacedHtml
-                .replace(new RegExp(`{{=${escapedKey}}}`, 'g'), () => S2Util.escapeHtml(text))
-                .replace(new RegExp(`{{-${escapedKey}}}`, 'g'), () => String(text));
+              keys.add(key);
             }
+            // A function replacement keeps "$&" etc. in values literal | 함수로 치환해야 값의 "$&" 등이 패턴으로 해석되지 않음
+            replacedHtml = replacedHtml.replace(/{{([=-])([^}]+)}}/g, (match, mode, key) => {
+              if (!keys.has(key)) {
+                return match;
+              }
+              const value = props[key];
+              const text = value || value === 0 ? value : '';
+              return mode === '=' ? S2Util.escapeHtml(text) : String(text);
+            });
 
             const trimmedHtml = replacedHtml.trim();
             const htmlPrefix = trimmedHtml
@@ -1554,7 +1587,8 @@ export const S2Util = {
     } catch {
       const cookie = `; ${document.cookie}`;
       const parts = cookie.split(`; ${key}=`);
-      if (parts.length === 2) value = parts.pop().split(';').shift();
+      // setLocalStorage 가 쿠키에 인코딩해 저장하므로 풀어서 돌려준다
+      if (parts.length === 2) value = decodeURIComponent(parts.pop().split(';').shift());
     }
     return value;
   },
@@ -1609,15 +1643,14 @@ export const S2Util = {
 
         const paramVal = param[paramKey];
 
-        if (paramVal) {
-          if (!actionFormElement[paramKey]) {
-            const s2Field = target.createElement('input');
-            s2Field.setAttribute('type', 'hidden');
-            s2Field.setAttribute('name', paramKey);
-            actionFormElement.appendChild(s2Field);
-          }
-
-          actionFormElement[paramKey].value = paramVal;
+        // 0·false 도 보낸다 (null·undefined 만 뺀다). 입력칸은 항상 새로 만든다: form[이름]으로 찾으면 action·name·target·id
+        // 같은 폼 자체 속성과 겹쳐 값이 사라지고, submit 은 form.submit() 을 가린다.
+        if (paramVal !== undefined && paramVal !== null) {
+          const s2Field = target.createElement('input');
+          s2Field.setAttribute('type', 'hidden');
+          s2Field.setAttribute('name', paramKey);
+          s2Field.value = paramVal;
+          actionFormElement.appendChild(s2Field);
         }
       }
     }
@@ -1628,14 +1661,15 @@ export const S2Util = {
       const csrfValue = S2Util.getLocalStorage('s2CsrfTokenValue');
 
       if (csrfKey && csrfValue) {
-        if (!actionFormElement[csrfKey]) {
-          const s2Field = target.createElement('input');
+        let s2Field = actionFormElement.elements.namedItem(csrfKey);
+        if (!s2Field) {
+          s2Field = target.createElement('input');
           s2Field.setAttribute('type', 'hidden');
           s2Field.setAttribute('name', csrfKey);
           actionFormElement.appendChild(s2Field);
         }
 
-        actionFormElement[csrfKey].value = csrfValue;
+        s2Field.value = csrfValue;
       }
     }
 
@@ -1657,8 +1691,13 @@ export const S2Util = {
     if (url) {
       const actionFormElement = S2Util.prepareActionForm(target, param);
 
-      actionFormElement.action = url.replace(/!q/g, '?').replace(/!n/g, '&').replace(/!e/g, '=');
-      actionFormElement.submit();
+      // action·submit 이라는 이름의 입력칸이 폼 속성을 가려도 동작하도록 원래 속성·메서드를 직접 쓴다
+      actionFormElement.setAttribute(
+        'action',
+        url.replace(/!q/g, '?').replace(/!n/g, '&').replace(/!e/g, '=')
+      );
+      const FormElement = (target.defaultView && target.defaultView.HTMLFormElement) || HTMLFormElement;
+      FormElement.prototype.submit.call(actionFormElement);
       try {
         target.focus();
       } catch (e) {
@@ -1869,7 +1908,7 @@ export const S2Util = {
                     break;
                   case 'CHK_MPHONE_NO':
                     // 휴대전화번호
-                    mask = /^01([0|1|6|7|8|9]?)[-]([0-9]{3,4})[-]([0-9]{4})$/;
+                    mask = /^01([016789]?)[-]([0-9]{3,4})[-]([0-9]{4})$/;
                     break;
                   case 'CHK_TEL_NO':
                     // 전화번호
@@ -1892,9 +1931,8 @@ export const S2Util = {
                     mask = /^[가-힣a-zA-Z0-9\s]*$/;
                     break;
                   case 'CHK_EMAIL':
-                    // 이메일
-                    // eslint-disable-next-line no-useless-escape
-                    mask = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+                    // 이메일 (4자 이상 도메인(.info 등)과 name+tag 형식도 허용)
+                    mask = /^[\w.+-]+@[\w-]+(\.[\w-]+)*\.[A-Za-z]{2,}$/;
                     break;
                 }
 
@@ -2042,7 +2080,8 @@ export const S2Util = {
     }
 
     if (!valid && messageArr.length) {
-      S2Util.alert(messageArr.join('\n'));
+      // 같은 이름의 체크박스·라디오는 요소마다 검사되므로 같은 메시지가 여러 번 쌓인다
+      S2Util.alert([...new Set(messageArr)].join('\n'));
     }
 
     return valid;
@@ -2362,8 +2401,15 @@ export const S2Util = {
     let vUrl = '';
     let vQueryString = '';
     let vJSONObject = {};
+    let vHash = '';
 
     if (paramQueryString) {
+      // '#' 뒤(해시)는 떼었다가 맨 끝에 다시 붙인다 (그대로 두면 매개변수가 해시 뒤에 붙어 서버로 가지 않음)
+      const hashIdx = paramQueryString.indexOf('#');
+      if (hashIdx > -1) {
+        vHash = paramQueryString.substring(hashIdx);
+        paramQueryString = paramQueryString.substring(0, hashIdx);
+      }
       const qIdx = paramQueryString.indexOf('?');
       if (qIdx > -1) {
         // 기존 문자열에 ?가 포함되어 있다면 ?를 포함한 앞부분을 url 로 처리한다.
@@ -2393,11 +2439,18 @@ export const S2Util = {
       const params = vQueryString.split('&');
       if (params && Array.isArray(params)) {
         for (const idx in params) {
-          const param = params[idx].split('=');
-          const paramKey = param[0];
-          const paramValue = param.length === 2 ? param[1] : '';
+          if (!params[idx]) {
+            continue;
+          }
+          // 첫 '=' 에서만 나누고(값에 '=' 가 있을 수 있음, 예: base64), 인코딩을 풀어 두었다가 아래에서 다시 인코딩한다
+          const eqIdx = params[idx].indexOf('=');
+          const paramKey = S2Util._decodeQueryComponent(
+            eqIdx > -1 ? params[idx].substring(0, eqIdx) : params[idx]
+          );
+          const paramValue =
+            eqIdx > -1 ? S2Util._decodeQueryComponent(params[idx].substring(eqIdx + 1)) : '';
           const prevValue = vJSONObject[paramKey];
-          if (prevValue) {
+          if (prevValue !== undefined) {
             if (!Array.isArray(prevValue)) {
               vJSONObject[paramKey] = [prevValue];
             }
@@ -2418,7 +2471,7 @@ export const S2Util = {
         // 기존 쿼리문자열로 생성한 JSON 객체가 있다면 변환할 JSON 을 추가하여 둘사이에 중복된 키값을 제거한다.
         for (const key in paramJSONObject) {
           const value = paramJSONObject[key];
-          if (value) {
+          if (value !== undefined && value !== null) {
             vJSONObject[key] = value;
           }
         }
@@ -2432,37 +2485,58 @@ export const S2Util = {
       const valueArr = Array.isArray(vJSONObject[key]) ? vJSONObject[key] : [vJSONObject[key]];
       for (const idx in valueArr) {
         const value = valueArr[idx];
-        if (value) {
+        // 0·false 는 보내고 null·undefined·빈 문자열만 뺀다. 키와 값은 인코딩한다 (그대로 두면 '&'·'#'·'+'·'=' 가 든
+        // 값이 다른 매개변수로 쪼개지거나 잘리거나 공백이 됨)
+        if (value !== undefined && value !== null && value !== '') {
           if (resultQueryString) {
             resultQueryString += '&';
           }
-          resultQueryString += `${key}=${value}`;
+          resultQueryString += `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
         }
       }
     }
-    return vUrl + (vUrl && resultQueryString ? '?' : '') + resultQueryString;
+    return vUrl + (vUrl && resultQueryString ? '?' : '') + resultQueryString + vHash;
+  },
+  /**
+   * @private
+   * 쿼리 문자열의 한 부분을 푼다 ('+' 는 공백). 잘못된 인코딩이면 그대로 둔다.
+   * @param {string} part 풀 문자열
+   * @returns {string} 푼 문자열
+   */
+  _decodeQueryComponent(part) {
+    try {
+      return decodeURIComponent(part.replace(/\+/g, ' '));
+    } catch {
+      return part;
+    }
   },
   /**
    * 쿼리 문자열(예: 'key1=value1&key2=value2')을 JSON 객체로 변환한다.
    * 쿼리 문자열의 시작에 '?'는 있어도 되고 없어도 된다.
-   * 키에 값이 할당되지 않은 경우(예: 'key='), 해당 키의 값은 null로 처리된다.
+   * 키와 값의 인코딩은 풀어서 돌려준다. '=' 가 없는 키(예: 'key')의 값은 null, 빈 값(예: 'key=')은 빈 문자열이다.
    *
    * @param {string} paramQueryString - JSON 객체로 변환할 쿼리 문자열.
    * @returns {object} - 쿼리 문자열이 변환된 JSON 객체. 유효하지 않은 입력은 빈 객체({})를 반환한다.
    *
    * @example
    * S2Util.queryStringToJson('a=1&b=2');      // {a: '1', b: '2'} 반환
-   * S2Util.queryStringToJson('?name=gemini&key='); // {name: 'gemini', key: null} 반환 (주의: 이 코드는 '='가 없는 'key'를 null로 처리하지 않음)
+   * S2Util.queryStringToJson('?name=%ED%99%8D&key=&flag'); // {name: '홍', key: '', flag: null} 반환
    */
   queryStringToJson(paramQueryString) {
     const result = {};
     if (paramQueryString && typeof paramQueryString == 'string') {
-      const params = paramQueryString.split('&');
+      const query = paramQueryString.startsWith('?') ? paramQueryString.slice(1) : paramQueryString;
+      const params = query.split('&');
       for (const idx in params) {
-        const param = params[idx].split('=');
-        if (param && param.length > 0) {
-          result[param[0]] = param.length > 1 ? param[1] : null;
+        if (!params[idx]) {
+          continue;
         }
+        // 첫 '=' 에서만 나눈다 (값에 '=' 가 있을 수 있음)
+        const eqIdx = params[idx].indexOf('=');
+        const key = S2Util._decodeQueryComponent(
+          eqIdx > -1 ? params[idx].substring(0, eqIdx) : params[idx]
+        );
+        result[key] = eqIdx > -1 ? S2Util._decodeQueryComponent(params[idx].substring(eqIdx + 1)) : null;
       }
     }
     return result;
@@ -2922,7 +2996,11 @@ export const S2Util = {
       option = {};
     }
 
-    const modelNo = document.querySelectorAll('.s2-modal').length + 1;
+    // 열린 모달 수 + 1 로 정하면 앞 모달을 닫은 뒤 새로 열 때 남아 있는 모달과 id 가 겹치므로 비어 있는 번호를 찾는다
+    let modelNo = document.querySelectorAll('.s2-modal').length + 1;
+    while (document.getElementById(`s2-modal-${modelNo}`)) {
+      modelNo++;
+    }
     const modalSelector = `#s2-modal-${modelNo}`;
 
     let modalHeader = '';
@@ -3057,6 +3135,8 @@ export const S2Util = {
             },
             { once: true }
           );
+          // 전환 효과가 없거나(동작 줄이기 설정, CSS 미적용 등) transitionend 가 오지 않아도 지운다
+          setTimeout(() => toast.remove(), 1000);
         }
       }
     }
@@ -3411,7 +3491,8 @@ export const S2Util = {
         }
       });
     } else {
-      console.error(
+      // http(비보안) 페이지나 미지원 브라우저에서는 정상적인 상황이라 오류가 아닌 디버그 로그로 남긴다
+      console.debug(
         'Service Worker 이벤트를 등록할 수 없습니다.\nnavigator.serviceWorker 또는 addEventListener가 지원되지 않습니다.'
       );
     }
@@ -3614,8 +3695,10 @@ export const initializeS2DomEvents = () => {
 
   // 목록 테이블 헤더 정렬
   document.querySelectorAll('[sort-nm]').forEach((header) => {
-    if (!header.querySelector('> .fas.fa-sort')) {
-      header.innerHTML += '<i class="fas fa-sort"></i>';
+    // '>' 로 시작하는 선택자는 querySelector 에서 문법 오류(예외)이므로 :scope 를 쓴다. innerHTML += 는 헤더 안의 다른
+    // 요소를 다시 만들어 붙어 있던 이벤트를 잃게 하므로 끝에 덧붙인다.
+    if (!header.querySelector(':scope > .fas.fa-sort')) {
+      header.insertAdjacentHTML('beforeend', '<i class="fas fa-sort"></i>');
     }
 
     if (header.dataset.s2SortBound === 'true') {

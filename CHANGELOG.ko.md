@@ -27,6 +27,25 @@
 
 ### 수정
 
+- ⚠️ `S2Util.jsonToQueryString`(`S2Util.fetch` GET 요청과 `downloadFile`이 사용)이 키·값을 인코딩하지 않던 문제. `A&B`가 다른
+  매개변수로 쪼개지고 `#`에서 URL 이 잘리며 `+`가 공백이 됐습니다. 이제 인코딩하고, `0`·`false`를 보내고, 주어진 URL 의 `=`가 든
+  값을 지키고, `#해시`는 맨 끝에 둡니다. `queryStringToJson`은 인코딩을 풀고, 앞의 `?`를 받으며, 첫 `=`에서만 나눕니다.
+- ⚠️ `S2Date.add`/`subtract`가 개월·연을 더할 때 월말을 넘기던 문제(`2025-03-31`에서 1개월을 빼면 `2025-03-03`, `2025-01-31`에
+  1개월을 더하면 `2025-03-03`). 이제 dayjs 처럼 그 달의 마지막 날로 맞추고, 개월·연 단위 `diff`도 따릅니다. 일이 없는
+  형식(`YYYYMM`)을 파싱하면 오늘 날짜를 써서 29~31일에는 `202502`가 잘못된 날짜가 되던 문제(`S2Util.validate`도 거부)도
+  고쳐, 빠진 일은 1일, 연도만 있으면 빠진 월은 1월로 둡니다.
+- `S2Util.fetch`가 s2-kit 서버가 보낸 한글 파일명을 밑줄로 저장하던 문제(ASCII `filename=`을 `filename*=UTF-8''`보다 먼저
+  읽음). 새 `S2Util.getContentDispositionFilename`이 `filename*`을 먼저 읽습니다.
+- `initializeS2DomEvents`가 `[sort-nm]` 정렬 헤더가 있는 페이지에서 예외로 멈추던 문제(`querySelector('> ...')`는 잘못된 선택자).
+- `S2Util.goPage`/`prepareActionForm`이 `0`·`false` 값을 빼고, 폼 속성과 이름이 같은 매개변수(`action`, `name`, `target`,
+  `id`)를 잃고, `submit`이라는 매개변수가 있으면 실패하던 문제.
+- `S2Util.template`이 키마다 차례로 치환해, `{{-다른키}}`가 든 값이 다른 필드의 이스케이프하지 않은 값으로 바뀌던 문제. 이제 한
+  번에 치환합니다.
+- `S2Util.showModal`이 앞 모달을 닫은 뒤 열린 모달과 같은 id 를 쓸 수 있던 문제, `transitionend`가 오지 않으면 토스트가 남던
+  문제, `getLocalStorage`의 쿠키 대체 경로가 인코딩된 값을 돌려주던 문제, `validate`가 체크박스마다 같은 메시지를 반복하고 4자
+  이상 도메인과 `name+tag` 주소를 거부하던 문제.
+- `showS2Loading`이 페이지의 첫 `.progress-bar`(Bootstrap 것 등)를 바꾸고 Bootstrap 이 없으면 빈 바를 보이던 문제,
+  `S2DropZone.disable()` 상태에서 떨어뜨린 파일을 브라우저가 열어 페이지를 벗어나던 문제.
 - ⚠️ `S2PdfUtil.stamp`(와 `addPageNumbers`)가 기본 폰트를 쓰지 않던 문제. 요소마다 폰트를 지정하지 않으면 텍스트·쪽 번호·접두사를
   Helvetica 로 그려, `setDefaultFont`나 설치된 한글 폰트가 있어도 한글 텍스트가 (같은 줄의 영문까지) 조용히 빠졌습니다. 이제 기본 폰트를
   쓰고, 폰트로 그릴 수 없는 텍스트는 빠뜨리지 않고 `IOException`으로 실패합니다.
