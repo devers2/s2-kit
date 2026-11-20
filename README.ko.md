@@ -259,6 +259,27 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
   큰 파일은 세션보다 대역폭이 한계라서, 1Gbps 에서 100MB 파일 128개를 동시에 올리면 한 건에 2분쯤 걸립니다. 대량 작업은 풀을
   키우기보다 호출 측에서 큐로 줄 세웁니다.
 
+#### 업로드 큐 (`S2UploadQueue`)
+
+요청이 몰리거나 대량·큰 파일을 올릴 때 씁니다. 요청 스레드는 파일을 임시 파일로 받기만 하고, 정해진 수의 백그라운드 전송이
+보내므로 웹 요청 스레드도 파일 서버도 과부하되지 않습니다.
+
+```java
+// 애플리케이션마다 하나, 종료 때 닫기 (Spring: @Bean(destroyMethod = "close"))
+S2UploadQueue queue = S2UploadQueue.builder(fileManager)
+        .concurrency(8)            // 동시 전송 수 = 쓰는 연결 수
+        .maxQueued(1000)           // 넘으면 RejectedExecutionException 으로 바로 거절
+        .maxFileBytes(500L << 20)  // 선택: 크기 제한
+        .build();
+
+queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
+     .whenComplete((size, error) -> repository.markUploaded(id, error == null));
+```
+
+- 일시적 실패는 다시 시도합니다(3번, 2초 → 4초, 무작위로 흩뜨림). 같은 이름의 파일(`S2FileExistsException`)이나 잘못된 경로는
+  다시 시도하지 않습니다. 임시 폴더 디스크 여유가 1GB 미만이면 업로드를 거절합니다(`minFreeDiskBytes`).
+- 큐는 메모리에만 있어 종료 때 끝나지 않은 업로드는 사라집니다. 결과를 (상태 컬럼 등에) 기록하십시오.
+
 #### AOP 파라미터 (`S2ContextUtil`)
 
 ```java

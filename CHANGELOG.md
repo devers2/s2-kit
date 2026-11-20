@@ -6,6 +6,14 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ## [Unreleased]
 
+### Added
+
+- `S2UploadQueue`: uploads through any `FileManager` in the background with a fixed number of parallel transfers. It
+  saves the data to a temporary file and returns a `CompletableFuture` at once, rejects new uploads when full instead of
+  blocking, retries temporary failures with a growing random delay, and keeps free disk space for its temporary files.
+- `S2FileExistsException` (a `S2RuntimeException`): thrown by every `FileManager.writeFile` when the file exists and
+  overwriting was not asked for.
+
 ### Fixed
 
 - ⚠️ `S2PdfUtil.stamp` (and `addPageNumbers`) ignored the default font: text, page numbers and prefixes were drawn with

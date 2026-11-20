@@ -6,6 +6,14 @@
 
 ## [Unreleased]
 
+### 추가
+
+- `S2UploadQueue`: 어떤 `FileManager`로든 정해진 동시 전송 수만큼 백그라운드에서 올립니다. 데이터를 임시 파일에 받아 두고
+  `CompletableFuture`를 바로 돌려주며, 가득 차면 기다리지 않고 거절하고, 일시적 실패는 점점 늘어나는 무작위 간격으로 다시 시도하고,
+  임시 파일용 디스크 여유 공간을 지킵니다.
+- `S2FileExistsException`(`S2RuntimeException` 하위): 덮어쓰지 않는 `FileManager.writeFile`에서 파일이 이미 있으면 모든 구현이
+  던집니다.
+
 ### 수정
 
 - ⚠️ `S2PdfUtil.stamp`(와 `addPageNumbers`)가 기본 폰트를 쓰지 않던 문제. 요소마다 폰트를 지정하지 않으면 텍스트·쪽 번호·접두사를

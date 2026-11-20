@@ -30,6 +30,7 @@ import java.nio.file.Paths;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
+import io.github.devers2.s2kit.file.S2FileExistsException;
 import io.github.devers2.s2kit.support.S2FileUtil;
 
 /**
@@ -79,7 +80,7 @@ public class S2FileManagerImpl implements FileManager {
                 // Files.copy without REPLACE_EXISTING creates the file with CREATE_NEW (atomic) | REPLACE_EXISTING 없이는 CREATE_NEW 로 생성 (원자적)
                 return Files.copy(in, target);
             } catch (FileAlreadyExistsException e) {
-                throw new S2RuntimeException("이미 존재하는 파일입니다: " + target, e);
+                throw new S2FileExistsException("이미 존재하는 파일입니다: " + target, e);
             } catch (IOException e) {
                 // Remove the partial file this call created | 이 호출이 만든 불완전한 파일 삭제
                 Files.deleteIfExists(target);

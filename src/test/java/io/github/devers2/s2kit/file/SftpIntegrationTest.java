@@ -262,6 +262,27 @@ class SftpIntegrationTest {
         }
 
         @Test
+        void anUploadQueueKeepsServerConnectionsAtItsParallelism() throws Exception {
+            var baseline = resetPeak();
+            // A large pool, but the queue sends only 3 at a time | 풀은 크지만 큐가 한 번에 3건만 보냄
+            try (var sftp = new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER, null, null, PASSWORD, 32, 0,
+                    3000, knownHosts.toString(), false);
+                    var queue = S2UploadQueue.builder(sftp).concurrency(3).tempDir(temp.resolve("queue-tmp"))
+                            .minFreeDiskBytes(0).build()) {
+                var futures = new java.util.ArrayList<java.util.concurrent.CompletableFuture<Long>>();
+                for (var i = 0; i < 100; i++) {
+                    futures.add(queue.submit(data("q-" + i), "/queued", "q" + i + ".txt"));
+                }
+                java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0]))
+                        .get(120, TimeUnit.SECONDS);
+            }
+            for (var i = 0; i < 100; i++) {
+                assertEquals("q-" + i, read(root.resolve("queued/q" + i + ".txt")));
+            }
+            assertTrue(peakConnections.get() - baseline <= 3, "connections: " + (peakConnections.get() - baseline));
+        }
+
+        @Test
         void aFullPoolMakesCallersWaitInsteadOfOpeningMore() throws Exception {
             var baseline = resetPeak();
             try (var sftp = new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER, null, null, PASSWORD, 2, 0, 500,

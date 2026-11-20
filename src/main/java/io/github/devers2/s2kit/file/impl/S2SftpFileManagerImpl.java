@@ -39,6 +39,7 @@ import com.jcraft.jsch.SftpProgressMonitor;
 import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
+import io.github.devers2.s2kit.file.S2FileExistsException;
 import io.github.devers2.s2kit.file.JschSessionFactory;
 import io.github.devers2.s2kit.file.S2ResourceInputStream;
 import io.github.devers2.s2util.log.S2LogManager;
@@ -278,7 +279,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
             // 기존 파일 존재 여부 확인
             if (!overwrite && exists(channel, remoteFileFullPath)) {
-                throw new S2RuntimeException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
+                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
             }
 
             // 스트림 직접 전송 및 크기 추적. 마지막 진행(count()) 이후 TRANSFER_IDLE_MILLIS 동안

@@ -260,6 +260,27 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as
   of 0.3s each. Large files are limited by bandwidth rather than sessions: 128 parallel 100MB uploads on a 1Gbps link take
   about two minutes each, so queue bulk jobs on the caller's side instead of raising the pool.
 
+#### Upload queue (`S2UploadQueue`)
+
+For bursts and bulk or large uploads: the request thread only saves the file to a temporary file, and a fixed number of
+background transfers send it, so neither request threads nor the file server are overloaded.
+
+```java
+// One per application; close it on shutdown (Spring: @Bean(destroyMethod = "close"))
+S2UploadQueue queue = S2UploadQueue.builder(fileManager)
+        .concurrency(8)            // parallel transfers = connections it uses
+        .maxQueued(1000)           // more are rejected at once with RejectedExecutionException
+        .maxFileBytes(500L << 20)  // optional size limit
+        .build();
+
+queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
+     .whenComplete((size, error) -> repository.markUploaded(id, error == null));
+```
+
+- Temporary failures are retried (3 attempts, 2s → 4s, randomized); an existing file (`S2FileExistsException`) or a bad
+  path is not. It refuses uploads when the temp disk has less than 1GB free (`minFreeDiskBytes`).
+- The queue is in memory: uploads unfinished at shutdown are lost, so record each result (for example a status column).
+
 #### AOP parameters (`S2ContextUtil`)
 
 ```java

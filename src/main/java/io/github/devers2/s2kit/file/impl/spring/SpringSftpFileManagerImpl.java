@@ -31,6 +31,7 @@ import org.springframework.stereotype.Component;
 
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
+import io.github.devers2.s2kit.file.S2FileExistsException;
 import io.github.devers2.s2kit.file.S2ResourceInputStream;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -150,7 +151,7 @@ public class SpringSftpFileManagerImpl implements FileManager {
 
                 // SftpSession.write replaces an existing file, so check first (same rule as the other managers) | write 는 기존 파일을 덮으므로 먼저 확인
                 if (!overwrite && session.exists(remoteFileFullPath)) {
-                    throw new S2RuntimeException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
+                    throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
                 }
 
                 // 파일 업로드
