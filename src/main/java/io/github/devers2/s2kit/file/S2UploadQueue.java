@@ -56,8 +56,9 @@ import io.github.devers2.s2util.log.S2Logger;
  * <li>At most {@code concurrency} transfers run at once; the rest wait in the queue.</li>
  * <li>When {@code maxQueued} uploads are already accepted, {@code submit} fails at once with a
  * {@link RejectedExecutionException} instead of blocking (tell the user to try again later).</li>
- * <li>A failed transfer is retried with a growing, randomized delay. An existing file ({@link S2FileExistsException})
- * or an invalid path is not retried.</li>
+ * <li>A failed transfer is retried with a growing, randomized delay, continuing where it stopped on SFTP (see
+ * {@link FileManager#writeFile(Path, String, String, boolean, String)}). An existing file
+ * ({@link S2FileExistsException}) or an invalid path is not retried.</li>
  * <li>The queue lives in memory: uploads not finished when the application stops are lost (their temporary files
  * are deleted). Record the result of each future (for example a status column) if that matters.</li>
  * </ul>
@@ -77,8 +78,9 @@ import io.github.devers2.s2util.log.S2Logger;
  * <li>동시에 최대 {@code concurrency}건만 전송하고 나머지는 큐에서 기다립니다.</li>
  * <li>이미 {@code maxQueued}건을 받아 두었으면 {@code submit}은 기다리지 않고 바로 {@link RejectedExecutionException}으로
  * 거절합니다 (사용자에게 잠시 후 다시 시도하라고 안내).</li>
- * <li>실패한 전송은 점점 늘어나는 무작위 간격으로 다시 시도합니다. 같은 이름의 파일({@link S2FileExistsException})이나
- * 잘못된 경로는 다시 시도하지 않습니다.</li>
+ * <li>실패한 전송은 점점 늘어나는 무작위 간격으로 다시 시도하며, SFTP 에서는 멈춘 곳부터 이어 보냅니다
+ * ({@link FileManager#writeFile(Path, String, String, boolean, String)} 참고). 같은 이름의 파일
+ * ({@link S2FileExistsException})이나 잘못된 경로는 다시 시도하지 않습니다.</li>
  * <li>큐는 메모리에만 있습니다. 애플리케이션이 멈출 때 끝나지 않은 업로드는 사라지고 임시 파일도 지워집니다. 중요하면 각 future
  * 의 결과를 (상태 컬럼 등에) 기록하십시오.</li>
  * </ul>
@@ -323,12 +325,14 @@ public final class S2UploadQueue implements AutoCloseable {
             return;
         }
         job.attempt++;
-        try (var in = Files.newInputStream(job.source)) {
-            var size = fileManager.writeFile(in, job.savePath, job.saveName, job.overwrite);
+        try {
+            // 같은 키로 부르므로 SFTP 관리자는 재시도 때 앞 시도가 보낸 부분 뒤부터 이어 쓴다
+            var size = fileManager.writeFile(job.source, job.savePath, job.saveName, job.overwrite, job.resumeKey);
             finish(job, size, null);
         } catch (Exception e) {
             if (closed || job.attempt >= maxAttempts || !isRetryable(e)) {
                 logger.error("Upload failed ({} attempt(s)): {}/{}", job.attempt, job.savePath, job.saveName, e);
+                discardPartial(job);
                 finish(job, null, e);
                 return;
             }
@@ -340,6 +344,15 @@ public final class S2UploadQueue implements AutoCloseable {
             } catch (RejectedExecutionException rejected) {
                 finish(job, null, e);
             }
+        }
+    }
+
+    /* 포기한 업로드의 서버 쪽 부분 파일을 지운다 (실패는 기록만) */
+    private void discardPartial(Job job) {
+        try {
+            fileManager.discardPartial(job.savePath, job.saveName, job.resumeKey);
+        } catch (RuntimeException e) {
+            logger.warn("Cannot remove the partial upload of {}/{}: {}", job.savePath, job.saveName, e.toString());
         }
     }
 
@@ -464,6 +477,8 @@ public final class S2UploadQueue implements AutoCloseable {
         final String savePath;
         final String saveName;
         final boolean overwrite;
+        /* 시도 사이에 이 업로드를 가리키는 키 (이어 쓰기용) */
+        final String resumeKey = java.util.UUID.randomUUID().toString().replace("-", "");
         final CompletableFuture<Long> future = new CompletableFuture<>();
         final java.util.concurrent.atomic.AtomicBoolean finished = new java.util.concurrent.atomic.AtomicBoolean();
         volatile int attempt = 0;

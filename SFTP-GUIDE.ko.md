@@ -34,7 +34,7 @@
 
 - **풀:** 연결(SSH 세션)마다 SFTP 채널을 한 번에 하나만 엽니다. 그래서 서버의 `MaxSessions`는 늘릴 필요가 없습니다. 연결은 최대치까지만 열고, 모두 사용 중이면 호출 측이 기다립니다.
 - **동시 신규 연결 제한:** 요청이 몰리거나 배포 직후여도 새 연결은 정해진 수씩 차례로 맺습니다.
-- **업로드 큐:** 요청 스레드는 임시 파일에 받기만 하고 바로 돌아옵니다. 실제 전송은 정해진 수만큼만 백그라운드에서 하고, 일시적 실패는 다시 시도합니다.
+- **업로드 큐:** 요청 스레드는 임시 파일에 받기만 하고 바로 돌아옵니다. 실제 전송은 정해진 수만큼만 백그라운드에서 하고, 일시적 실패는 멈춘 곳부터 이어서 다시 시도합니다(8.4절).
 - **연결 유지 확인:** 60초마다 확인하고 3번 연속 응답이 없으면 끊습니다. 방화벽·NAT 가 유휴 연결을 끊는 것도 막습니다.
 
 ## 3. 증상별 조절
@@ -121,3 +121,96 @@ S2UploadQueue queue = S2UploadQueue.builder(sftp)
 - JSch 경고 로그 `세션 획득 실패 (시도 n/3) ... [Active: a, Idle: i, Max: m]`: `Active`가 `Max`에 자주 닿으면 3절 표를 따릅니다.
 - `S2UploadQueue.getQueuedCount()`: 늘기만 하면 전송이 처리량을 못 따라가는 것입니다.
 - SFTP 서버: `sshd` 프로세스 수, 메모리, 업로드 디스크 사용량, `MaxStartups`로 끊긴 연결(`/var/log/auth.log`의 `drop connection`).
+
+## 8. 대용량 업로드 (수백 MB)
+
+200~300MB 파일도 SFTP 쪽은 감당합니다. 한계는 대역폭이며(1Gbps 에서 250MB 는 약 2.3초, 회선을 꽉 채워 분당 약 26개), 그보다
+**앞단의 크기·시간 제한과 디스크**가 먼저 막힙니다.
+
+### 8.1 앞단 설정 (안 하면 SFTP 에 닿기 전에 거절됨)
+
+**Spring Boot (`application.yml`)**
+```yaml
+spring:
+  servlet:
+    multipart:
+      max-file-size: 300MB        # 기본 1MB
+      max-request-size: 310MB     # 기본 10MB
+      file-size-threshold: 0      # 받는 즉시 디스크로 (메모리에 두지 않음)
+      location: /data/upload-tmp  # 큐 임시 폴더와 같은 디스크 (transferTo 가 복사 대신 이동)
+server:
+  tomcat:
+    max-swallow-size: -1          # 크기 초과로 거절할 때도 연결을 끊지 않고 본문을 읽어 버림
+```
+
+**nginx**
+```nginx
+client_max_body_size   300m;   # 기본 1m
+client_body_timeout    300s;   # 본문 읽기 사이의 최대 공백
+proxy_request_buffering off;   # 본문을 디스크에 한 번 더 받지 않고 바로 넘김
+proxy_send_timeout     300s;
+proxy_read_timeout     300s;
+```
+로드밸런서의 유휴 시간 제한(예: AWS ALB 기본 60초)도 업로드 시간보다 길게 둡니다. 사용자 회선이 20Mbps 면 300MB 를 보내는 데만
+2분쯤 걸립니다.
+
+### 8.2 컨트롤러: 받은 파일을 옮겨서 큐에 넘기기
+
+스트림으로 넘기면 multipart 임시 파일과 큐 임시 파일이 두 벌 생깁니다. `transferTo`로 받은 파일을 그대로 큐에 넘기면 한 벌이면
+됩니다(같은 디스크면 복사가 아니라 이동).
+
+```java
+@PostMapping("/files")
+public ResponseEntity<Void> upload(@RequestParam MultipartFile file) throws IOException {
+    Path received = Files.createTempFile(Path.of("/data/upload-tmp"), "in-", ".part");
+    file.transferTo(received.toFile());   // File 버전: 같은 디스크면 옮김 (Path 버전은 복사)
+    try {
+        uploadQueue.submit(received, "/upload/2026", storedName, false, true)   // true: 끝나면 received 삭제
+                .whenComplete((size, error) -> fileService.markUploaded(id, error == null));
+    } catch (RejectedExecutionException e) {
+        Files.deleteIfExists(received);
+        return ResponseEntity.status(503).header("Retry-After", "60").build();      // 큐가 가득 참
+    }
+    return ResponseEntity.accepted().build();                                       // 접수됨 (전송은 백그라운드)
+}
+```
+
+### 8.3 큐 설정 정하기
+
+| 설정 | 정하는 법 | 예 (임시 디스크 100GB, 1Gbps, 파일 최대 300MB) |
+|---|---|---|
+| `concurrency` | 대역폭 ÷ 건당 원하는 속도. 늘려도 전체 처리량은 그대로 | 4 (건당 약 27MB/s) |
+| `maxQueued` | (임시 디스크 − 여유) ÷ 최대 파일 크기 | (100GB − 10GB) ÷ 300MB ≈ 300 |
+| `minFreeDiskBytes` | 최대 파일 크기 × 동시 접수량 정도 | 10GB |
+| `maxFileBytes` | 서비스 상한 (스트림으로 넘길 때만 적용) | 300MB |
+
+```java
+S2UploadQueue uploadQueue = S2UploadQueue.builder(sftp)
+        .concurrency(4)
+        .maxQueued(300)
+        .minFreeDiskBytes(10L << 30)
+        .maxFileBytes(300L << 20)
+        .tempDir(Path.of("/data/upload-tmp"))
+        .build();
+```
+
+### 8.4 이어 올리기
+
+큐가 다시 시도할 때 SFTP 관리자는 **멈춘 곳부터 이어 보냅니다**. 300MB 중 250MB 에서 끊겼으면 나머지 50MB 만 보냅니다.
+
+- 전송 중인 파일은 대상 옆의 숨김 파일 `.<이름>.<키>.s2part`에 쓰고, 다 받으면 대상 이름으로 바꿉니다. 그래서 다른 쪽이 덜 받은
+  파일을 읽는 일이 없습니다.
+- 부분 파일이 원본보다 크면(다른 내용) 처음부터 다시 쓰고, 다 보낸 뒤 크기가 원본과 다르면 지우고 실패로 처리합니다.
+- 큐가 업로드를 포기하면 부분 파일을 지웁니다. 다만 앱이 강제 종료되면 남을 수 있으므로 SFTP 서버에서 하루 지난 것을 지웁니다.
+  ```bash
+  find /upload -name '.*.s2part' -mmin +1440 -delete   # cron, 매일
+  ```
+- 큐 없이 직접 쓸 때: `fileManager.writeFile(path, savePath, saveName, overwrite, resumeKey)` — 실패하면 같은 `resumeKey`로 다시
+  부릅니다. 포기할 때는 `discardPartial(savePath, saveName, resumeKey)`.
+- 덮어쓰지 않을 때는 이름을 바꾸기 직전에 대상이 있는지 확인합니다. SFTP 서버는 보통 이름을 바꿀 때 기존 파일을 덮으므로, 바로 그
+  순간 다른 쪽이 같은 이름을 만들면 덮일 수 있습니다(저장 이름을 UUID 등으로 겹치지 않게 두면 문제없음).
+
+### 8.5 SFTP 서버 디스크
+
+300MB 짜리가 하루 수백 개면 하루 수십~수백 GB 가 쌓입니다. 업로드 폴더는 별도 파티션이나 쿼터에 두고 사용량 경보(예: 80%)를
+답니다. 디스크가 가득 차면 업로드만이 아니라 같은 디스크를 쓰는 서비스가 함께 멈춥니다.

@@ -326,6 +326,110 @@ public class SpringSftpFileManagerImpl implements FileManager {
         }
     }
 
+    /**
+     * 이어 쓰기: {@code .<이름>.<resumeKey>.s2part}에 쓰고(남아 있으면 그 크기만큼 건너뛰고 덧붙임), 다 받으면 대상 이름으로 바꾼다.
+     * 전송이 실패하면 부분 파일을 남겨 다음 시도가 이어 쓰게 한다.
+     */
+    @Override
+    public long writeFile(java.nio.file.Path source, String savePath, String saveName, boolean overwrite,
+            String resumeKey) {
+        if (resumeKey == null) {
+            return FileManager.super.writeFile(source, savePath, saveName, overwrite, null);
+        }
+        String target = S2FileUtil.resolveRemoteWithin(savePath, saveName);
+        String part = partPathOf(target, resumeKey);
+        SftpSession session = null;
+        try {
+            long sourceSize = java.nio.file.Files.size(source);
+            session = borrowSessionSafely();
+            String remoteDir = parentDirOf(target);
+            if (remoteDir != null) {
+                createDirectoryIfNotExists(session, remoteDir);
+            }
+            if (!overwrite && session.exists(target)) {
+                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+            }
+            var client = session.getClientInstance();
+            long offset = session.exists(part) ? client.stat(part).getSize() : 0L;
+            if (offset > sourceSize) {
+                // 다른 내용의 부분 파일: 처음부터 다시 쓴다
+                session.remove(part);
+                offset = 0L;
+            }
+            try (InputStream in = java.nio.file.Files.newInputStream(source)) {
+                if (offset > 0) {
+                    logger.info("Resuming upload: {} ({} / {} bytes)", target, offset, sourceSize);
+                    in.skipNBytes(offset);
+                    session.append(in, part);
+                } else {
+                    session.write(in, part);
+                }
+            }
+            long size = client.stat(part).getSize();
+            if (size != sourceSize) {
+                session.remove(part); // 어긋난 부분 파일은 이어 쓰면 안 되므로 지운다
+                throw new S2RuntimeException("Uploaded size " + size + " does not match the file size " + sourceSize);
+            }
+            if (!overwrite && session.exists(target)) {
+                session.remove(part);
+                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+            }
+            session.rename(part, target); // 대상이 있으면 덮어씀 (overwrite 가 아니면 바로 위에서 확인함)
+            return size;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.error("Failed to upload file (resumable): {}", target, e);
+            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
+        } finally {
+            if (session != null) {
+                try {
+                    sessionPool.returnObject(session);
+                } catch (IllegalStateException | IllegalArgumentException e) {
+                    logger.warn("Failed to return session to pool", e);
+                }
+            }
+        }
+    }
+
+    @Override
+    public void discardPartial(String savePath, String saveName, String resumeKey) {
+        if (resumeKey == null) {
+            return;
+        }
+        String part = partPathOf(S2FileUtil.resolveRemoteWithin(savePath, saveName), resumeKey);
+        SftpSession session = null;
+        try {
+            session = borrowSessionSafely();
+            if (session.exists(part)) {
+                session.remove(part);
+            }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.warn("Failed to remove the partial upload: {} ({})", part, e.toString());
+        } finally {
+            if (session != null) {
+                try {
+                    sessionPool.returnObject(session);
+                } catch (IllegalStateException | IllegalArgumentException e) {
+                    logger.warn("Failed to return session to pool", e);
+                }
+            }
+        }
+    }
+
+    /** 대상 옆의 숨김 부분 파일 경로: {@code <폴더>/.<이름>.<resumeKey>.s2part} */
+    private static String partPathOf(String target, String resumeKey) {
+        if (!resumeKey.matches("[A-Za-z0-9_-]{1,64}")) {
+            throw new IllegalArgumentException("resumeKey must be 1-64 letters, digits, '-' or '_': " + resumeKey);
+        }
+        int index = target.lastIndexOf('/');
+        return target.substring(0, index + 1) + "." + target.substring(index + 1) + "." + resumeKey + ".s2part";
+    }
+
     /** 정규화된 원격 파일 경로의 상위 폴더 (상위 폴더가 홈이면 null) */
     private static String parentDirOf(String remoteFilePath) {
         int index = remoteFilePath.lastIndexOf('/');

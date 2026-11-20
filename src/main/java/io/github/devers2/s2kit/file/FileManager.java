@@ -85,6 +85,61 @@ public interface FileManager {
     long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite);
 
     /**
+     * Writes a local file so that a later call with the same {@code resumeKey} continues where a failed call stopped
+     * instead of sending the whole file again. Remote managers write to a hidden partial file
+     * ({@code .<name>.<resumeKey>.s2part}) next to the target, keep it when the transfer fails, and rename it to
+     * {@code saveName} when it is complete. Managers without resume support (the default, and the local manager) simply
+     * write the file. {@link S2UploadQueue} uses this for its retries.
+     * <p>
+     * Without {@code overwrite}, an existing target is checked just before the rename; another writer creating the same
+     * name in that instant can still be replaced, because SFTP servers usually rename over existing files.
+     * </p>
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 로컬 파일을 쓰되, 실패한 뒤 같은 {@code resumeKey}로 다시 부르면 처음부터가 아니라 멈춘 곳부터 이어 씁니다. 원격 관리자는 대상
+     * 옆의 숨김 부분 파일({@code .<이름>.<resumeKey>.s2part})에 쓰고, 전송이 실패하면 남겨 두며, 다 받으면 {@code saveName}으로
+     * 이름을 바꿉니다. 이어 쓰기를 지원하지 않는 관리자(기본 구현, 로컬 관리자)는 그냥 씁니다. {@link S2UploadQueue}가 재시도에
+     * 씁니다.
+     * <p>
+     * 덮어쓰지 않을 때는 이름을 바꾸기 직전에 대상이 있는지 확인합니다. SFTP 서버는 보통 이름을 바꿀 때 기존 파일을 덮으므로, 바로 그
+     * 순간 다른 쪽이 같은 이름을 만들면 덮일 수 있습니다.
+     * </p>
+     * @param source    Local file to write | 쓸 로컬 파일
+     * @param savePath  Directory to store in | 저장 경로
+     * @param saveName  File name, which cannot leave {@code savePath} | 파일명 (저장 경로를 벗어날 수 없음)
+     * @param overwrite true to replace an existing file | true 면 같은 이름의 파일을 덮어씀
+     * @param resumeKey Key that identifies this upload across attempts (letters, digits, {@code -} and {@code _}; null:
+     *                  no resume) | 시도 사이에 이 업로드를 가리키는 키 (영문·숫자·{@code -}·{@code _}, null: 이어 쓰지 않음)
+     * @return Stored size in bytes | 저장된 크기 (바이트)
+     * @throws S2FileExistsException the file exists and {@code overwrite} is false | 덮어쓰지 않는데 파일이 있을 때
+     * @throws S2RuntimeException    the path is invalid or the write failed | 경로가 잘못됐거나 쓰기에 실패했을 때
+     */
+    default long writeFile(java.nio.file.Path source, String savePath, String saveName, boolean overwrite,
+            String resumeKey) {
+        try {
+            return writeFile(java.nio.file.Files.newInputStream(source), savePath, saveName, overwrite);
+        } catch (IOException e) {
+            throw new S2RuntimeException("Cannot read the file to upload: " + source, e);
+        }
+    }
+
+    /**
+     * Deletes the partial file a resumable {@link #writeFile(java.nio.file.Path, String, String, boolean, String)}
+     * left behind, when the upload is given up. Failures are only logged. Does nothing by default.
+     * <p>
+     * <b>[한국어 설명]</b>
+     * </p>
+     * 업로드를 포기할 때, 이어 쓰기용 {@link #writeFile(java.nio.file.Path, String, String, boolean, String)}가 남긴 부분 파일을
+     * 지웁니다. 실패는 기록만 합니다. 기본 구현은 아무것도 하지 않습니다.
+     * @param savePath  Directory | 저장 경로
+     * @param saveName  File name | 파일명
+     * @param resumeKey Key given to the write | 쓰기에 준 키
+     */
+    default void discardPartial(String savePath, String saveName, String resumeKey) {
+    }
+
+    /**
      * 작성된 파일로부터 데이터를 읽어온다.
      *
      * @param savePath 저장 경로

@@ -11,6 +11,10 @@
 - `S2UploadQueue`: 어떤 `FileManager`로든 정해진 동시 전송 수만큼 백그라운드에서 올립니다. 데이터를 임시 파일에 받아 두고
   `CompletableFuture`를 바로 돌려주며, 가득 차면 기다리지 않고 거절하고, 일시적 실패는 점점 늘어나는 무작위 간격으로 다시 시도하고,
   임시 파일용 디스크 여유 공간을 지킵니다.
+- 이어 올리기: `FileManager.writeFile(Path, savePath, saveName, overwrite, resumeKey)`가 숨김 파일 `.<이름>.<키>.s2part`에 쓰고
+  다 받으면 이름을 바꿉니다. 실패한 뒤 같은 키로 다시 부르면 SFTP 관리자는 나머지만 보냅니다. `discardPartial`은 부분 파일을
+  지웁니다. `S2UploadQueue`가 이 방식으로 재시도하므로 300MB 중 250MB 에서 끊긴 업로드는 나머지 50MB 만 보냅니다. 다른 관리자는
+  그냥 씁니다.
 - `SFTP-GUIDE.ko.md`: SFTP 설정별 역할, 증상별로 조절할 값, 서버 규모별 출발점.
 - `S2FileExistsException`(`S2RuntimeException` 하위): 덮어쓰지 않는 `FileManager.writeFile`에서 파일이 이미 있으면 모든 구현이
   던집니다.

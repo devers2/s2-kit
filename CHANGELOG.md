@@ -11,6 +11,10 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - `S2UploadQueue`: uploads through any `FileManager` in the background with a fixed number of parallel transfers. It
   saves the data to a temporary file and returns a `CompletableFuture` at once, rejects new uploads when full instead of
   blocking, retries temporary failures with a growing random delay, and keeps free disk space for its temporary files.
+- Resumable uploads: `FileManager.writeFile(Path, savePath, saveName, overwrite, resumeKey)` writes to a hidden
+  `.<name>.<key>.s2part` and renames it when complete; called again with the same key after a failure, the SFTP managers
+  send only the rest. `discardPartial` deletes the partial file. `S2UploadQueue` retries this way, so a 300MB upload that
+  broke at 250MB sends the last 50MB. Other managers just write the file.
 - `SFTP-GUIDE.md`: what each SFTP setting does, which to adjust for which symptom, and starting points by server size.
 - `S2FileExistsException` (a `S2RuntimeException`): thrown by every `FileManager.writeFile` when the file exists and
   overwriting was not asked for.

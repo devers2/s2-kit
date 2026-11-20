@@ -271,8 +271,10 @@ queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
      .whenComplete((size, error) -> repository.markUploaded(id, error == null));
 ```
 
-- Temporary failures are retried (3 attempts, 2s → 4s, randomized); an existing file (`S2FileExistsException`) or a bad
-  path is not. It refuses uploads when the temp disk has less than 1GB free (`minFreeDiskBytes`).
+- Temporary failures are retried (3 attempts, 2s → 4s, randomized), continuing on SFTP where the transfer stopped; an
+  existing file (`S2FileExistsException`) or a bad path is not. It refuses uploads when the temp disk has less than 1GB
+  free (`minFreeDiskBytes`).
+- Large uploads (Spring and nginx settings, sizing the queue): [SFTP-GUIDE.md §8](./SFTP-GUIDE.md#8-large-uploads-hundreds-of-mb).
 - The queue is in memory: uploads unfinished at shutdown are lost, so record each result (for example a status column).
 
 #### AOP parameters (`S2ContextUtil`)

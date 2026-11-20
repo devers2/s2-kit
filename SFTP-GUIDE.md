@@ -37,7 +37,7 @@ check that 2 app servers × 64 = 128 connections fit those limits.
   raising. Connections are opened up to the maximum; when all are busy, callers wait.
 - **Parallel new connections:** bursts and cold starts open new connections a few at a time.
 - **Upload queue:** the request thread only saves a temp file and returns; a fixed number of background transfers send
-  it and retry temporary failures.
+  it and retry temporary failures from where they stopped (section 8.4).
 - **Keep-alive:** checked every 60s; three missed replies close the connection. This also keeps firewalls and NAT from
   dropping idle connections.
 
@@ -129,3 +129,99 @@ S2UploadQueue queue = S2UploadQueue.builder(sftp)
 - `S2UploadQueue.getQueuedCount()`: if it only grows, transfers cannot keep up.
 - SFTP server: number of `sshd` processes, memory, upload disk usage, and connections dropped by `MaxStartups`
   (`drop connection` in `/var/log/auth.log`).
+
+## 8. Large uploads (hundreds of MB)
+
+The SFTP side handles 200–300MB files. Bandwidth is the limit (250MB takes about 2.3s on 1Gbps, about 26 per minute at
+full use), and **size and time limits in front of the application, and disk space,** stop uploads first.
+
+### 8.1 Front settings (otherwise uploads are rejected before reaching SFTP)
+
+**Spring Boot (`application.yml`)**
+```yaml
+spring:
+  servlet:
+    multipart:
+      max-file-size: 300MB        # default 1MB
+      max-request-size: 310MB     # default 10MB
+      file-size-threshold: 0      # write to disk at once (not memory)
+      location: /data/upload-tmp  # same disk as the queue temp folder (transferTo moves instead of copying)
+server:
+  tomcat:
+    max-swallow-size: -1          # read and drop the body of a rejected upload instead of resetting the connection
+```
+
+**nginx**
+```nginx
+client_max_body_size   300m;   # default 1m
+client_body_timeout    300s;   # longest gap between body reads
+proxy_request_buffering off;   # pass the body on instead of saving it to disk again
+proxy_send_timeout     300s;
+proxy_read_timeout     300s;
+```
+Also raise the load balancer idle timeout (AWS ALB: 60s by default) above the upload time. At 20Mbps a user needs about
+two minutes just to send 300MB.
+
+### 8.2 Controller: move the received file into the queue
+
+Passing a stream creates two copies (the multipart temp file and the queue temp file). Handing over the file received
+with `transferTo` needs one (a move, not a copy, on the same disk).
+
+```java
+@PostMapping("/files")
+public ResponseEntity<Void> upload(@RequestParam MultipartFile file) throws IOException {
+    Path received = Files.createTempFile(Path.of("/data/upload-tmp"), "in-", ".part");
+    file.transferTo(received.toFile());   // File overload: moves on the same disk (the Path overload copies)
+    try {
+        uploadQueue.submit(received, "/upload/2026", storedName, false, true)   // true: delete received when done
+                .whenComplete((size, error) -> fileService.markUploaded(id, error == null));
+    } catch (RejectedExecutionException e) {
+        Files.deleteIfExists(received);
+        return ResponseEntity.status(503).header("Retry-After", "60").build();      // queue is full
+    }
+    return ResponseEntity.accepted().build();                                       // accepted; sent in the background
+}
+```
+
+### 8.3 Sizing the queue
+
+| Setting | How to choose | Example (100GB temp disk, 1Gbps, files up to 300MB) |
+|---|---|---|
+| `concurrency` | bandwidth ÷ speed wanted per transfer; more does not raise total throughput | 4 (about 27MB/s each) |
+| `maxQueued` | (temp disk − free margin) ÷ largest file | (100GB − 10GB) ÷ 300MB ≈ 300 |
+| `minFreeDiskBytes` | about largest file × uploads accepted at once | 10GB |
+| `maxFileBytes` | service limit (applies when a stream is submitted) | 300MB |
+
+```java
+S2UploadQueue uploadQueue = S2UploadQueue.builder(sftp)
+        .concurrency(4)
+        .maxQueued(300)
+        .minFreeDiskBytes(10L << 30)
+        .maxFileBytes(300L << 20)
+        .tempDir(Path.of("/data/upload-tmp"))
+        .build();
+```
+
+### 8.4 Resuming
+
+When the queue retries, the SFTP managers **continue where the transfer stopped**: if 300MB broke at 250MB, only the
+last 50MB is sent.
+
+- The file being sent is written to a hidden `.<name>.<key>.s2part` next to the target and renamed when complete, so
+  nobody reads a half-written file.
+- A partial file larger than the source (other content) is written again from the start; if the size differs from the
+  source after sending, it is deleted and the attempt fails.
+- The queue deletes the partial file when it gives an upload up. One can remain after a forced shutdown, so delete old
+  ones on the SFTP server:
+  ```bash
+  find /upload -name '.*.s2part' -mmin +1440 -delete   # cron, daily
+  ```
+- Without the queue: `fileManager.writeFile(path, savePath, saveName, overwrite, resumeKey)`; call again with the same
+  `resumeKey` after a failure, and `discardPartial(savePath, saveName, resumeKey)` when giving up.
+- Without `overwrite`, the target is checked just before the rename. SFTP servers usually rename over existing files,
+  so a file created under the same name in that instant can be replaced (unique stored names, such as UUIDs, avoid it).
+
+### 8.5 SFTP server disk
+
+Hundreds of 300MB files a day add tens to hundreds of GB a day. Keep the upload folder on its own partition or quota
+with a usage alert (for example 80%). A full disk stops not only uploads but every service using that disk.

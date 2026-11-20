@@ -289,19 +289,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             channel.connect(CHANNEL_CONNECT_TIMEOUT);
 
             // 디렉토리 존재 여부 확인 및 생성 (TTL 캐시로 네트워크 호출 최소화)
-            if (remoteDir != null && !isDirCached(remoteDir)) {
-                try {
-                    createDirectoryIfNotExists(channel, remoteDir);
-                    putDirCache(remoteDir);
-                } catch (Exception e) {
-                    if (logger.isErrorEnabled()) {
-                        logger.error("원격 디렉토리 생성 실패: {}", remoteDir, e);
-                    } else {
-                        logger.error("원격 디렉토리 생성 실패: {}", remoteDir);
-                    }
-                    throw new S2RuntimeException("원격 디렉토리 생성 실패: " + remoteDir);
-                }
-            }
+            ensureRemoteDir(channel, remoteDir);
 
             // 기존 파일 존재 여부 확인
             if (!overwrite && exists(channel, remoteFileFullPath)) {
@@ -486,6 +474,131 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
                 }
             }
         }
+    }
+
+    /**
+     * 대상 파일의 폴더가 없으면 만든다 (TTL 캐시로 네트워크 호출 최소화).
+     */
+    private void ensureRemoteDir(ChannelSftp channel, String remoteDir) {
+        if (remoteDir == null || isDirCached(remoteDir)) {
+            return;
+        }
+        try {
+            createDirectoryIfNotExists(channel, remoteDir);
+            putDirCache(remoteDir);
+        } catch (Exception e) {
+            if (logger.isErrorEnabled()) {
+                logger.error("원격 디렉토리 생성 실패: {}", remoteDir, e);
+            } else {
+                logger.error("원격 디렉토리 생성 실패: {}", remoteDir);
+            }
+            throw new S2RuntimeException("원격 디렉토리 생성 실패: " + remoteDir);
+        }
+    }
+
+    /**
+     * 이어 쓰기: {@code .<이름>.<resumeKey>.s2part}에 쓰고(남아 있으면 그 크기만큼 건너뛰고 이어 씀), 다 받으면 대상 이름으로 바꾼다.
+     * 전송이 실패하면 부분 파일을 남겨 다음 시도가 이어 쓰게 한다.
+     */
+    @Override
+    public long writeFile(java.nio.file.Path source, String savePath, String saveName, boolean overwrite,
+            String resumeKey) {
+        if (resumeKey == null) {
+            return FileManager.super.writeFile(source, savePath, saveName, overwrite, null);
+        }
+        var target = S2FileUtil.resolveRemoteWithin(savePath, saveName);
+        var part = partPathOf(target, resumeKey);
+        Session session = null;
+        ChannelSftp channel = null;
+        var monitor = new SizeTrackingMonitor();
+        try {
+            var sourceSize = java.nio.file.Files.size(source);
+            session = jschSessionFactory.getSession();
+            channel = (ChannelSftp) session.openChannel("sftp");
+            channel.connect(CHANNEL_CONNECT_TIMEOUT);
+            ensureRemoteDir(channel, parentDirOf(target));
+
+            if (!overwrite && exists(channel, target)) {
+                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+            }
+            var resume = exists(channel, part);
+            if (resume && channel.lstat(part).getSize() > sourceSize) {
+                // 다른 내용의 부분 파일: 처음부터 다시 쓴다
+                channel.rm(part);
+                resume = false;
+            }
+            if (resume) {
+                logger.info("업로드를 이어서 보냅니다: {} ({} / {} bytes)", target, channel.lstat(part).getSize(), sourceSize);
+            }
+
+            var watchdog = startTransferIdleWatchdog(channel, monitor, TRANSFER_IDLE_MILLIS,
+                    TRANSFER_IDLE_CHECK_INTERVAL_MILLIS);
+            // RESUME: 서버의 부분 파일 크기만큼 원본을 건너뛰고 그 뒤부터 덧붙인다
+            try (var in = java.nio.file.Files.newInputStream(source)) {
+                channel.put(in, part, monitor, resume ? ChannelSftp.RESUME : ChannelSftp.OVERWRITE);
+            } finally {
+                watchdog.cancel(false);
+            }
+
+            var size = channel.lstat(part).getSize();
+            if (size != sourceSize) {
+                channel.rm(part); // 어긋난 부분 파일은 이어 쓰면 안 되므로 지운다
+                throw new S2RuntimeException("Uploaded size " + size + " does not match the file size " + sourceSize);
+            }
+            if (!overwrite && exists(channel, target)) {
+                channel.rm(part);
+                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+            }
+            try {
+                channel.rename(part, target); // posix-rename 을 지원하면 대상을 원자적으로 바꾼다
+            } catch (SftpException e) {
+                if (!overwrite || !exists(channel, target)) {
+                    throw e;
+                }
+                // posix-rename 이 없는 서버는 대상이 있으면 이름을 바꾸지 못한다: 지우고 다시 바꾼다
+                channel.rm(target);
+                channel.rename(part, target);
+            }
+            return size;
+        } catch (S2FileExistsException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Failed to upload file (resumable): {}", saveName, e);
+            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
+        } finally {
+            if (channel != null && channel.isConnected()) {
+                channel.disconnect();
+            }
+            if (session != null) {
+                jschSessionFactory.returnSession(session);
+            }
+        }
+    }
+
+    @Override
+    public void discardPartial(String savePath, String saveName, String resumeKey) {
+        if (resumeKey == null) {
+            return;
+        }
+        var part = partPathOf(S2FileUtil.resolveRemoteWithin(savePath, saveName), resumeKey);
+        Session session = null;
+        try {
+            session = jschSessionFactory.getSession();
+            removeQuietly(session, null, part);
+        } catch (Exception e) {
+            logger.warn("부분 파일을 지우지 못했습니다: {} ({})", part, e.toString());
+        } finally {
+            jschSessionFactory.returnSession(session);
+        }
+    }
+
+    /** 대상 옆의 숨김 부분 파일 경로: {@code <폴더>/.<이름>.<resumeKey>.s2part} */
+    private static String partPathOf(String target, String resumeKey) {
+        if (!resumeKey.matches("[A-Za-z0-9_-]{1,64}")) {
+            throw new IllegalArgumentException("resumeKey must be 1-64 letters, digits, '-' or '_': " + resumeKey);
+        }
+        var index = target.lastIndexOf('/');
+        return target.substring(0, index + 1) + "." + target.substring(index + 1) + "." + resumeKey + ".s2part";
     }
 
     /**

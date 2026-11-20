@@ -190,6 +190,42 @@ class SftpIntegrationTest {
         assertTrue(openConnections.get() <= count, "connections left open: " + openConnections.get());
     }
 
+    /**
+     * Resumable writes continue a partial file, start over when it cannot be continued, keep the overwrite rule, and
+     * can be discarded | 이어 쓰기는 부분 파일 뒤에 이어 쓰고, 이어 쓸 수 없으면 처음부터 쓰며, 덮어쓰기 규칙을 지키고, 지울 수 있음
+     */
+    static void assertResume(FileManager files, String savePath, Path remoteDir) throws IOException {
+        Files.createDirectories(remoteDir);
+        var source = Files.writeString(temp.resolve("resume-source-" + savePath.substring(1)), "ABCDEFGHIJ");
+
+        // A different prefix proves the first 5 bytes were not sent again | 앞부분을 다르게 두어 다시 보내지 않았음을 증명
+        Files.writeString(remoteDir.resolve(".r.txt.key1.s2part"), "abcde");
+        assertEquals(10, files.writeFile(source, savePath, "r.txt", false, "key1"));
+        assertEquals("abcdeFGHIJ", read(remoteDir.resolve("r.txt")));
+        assertFalse(Files.exists(remoteDir.resolve(".r.txt.key1.s2part")), "the partial file becomes the target");
+
+        // A partial file larger than the source cannot be continued | 원본보다 큰 부분 파일은 이어 쓸 수 없음
+        Files.writeString(remoteDir.resolve(".r2.txt.key2.s2part"), "0123456789012345");
+        assertEquals(10, files.writeFile(source, savePath, "r2.txt", false, "key2"));
+        assertEquals("ABCDEFGHIJ", read(remoteDir.resolve("r2.txt")));
+
+        var e = assertThrows(S2RuntimeException.class, () -> files.writeFile(source, savePath, "r.txt", false, "key3"));
+        assertTrue(causes(e).contains("이미 존재"), causes(e));
+        assertEquals("abcdeFGHIJ", read(remoteDir.resolve("r.txt")), "not overwritten");
+        assertEquals(10, files.writeFile(source, savePath, "r.txt", true, "key4"));
+        assertEquals("ABCDEFGHIJ", read(remoteDir.resolve("r.txt")), "overwritten when asked");
+
+        Files.writeString(remoteDir.resolve(".d.txt.key5.s2part"), "abc");
+        files.discardPartial(savePath, "d.txt", "key5");
+        assertFalse(Files.exists(remoteDir.resolve(".d.txt.key5.s2part")));
+
+        assertThrows(IllegalArgumentException.class, () -> files.writeFile(source, savePath, "x.txt", false, "../bad"));
+        assertEquals(10, files.writeFile(source, savePath, "plain.txt", false, null), "null key writes normally");
+        try (var listing = Files.list(remoteDir)) {
+            assertTrue(listing.noneMatch(f -> f.getFileName().toString().endsWith(".s2part")), "no partial files left");
+        }
+    }
+
     /** Waits until the server has at least the given number of connections | 서버 연결 수가 주어진 수 이상이 될 때까지 기다림 */
     private static void awaitConnectionsAtLeast(int count) throws InterruptedException {
         var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
@@ -325,6 +361,13 @@ class SftpIntegrationTest {
                 awaitConnectionsAtLeast(baseline + 3);
             }
             awaitConnectionsAtMost(baseline);
+        }
+
+        @Test
+        void resumesAPartialUpload() throws IOException {
+            try (var sftp = manager(knownHosts.toString(), false)) {
+                assertResume(sftp, "/resume-jsch", root.resolve("resume-jsch"));
+            }
         }
 
         @Test
@@ -468,6 +511,13 @@ class SftpIntegrationTest {
         void bulkUploadsStayWithinThePool() throws Exception {
             try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
                 assertBulkUploads(context.getBean(SpringSftpFileManagerImpl.class), "/bulk-spring", 2);
+            }
+        }
+
+        @Test
+        void resumesAPartialUpload() throws IOException {
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
+                assertResume(context.getBean(SpringSftpFileManagerImpl.class), "/resume-spring", root.resolve("resume-spring"));
             }
         }
 

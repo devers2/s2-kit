@@ -269,8 +269,10 @@ queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
      .whenComplete((size, error) -> repository.markUploaded(id, error == null));
 ```
 
-- 일시적 실패는 다시 시도합니다(3번, 2초 → 4초, 무작위로 흩뜨림). 같은 이름의 파일(`S2FileExistsException`)이나 잘못된 경로는
-  다시 시도하지 않습니다. 임시 폴더 디스크 여유가 1GB 미만이면 업로드를 거절합니다(`minFreeDiskBytes`).
+- 일시적 실패는 다시 시도하며(3번, 2초 → 4초, 무작위로 흩뜨림) SFTP 에서는 멈춘 곳부터 이어 보냅니다. 같은 이름의
+  파일(`S2FileExistsException`)이나 잘못된 경로는 다시 시도하지 않습니다. 임시 폴더 디스크 여유가 1GB 미만이면 업로드를
+  거절합니다(`minFreeDiskBytes`).
+- 대용량 업로드(Spring·nginx 설정, 큐 크기 정하기): [SFTP-GUIDE.ko.md 8절](./SFTP-GUIDE.ko.md#8-대용량-업로드-수백-mb).
 - 큐는 메모리에만 있어 종료 때 끝나지 않은 업로드는 사라집니다. 결과를 (상태 컬럼 등에) 기록하십시오.
 
 #### AOP 파라미터 (`S2ContextUtil`)

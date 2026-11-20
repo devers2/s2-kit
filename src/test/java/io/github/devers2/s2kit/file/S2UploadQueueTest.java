@@ -42,6 +42,19 @@ class S2UploadQueueTest {
         volatile CountDownLatch hold = new CountDownLatch(0);
         volatile int failFirst = 0;
         volatile RuntimeException failure = new S2RuntimeException("connection reset");
+        final java.util.List<String> resumeKeys = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final AtomicInteger discarded = new AtomicInteger();
+
+        @Override
+        public long writeFile(Path source, String savePath, String saveName, boolean overwrite, String resumeKey) {
+            resumeKeys.add(resumeKey);
+            return FileManager.super.writeFile(source, savePath, saveName, overwrite, resumeKey);
+        }
+
+        @Override
+        public void discardPartial(String savePath, String saveName, String resumeKey) {
+            discarded.incrementAndGet();
+        }
 
         @Override
         public boolean isRemote() {
@@ -133,6 +146,11 @@ class S2UploadQueueTest {
         try (var queue = queue(manager).maxAttempts(3).build()) {
             assertEquals(2L, queue.submit(data("ok"), dir.toString(), "r.txt").get(10, TimeUnit.SECONDS));
             assertEquals(3, manager.calls.get());
+            // Every attempt carries the same key, so SFTP continues where the last one stopped | 모든 시도가 같은 키라 이어 씀
+            assertEquals(3, manager.resumeKeys.size());
+            assertEquals(1, new java.util.HashSet<>(manager.resumeKeys).size(), manager.resumeKeys.toString());
+            assertNotNull(manager.resumeKeys.get(0));
+            assertEquals(0, manager.discarded.get(), "nothing to discard after success");
         }
     }
 
@@ -145,6 +163,7 @@ class S2UploadQueueTest {
                     () -> queue.submit(data("x"), dir.toString(), "m.txt").get(10, TimeUnit.SECONDS));
             assertEquals("connection reset", e.getCause().getMessage());
             assertEquals(3, manager.calls.get());
+            assertEquals(1, manager.discarded.get(), "the partial file is discarded when the upload is given up");
             assertEquals(0, queue.getQueuedCount());
         }
     }
