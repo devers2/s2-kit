@@ -285,7 +285,7 @@ queue.submit(multipartFile.getInputStream(), "/upload/2026", storedName)
 @ExceptionHandler(Exception.class)
 ResponseEntity<String> handle(Exception e, Locale locale) {
     return ResponseEntity.badRequest()
-            .body(S2Localizable.findLocalizedMessage(e, locale).orElse("오류가 발생했습니다."));
+            .body(S2Localizable.localizedMessageOrDefault(e, locale)); // 키가 없으면 일반 문구
 }
 ```
 

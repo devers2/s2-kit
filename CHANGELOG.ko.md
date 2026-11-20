@@ -22,7 +22,7 @@
 
 - 사용자에게 보일 수 있는 실패의 문구를 요청 언어(영어·한국어)로: 이미 있는 파일, 없는 파일, 전송 실패, 바쁜 파일 서버, 가득
   차거나 닫힌 업로드 큐, 너무 큰 업로드, 디스크 부족, 읽을 수 없거나 너무 큰 이미지, 암호·보안 제한이 있는 PDF. s2-util
-  `S2Localizable`(`S2Localizable.findLocalizedMessage(e, locale)`)을 쓰며 예외 메시지는 영어로 둡니다. 새 예외 종류는 기존 종류를
+  `S2Localizable`(`S2Localizable.localizedMessageOrDefault(e, locale)`)을 쓰며 예외 메시지는 영어로 둡니다. 새 예외 종류는 기존 종류를
   유지합니다: `S2UploadRejectedException`은 `RejectedExecutionException`, `S2LocalizedIOException`은 `IOException`.
 - `SpringSftpFileManagerImpl`이 `sftp.download-idle-timeout-millis`(기본 60초) 동안 읽지 않은 다운로드 스트림을 닫고 세션을
   반납합니다(`S2SftpFileManagerImpl`과 같음). 예전에는 호출 측이 닫지 않은 스트림이 35분 동안 세션을 붙잡았습니다.

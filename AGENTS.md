@@ -29,7 +29,7 @@ Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push �
 | Javadoc·JSDoc | 영문 설명 → `<p><b>[한국어 설명]</b></p>` → 한글 설명 (기존 형식) |
 | 그 밖의 주석(`//`, 메서드 내부 블록 주석, 빌드 스크립트) | 한국어 |
 | 커밋 메시지 | 한국어. 접두어(`feat:`, `fix:`, `docs:`, `build:` …)·식별자는 영어 — 예: `fix: 날짜 검증에서 null 처리 누락 수정` |
-| 예외 메시지 | 영어 (화면에 보일 실패는 `S2FileExistsException`처럼 예외 종류로 구분해 앱이 자기 메시지로 보여 준다) |
+| 예외 메시지 | 영어, 원인 분석용 세부 정보 포함. **사용자가 행동으로 해결할 수 있는 실패**(다시 시도·파일 바꾸기·크기 줄이기 등)에만 `S2KitMessages.key(...)` 를 붙이고 `messages(_ko).properties` 에 문구를 둔다. 개발자 실수·설정·내부 오류에는 붙이지 않는다(사용자에게는 `S2Localizable.localizedMessageOrDefault` 의 일반 문구) |
 | 로그 | s2-core 처럼 `if (S2Util.isKorean()) { 한국어 } else { 영어 }` 로 함께 쓰거나 영어만 (`MessageLanguageTest`가 검사) |
 | 이슈·PR 답변 | 작성자의 언어 |
 

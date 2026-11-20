@@ -24,7 +24,7 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - User-facing messages in the request's language (English and Korean) for failures a user may see: existing files,
   missing files, failed transfers, busy file server, full or closed upload queue, too-large uploads, short disk space,
   unreadable or too-large images, password-protected or restricted PDFs. They use s2-util `S2Localizable`
-  (`S2Localizable.findLocalizedMessage(e, locale)`); exception messages stay English. New types keep the old ones:
+  (`S2Localizable.localizedMessageOrDefault(e, locale)`); exception messages stay English. New types keep the old ones:
   `S2UploadRejectedException` is a `RejectedExecutionException`, `S2LocalizedIOException` an `IOException`.
 - `SpringSftpFileManagerImpl` closes a download stream left unread for `sftp.download-idle-timeout-millis` (60s by
   default) and returns its session, as `S2SftpFileManagerImpl` does; before, a stream the caller forgot to close held its

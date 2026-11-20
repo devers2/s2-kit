@@ -287,7 +287,7 @@ language (Korean and English included; s2-util `S2Localizable`):
 @ExceptionHandler(Exception.class)
 ResponseEntity<String> handle(Exception e, Locale locale) {
     return ResponseEntity.badRequest()
-            .body(S2Localizable.findLocalizedMessage(e, locale).orElse("Something went wrong."));
+            .body(S2Localizable.localizedMessageOrDefault(e, locale)); // no key: a generic message
 }
 ```
 
