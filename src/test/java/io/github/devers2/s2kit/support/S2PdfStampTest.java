@@ -417,10 +417,10 @@ class S2PdfStampTest {
 
         var options = StampOptions.builder().pageNumber(PageNumber.of()).build();
         var ex = assertThrows(IOException.class, () -> S2PdfUtil.stamp(encryptedPdf, options));
-        assertTrue(ex.getMessage().contains("암호화 또는 권한 제한"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("encryption or permission restrictions"), ex.getMessage());
 
         var mergeEx = assertThrows(IOException.class, () -> S2PdfUtil.mergePdfPaths(encryptedPdf));
-        assertTrue(mergeEx.getMessage().contains("암호화 또는 권한 제한"), mergeEx.getMessage());
+        assertTrue(mergeEx.getMessage().contains("encryption or permission restrictions"), mergeEx.getMessage());
     }
 
     @Test

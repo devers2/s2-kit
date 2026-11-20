@@ -41,7 +41,7 @@
 
 | 증상 (로그·예외) | 원인 | 조절 |
 |---|---|---|
-| `최대 재시도 횟수 초과`(JSch), `SFTP 세션 획득 실패`(Spring)가 가끔, 짧게 몰릴 때만 | 순간적으로 연결이 모두 사용 중 | 연결을 기다리는 시간을 조금 늘림 |
+| `Retries exhausted`(JSch), `Cannot get an SFTP session`(Spring)이 가끔, 짧게 몰릴 때만 | 순간적으로 연결이 모두 사용 중 | 연결을 기다리는 시간을 조금 늘림 |
 | 위 실패가 자주 나고, 서버 CPU·메모리·대역폭에 여유가 있음 | 동시 사용량이 최대 연결 수보다 많음 | 최대 연결 수를 64 → 128 로 올림 (서버 한도 확인, 4절) |
 | 큰 파일·일괄 업로드 때만 위 실패가 남 | 대역폭이 한계라 전송이 오래 연결을 붙잡음 | 풀은 그대로 두고 `S2UploadQueue`로 보냄. 큐 동시 수는 오히려 낮춤 |
 | `Upload queue is full` | 큐에 쌓인 업로드가 상한을 넘음 | 사용자에게 다시 시도 안내. 계속되면 서버에 여유가 있을 때만 큐 동시 수를 올리고, `maxQueued`를 올림 |
@@ -118,7 +118,8 @@ S2UploadQueue queue = S2UploadQueue.builder(sftp)
 
 ## 7. 지켜볼 것
 
-- JSch 경고 로그 `세션 획득 실패 (시도 n/3) ... [Active: a, Idle: i, Max: m]`: `Active`가 `Max`에 자주 닿으면 3절 표를 따릅니다.
+- JSch 경고 로그 `세션 획득 실패 (시도 n/3) ... [Active: a, Idle: i, Max: m]`(한국어 로케일이 아니면
+  `Cannot get a session (attempt n/3)`): `Active`가 `Max`에 자주 닿으면 3절 표를 따릅니다.
 - `S2UploadQueue.getQueuedCount()`: 늘기만 하면 전송이 처리량을 못 따라가는 것입니다.
 - SFTP 서버: `sshd` 프로세스 수, 메모리, 업로드 디스크 사용량, `MaxStartups`로 끊긴 연결(`/var/log/auth.log`의 `drop connection`).
 

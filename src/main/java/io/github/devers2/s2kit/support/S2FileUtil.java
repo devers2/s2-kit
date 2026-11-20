@@ -238,7 +238,7 @@ public class S2FileUtil {
      */
     public static boolean makeDirectory(String path) {
         if (path == null || path.isBlank()) {
-            throw new IllegalArgumentException("디렉토리 경로가 비었습니다.");
+            throw new IllegalArgumentException("The directory path is empty");
         }
         return makeDirectory(Paths.get(path));
     }
@@ -260,7 +260,7 @@ public class S2FileUtil {
             Files.createDirectories(path);
             return true;
         } catch (IOException e) {
-            throw new S2RuntimeException("디렉토리 생성 실패: " + path + " (" + e + ")", e);
+            throw new S2RuntimeException("Cannot create the directory: " + path + " (" + e + ")", e);
         }
     }
 
@@ -488,7 +488,7 @@ public class S2FileUtil {
             }
         }
         if (!failures.isEmpty()) {
-            var error = new S2RuntimeException("삭제 실패: " + delPath + " (" + failures.get(0) + ")", failures.get(0));
+            var error = new S2RuntimeException("Cannot delete: " + delPath + " (" + failures.get(0) + ")", failures.get(0));
             failures.stream().skip(1).forEach(error::addSuppressed);
             throw error;
         }
@@ -533,7 +533,11 @@ public class S2FileUtil {
                             try {
                                 Files.deleteIfExists(file);
                             } catch (IOException e) {
-                                logger.error("파일 삭제 실패: {} {}", file, e.getMessage(), e);
+                                if (S2Util.isKorean()) {
+                                    logger.error("파일 삭제 실패: {} {}", file, e.getMessage(), e);
+                                } else {
+                                    logger.error("Cannot delete the file: {} {}", file, e.getMessage(), e);
+                                }
                             }
                         }
                     }
@@ -551,19 +555,31 @@ public class S2FileUtil {
                     } catch (DirectoryNotEmptyException e) {
                         // 디렉토리가 비어 있지 않으면 삭제하지 않음
                     } catch (IOException e) {
-                        logger.error("디렉토리 삭제 실패: {} {}", dir, e.getMessage(), e);
+                        if (S2Util.isKorean()) {
+                            logger.error("디렉토리 삭제 실패: {} {}", dir, e.getMessage(), e);
+                        } else {
+                            logger.error("Cannot delete the directory: {} {}", dir, e.getMessage(), e);
+                        }
                     }
                     return FileVisitResult.CONTINUE;
                 }
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
-                    logger.error("파일 접근 실패: {} {}", file, exc.getMessage(), exc);
+                    if (S2Util.isKorean()) {
+                        logger.error("파일 접근 실패: {} {}", file, exc.getMessage(), exc);
+                    } else {
+                        logger.error("Cannot access the file: {} {}", file, exc.getMessage(), exc);
+                    }
                     return FileVisitResult.CONTINUE;
                 }
             });
         } catch (IOException e) {
-            logger.error("디렉토리 탐색 실패: {} {}", deletionPath, e.getMessage(), e);
+            if (S2Util.isKorean()) {
+                logger.error("디렉토리 탐색 실패: {} {}", deletionPath, e.getMessage(), e);
+            } else {
+                logger.error("Cannot walk the directory: {} {}", deletionPath, e.getMessage(), e);
+            }
         }
     }
 
@@ -576,7 +592,7 @@ public class S2FileUtil {
      */
     public static void deleteTemporaryFilesOlderThan(Duration deletionThreshold, String filePrefixToDelete) {
         if (filePrefixToDelete == null || filePrefixToDelete.isBlank()) {
-            throw new IllegalArgumentException("임시 파일 삭제에는 접두사가 필요합니다 (다른 프로그램의 임시 파일 보호).");
+            throw new IllegalArgumentException("A prefix is required to delete temporary files (protects other programs' temporary files)");
         }
         var temporaryPath = FileSystems.getDefault().getPath(System.getProperty("java.io.tmpdir"));
         deleteFilesOlderThan(temporaryPath, deletionThreshold, filePrefixToDelete);
@@ -607,7 +623,7 @@ public class S2FileUtil {
      */
     public static Reader fileToReader(String fileFullPath) {
         if (fileFullPath == null || fileFullPath.isBlank()) {
-            throw new IllegalArgumentException("파일 경로가 비었습니다.");
+            throw new IllegalArgumentException("The file path is empty");
         }
         return fileToReader(Paths.get(fileFullPath));
     }
@@ -624,7 +640,7 @@ public class S2FileUtil {
         try {
             return Files.newBufferedReader(fileFullPath, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new S2RuntimeException("파일을 열지 못했습니다: " + fileFullPath + " (" + e + ")", e);
+            throw new S2RuntimeException("Cannot open the file: " + fileFullPath + " (" + e + ")", e);
         }
     }
 
@@ -637,7 +653,7 @@ public class S2FileUtil {
      */
     public static InputStream fileToInputStream(String fileFullPath) {
         if (fileFullPath == null || fileFullPath.isBlank()) {
-            throw new IllegalArgumentException("파일 경로가 비었습니다.");
+            throw new IllegalArgumentException("The file path is empty");
         }
         return fileToInputStream(Paths.get(fileFullPath));
     }
@@ -652,12 +668,12 @@ public class S2FileUtil {
     public static InputStream fileToInputStream(Path fileFullPath) {
         Objects.requireNonNull(fileFullPath, "fileFullPath");
         if (!Files.isRegularFile(fileFullPath)) {
-            throw new S2RuntimeException("파일이 존재하지 않습니다: " + fileFullPath);
+            throw new S2RuntimeException("File not found: " + fileFullPath);
         }
         try {
             return Files.newInputStream(fileFullPath);
         } catch (IOException e) {
-            throw new S2RuntimeException("파일을 열지 못했습니다: " + fileFullPath + " (" + e + ")", e);
+            throw new S2RuntimeException("Cannot open the file: " + fileFullPath + " (" + e + ")", e);
         }
     }
 
@@ -776,7 +792,7 @@ public class S2FileUtil {
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(sourceStream);
             }
-            throw new S2RuntimeException("임시 파일 생성 실패 (" + e + ")", e);
+            throw new S2RuntimeException("Cannot create a temporary file (" + e + ")", e);
         }
         closeableToFile(sourceStream, tempFile, shouldCloseStream); // Deletes the file itself on failure | 실패하면 파일을 지움
         return tempFile;
@@ -817,7 +833,7 @@ public class S2FileUtil {
      */
     public static Path streamToFile(InputStream sourceStream, String targetFilePath, boolean shouldCloseStream) {
         if (targetFilePath == null || targetFilePath.isBlank()) {
-            throw new IllegalArgumentException("대상 파일 경로가 비었습니다.");
+            throw new IllegalArgumentException("The target file path is empty");
         }
         var targetFile = Paths.get(targetFilePath);
         streamToFile(sourceStream, targetFile, shouldCloseStream);
@@ -836,7 +852,7 @@ public class S2FileUtil {
      */
     public static Path streamToFile(Reader sourceReader, String targetFilePath, boolean shouldCloseStream) {
         if (targetFilePath == null || targetFilePath.isBlank()) {
-            throw new IllegalArgumentException("대상 파일 경로가 비었습니다.");
+            throw new IllegalArgumentException("The target file path is empty");
         }
         var targetFile = Paths.get(targetFilePath);
         streamToFile(sourceReader, targetFile, shouldCloseStream);
@@ -919,7 +935,7 @@ public class S2FileUtil {
                 }
                 return Files.size(targetFile);
             }
-            throw new IllegalArgumentException("InputStream 또는 Reader 만 지원합니다: " + sourceStream.getClass());
+            throw new IllegalArgumentException("Only InputStream or Reader is supported: " + sourceStream.getClass());
         } catch (IOException e) {
             // Do not leave a truncated file behind | 쓰다 만 파일을 남기지 않음
             try {
@@ -927,7 +943,7 @@ public class S2FileUtil {
             } catch (IOException suppressed) {
                 e.addSuppressed(suppressed);
             }
-            throw new S2RuntimeException("파일 저장 실패: " + targetFile + " (" + e + ")", e);
+            throw new S2RuntimeException("Cannot save the file: " + targetFile + " (" + e + ")", e);
         } finally {
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(sourceStream);
@@ -1111,7 +1127,7 @@ public class S2FileUtil {
         try {
             return Files.size(sourceFile);
         } catch (IOException e) {
-            throw new S2RuntimeException("파일 크기 확인 실패: " + sourceFile + " (" + e + ")", e);
+            throw new S2RuntimeException("Cannot read the file size: " + sourceFile + " (" + e + ")", e);
         }
     }
 
@@ -1124,7 +1140,11 @@ public class S2FileUtil {
         try {
             delete(path);
         } catch (RuntimeException e) {
-            logger.warn("임시 파일 삭제 실패: {} ({})", path, e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.warn("임시 파일 삭제 실패: {} ({})", path, e.getMessage());
+            } else {
+                logger.warn("Cannot delete the temporary file: {} ({})", path, e.getMessage());
+            }
         }
     }
 
@@ -1314,7 +1334,11 @@ public class S2FileUtil {
             try {
                 mimeType = S2Util.cast(Files.probeContentType(sourceFile), "");
             } catch (IOException e) {
-                logger.error("MIME 타입 추출 실패: ", e);
+                if (S2Util.isKorean()) {
+                    logger.error("MIME 타입 추출 실패: ", e);
+                } else {
+                    logger.error("Cannot detect the MIME type: ", e);
+                }
                 mimeType = "";
             }
             if ((mimeType.isEmpty() || mimeType.equals("application/octet-stream")) && Files.isRegularFile(sourceFile)) {
@@ -1374,7 +1398,7 @@ public class S2FileUtil {
             }
             return "";
         } catch (IOException e) {
-            throw new S2RuntimeException("파일 형식을 판별할 수 없습니다: " + sourceFile, e);
+            throw new S2RuntimeException("Cannot detect the file type: " + sourceFile, e);
         }
     }
 
@@ -1576,7 +1600,7 @@ public class S2FileUtil {
     public static void zipFiles(List<Entry<String, InputStream>> sourceFileList, OutputStream outputStream)
             throws IOException {
         if (S2Util.isEmpty(sourceFileList) || outputStream == null) {
-            throw new IllegalArgumentException("대상 파일 및 출력 스트림이 없습니다.");
+            throw new IllegalArgumentException("Neither a target file nor an output stream was given");
         }
 
         // ZIP 출력 스트림 생성
@@ -1712,7 +1736,7 @@ public class S2FileUtil {
             var ch = value.charAt(i);
             if (ch == '%') {
                 if (i + 2 >= value.length()) {
-                    throw new IllegalArgumentException("잘못된 퍼센트 인코딩: " + value);
+                    throw new IllegalArgumentException("Invalid percent encoding: " + value);
                 }
                 out.write(Integer.parseInt(value.substring(i + 1, i + 3), 16)); // NumberFormatException is an IllegalArgumentException
                 i += 2;
@@ -1772,7 +1796,7 @@ public class S2FileUtil {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 if (++entries > maxEntries) {
-                    throw new IOException("압축 파일의 항목 수가 제한(" + maxEntries + ")을 넘습니다.");
+                    throw new IOException("The archive has more entries than allowed (" + maxEntries + ")");
                 }
                 var newFile = resolveWithin(baseDir, entry.getName());
                 if (entry.isDirectory()) {
@@ -1786,7 +1810,7 @@ public class S2FileUtil {
                     while ((len = zis.read(buffer)) > 0) {
                         totalBytes += len;
                         if (totalBytes > maxBytes) {
-                            throw new IOException("압축 해제 크기가 제한(" + maxBytes + " bytes)을 넘습니다.");
+                            throw new IOException("The extracted size exceeds the limit (" + maxBytes + " bytes)");
                         }
                         bos.write(buffer, 0, len);
                     }
@@ -1806,13 +1830,13 @@ public class S2FileUtil {
     public static Path resolveWithin(Path baseDir, String name) {
         Objects.requireNonNull(baseDir, "baseDir");
         if (name == null || name.isBlank()) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+            throw new S2RuntimeException("Invalid file path: " + name);
         }
         var base = baseDir.toAbsolutePath().normalize();
         // Treat backslashes as separators on every OS so "..\x" is also caught | 모든 OS 에서 역슬래시도 구분자로 보아 "..\x"도 차단
         var target = base.resolve(name.replace('\\', '/')).normalize();
         if (!target.startsWith(base) || target.equals(base)) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+            throw new S2RuntimeException("Invalid file path: " + name);
         }
         return target;
     }
@@ -1828,18 +1852,18 @@ public class S2FileUtil {
      */
     public static String resolveRemoteWithin(String baseDir, String name) {
         if (baseDir == null || name == null || name.isBlank()) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+            throw new S2RuntimeException("Invalid file path: " + name);
         }
         var nameSlashed = name.replace('\\', '/');
         if (nameSlashed.startsWith("/")) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+            throw new S2RuntimeException("Invalid file path: " + name);
         }
         var base = normalizeRemotePath(baseDir);
         var target = normalizeRemotePath(base.isEmpty() ? nameSlashed : base + "/" + nameSlashed);
         var prefix = base.isEmpty() || base.endsWith("/") ? base : base + "/";
         if (target == null || target.isEmpty() || target.equals("..") || target.startsWith("../")
                 || !target.startsWith(prefix) || target.length() == prefix.length()) {
-            throw new S2RuntimeException("잘못된 파일 경로입니다: " + name);
+            throw new S2RuntimeException("Invalid file path: " + name);
         }
         return target;
     }
@@ -1974,13 +1998,13 @@ public class S2FileUtil {
         Objects.requireNonNull(clazz, "clazz");
         var codeSource = clazz.getProtectionDomain().getCodeSource();
         if (codeSource == null || codeSource.getLocation() == null) {
-            throw new IllegalStateException("클래스의 위치를 알 수 없습니다: " + clazz.getName());
+            throw new IllegalStateException("Cannot find the location of the class: " + clazz.getName());
         }
         try {
             var location = Paths.get(codeSource.getLocation().toURI());
             return (Files.isRegularFile(location) ? location.getParent() : location).toString();
         } catch (java.net.URISyntaxException | IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
-            throw new IllegalStateException("파일 시스템 경로가 아닌 위치입니다: " + codeSource.getLocation(), e);
+            throw new IllegalStateException("Not a file system location: " + codeSource.getLocation(), e);
         }
     }
 

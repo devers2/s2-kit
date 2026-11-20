@@ -40,6 +40,7 @@ import org.apache.commons.pool2.impl.AbandonedConfig;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -232,7 +233,11 @@ public class JschSessionFactory {
         this.knownHostsPath = knownHostsPath;
         this.allowUnknownHosts = allowUnknownHosts;
         if (allowUnknownHosts && (knownHostsPath == null || knownHostsPath.isBlank())) {
-            logger.warn("SFTP 호스트 키 검증이 꺼져 있습니다(allowUnknownHosts=true). 중간자 공격에 노출될 수 있습니다: {}:{}", host, port);
+            if (S2Util.isKorean()) {
+                logger.warn("SFTP 호스트 키 검증이 꺼져 있습니다(allowUnknownHosts=true). 중간자 공격에 노출될 수 있습니다: {}:{}", host, port);
+            } else {
+                logger.warn("SFTP host key checking is off (allowUnknownHosts=true); connections are open to man-in-the-middle attacks: {}:{}", host, port);
+            }
         }
 
         this.sessionMaxTotal = sessionMaxTotal != null ? sessionMaxTotal : DEFAULT_SESSION_MAX_TOTAL;
@@ -254,7 +259,11 @@ public class JschSessionFactory {
             try {
                 connects = Math.max(1, Integer.parseInt(prop.trim()));
             } catch (NumberFormatException e) {
-                logger.warn("s2.sftp.maxConcurrentConnects 값을 읽지 못해 기본값 {} 을 씁니다: {}", DEFAULT_MAX_CONCURRENT_CONNECTS, prop);
+                if (S2Util.isKorean()) {
+                    logger.warn("s2.sftp.maxConcurrentConnects 값을 읽지 못해 기본값 {} 을 씁니다: {}", DEFAULT_MAX_CONCURRENT_CONNECTS, prop);
+                } else {
+                    logger.warn("Cannot read s2.sftp.maxConcurrentConnects; using the default {}: {}", DEFAULT_MAX_CONCURRENT_CONNECTS, prop);
+                }
             }
         }
         this.maxConcurrentConnects = connects;
@@ -275,17 +284,29 @@ public class JschSessionFactory {
         Runnable task = () -> {
             try {
                 pool.preparePool();
-                logger.info("SFTP 세션을 미리 열었습니다: {}:{} [{}]", host, port, getPoolStatus());
+                if (S2Util.isKorean()) {
+                    logger.info("SFTP 세션을 미리 열었습니다: {}:{} [{}]", host, port, getPoolStatus());
+                } else {
+                    logger.info("Opened SFTP sessions in advance: {}:{} [{}]", host, port, getPoolStatus());
+                }
             } catch (Exception e) {
                 if (!closed) {
-                    logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", host, port, e.toString());
+                    if (S2Util.isKorean()) {
+                        logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", host, port, e.toString());
+                    } else {
+                        logger.warn("Cannot open SFTP sessions in advance (will connect on request): {}:{} - {}", host, port, e.toString());
+                    }
                 }
             }
         };
         try {
             S2ThreadUtil.getCommonExecutor().execute(task);
         } catch (RejectedExecutionException e) {
-            logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+            } else {
+                logger.debug("Skipping opening sessions in advance (executor refused): {}", e.getMessage());
+            }
         }
     }
 
@@ -415,9 +436,15 @@ public class JschSessionFactory {
                 if (Files.isReadable(defaultKnownHosts)) {
                     jsch.setKnownHosts(defaultKnownHosts.toString());
                 } else {
-                    logger.warn("known_hosts 파일이 없어 SFTP 호스트 키를 검증할 수 없으므로 연결이 거부됩니다: {}. "
-                            + "knownHostsPath 를 지정하거나, 신뢰할 수 있는 내부망이라면 allowUnknownHosts=true 로 설정하세요.",
-                            defaultKnownHosts);
+                    if (S2Util.isKorean()) {
+                        logger.warn("known_hosts 파일이 없어 SFTP 호스트 키를 검증할 수 없으므로 연결이 거부됩니다: {}. "
+                                + "knownHostsPath 를 지정하거나, 신뢰할 수 있는 내부망이라면 allowUnknownHosts=true 로 설정하세요.",
+                                defaultKnownHosts);
+                    } else {
+                        logger.warn("No known_hosts file to verify the SFTP host key, so connections will be refused: {}. "
+                                + "Set knownHostsPath, or allowUnknownHosts=true on a trusted internal network.",
+                                defaultKnownHosts);
+                    }
                 }
                 session.setConfig("StrictHostKeyChecking", "yes");
             }
@@ -469,10 +496,19 @@ public class JschSessionFactory {
                     throw new IllegalStateException("SFTP session factory is closed", e);
                 }
                 if (retryCount + 1 < MAX_RETRY_COUNT) {
-                    logger.warn("세션 획득 실패 (시도 {}/{}) - {} [{}]", retryCount + 1, MAX_RETRY_COUNT, e.toString(),
-                            getPoolStatus());
+                    if (S2Util.isKorean()) {
+                        logger.warn("세션 획득 실패 (시도 {}/{}) - {} [{}]", retryCount + 1, MAX_RETRY_COUNT, e.toString(),
+                                getPoolStatus());
+                    } else {
+                        logger.warn("Cannot get a session (attempt {}/{}) - {} [{}]", retryCount + 1, MAX_RETRY_COUNT, e.toString(),
+                                getPoolStatus());
+                    }
                 } else {
-                    logger.error("세션 획득 실패 (시도 {}/{}) [{}]", retryCount + 1, MAX_RETRY_COUNT, getPoolStatus(), e);
+                    if (S2Util.isKorean()) {
+                        logger.error("세션 획득 실패 (시도 {}/{}) [{}]", retryCount + 1, MAX_RETRY_COUNT, getPoolStatus(), e);
+                    } else {
+                        logger.error("Cannot get a session (attempt {}/{}) [{}]", retryCount + 1, MAX_RETRY_COUNT, getPoolStatus(), e);
+                    }
                 }
 
                 // 모든 세션이 사용 중이라 기다리다 시간이 다 된 것은 정상적인 과부하이므로 풀을 다시 만들지 않는다. 다시 만들면
@@ -492,7 +528,7 @@ public class JschSessionFactory {
         }
 
         throw new Exception(
-                "최대 재시도 횟수 초과 - 마지막 오류: " + (lastException != null ? lastException.getMessage() : "알 수 없는 오류"),
+                "Retries exhausted - last error: " + (lastException != null ? lastException.getMessage() : "unknown error"),
                 lastException);
     }
 
@@ -501,7 +537,11 @@ public class JschSessionFactory {
             try {
                 sessionPool.invalidateObject(session);
             } catch (Exception e) {
-                logger.warn("세션 무효화 실패: {}", e.getMessage());
+                if (S2Util.isKorean()) {
+                    logger.warn("세션 무효화 실패: {}", e.getMessage());
+                } else {
+                    logger.warn("Cannot invalidate the session: {}", e.getMessage());
+                }
             } finally {
                 try {
                     session.disconnect();
@@ -518,18 +558,30 @@ public class JschSessionFactory {
         // synchronized 로 직렬화되어 들어온 뒤에도, 직전 호출이 이미 최근에 풀을 새로 만들었다면
         // (다른 스레드가 동시에 같은 고갈 상태를 감지해 대기했던 경우) 중복 초기화를 건너뛴다.
         if (System.currentTimeMillis() - lastPoolResetAtMillis < MIN_RESET_INTERVAL_MILLIS) {
-            logger.info("세션 풀이 최근에 이미 초기화되어 중복 초기화를 건너뜁니다.");
+            if (S2Util.isKorean()) {
+                logger.info("세션 풀이 최근에 이미 초기화되어 중복 초기화를 건너뜁니다.");
+            } else {
+                logger.info("The session pool was reset moments ago; skipping another reset.");
+            }
             return;
         }
 
         try {
-            logger.info("세션 풀 강제 초기화 시작 - 현재 상태: {}", getPoolStatus());
+            if (S2Util.isKorean()) {
+                logger.info("세션 풀 강제 초기화 시작 - 현재 상태: {}", getPoolStatus());
+            } else {
+                logger.info("Resetting the session pool - current state: {}", getPoolStatus());
+            }
 
             // 1. 기존 풀 완전 종료
             try {
                 sessionPool.close();
             } catch (Exception e) {
-                logger.warn("기존 세션 풀 종료 중 오류: {}", e.getMessage());
+                if (S2Util.isKorean()) {
+                    logger.warn("기존 세션 풀 종료 중 오류: {}", e.getMessage());
+                } else {
+                    logger.warn("Error while closing the old session pool: {}", e.getMessage());
+                }
             }
 
             // 2. 새로운 세션 풀 생성
@@ -544,12 +596,24 @@ public class JschSessionFactory {
             try {
                 newPool.preparePool();
             } catch (Exception e) {
-                logger.error("초기 세션 생성 실패: {}", e.getMessage(), e);
+                if (S2Util.isKorean()) {
+                    logger.error("초기 세션 생성 실패: {}", e.getMessage(), e);
+                } else {
+                    logger.error("Cannot create the initial sessions: {}", e.getMessage(), e);
+                }
             }
 
-            logger.info("세션 풀 강제 초기화 완료 - 현재 상태: {}", getPoolStatus());
+            if (S2Util.isKorean()) {
+                logger.info("세션 풀 강제 초기화 완료 - 현재 상태: {}", getPoolStatus());
+            } else {
+                logger.info("Session pool reset - current state: {}", getPoolStatus());
+            }
         } catch (Exception e) {
-            logger.error("세션 풀 강제 초기화 중 오류 발생: {}", e.getMessage(), e);
+            if (S2Util.isKorean()) {
+                logger.error("세션 풀 강제 초기화 중 오류 발생: {}", e.getMessage(), e);
+            } else {
+                logger.error("Error while resetting the session pool: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -569,7 +633,11 @@ public class JschSessionFactory {
             sessionPool.returnObject(session);
         } catch (Exception e) {
             // 재초기화 전의 풀에서 빌린 세션 등: 이 풀 소속이 아니므로 연결만 끊는다
-            logger.debug("세션을 풀에 반납하지 못해 연결을 끊습니다: {}", e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.debug("세션을 풀에 반납하지 못해 연결을 끊습니다: {}", e.getMessage());
+            } else {
+                logger.debug("Cannot return the session to the pool; disconnecting it: {}", e.getMessage());
+            }
             try {
                 session.disconnect();
             } catch (Exception ignored) {

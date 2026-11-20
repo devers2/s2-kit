@@ -29,6 +29,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Paths;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.impl.S2FileManagerImpl;
 import io.github.devers2.s2util.log.S2LogManager;
@@ -192,18 +193,18 @@ public interface FileManager {
     static S2RemoteFile downloadRemoteFile(String fileUrl, String savePath, String saveName, FileManager fileManager) {
         if (fileUrl == null || fileUrl.isBlank() || savePath == null || savePath.isBlank() || saveName == null
                 || saveName.isBlank()) {
-            throw new IllegalArgumentException("fileUrl, savePath, saveName 은 필수입니다.");
+            throw new IllegalArgumentException("fileUrl, savePath and saveName are required");
         }
         URL url;
         try {
             var uri = new URI(fileUrl.trim());
             var scheme = uri.getScheme();
             if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-                throw new IllegalArgumentException("http/https URL 만 허용됩니다: " + fileUrl);
+                throw new IllegalArgumentException("Only http/https URLs are allowed: " + fileUrl);
             }
             url = uri.toURL();
         } catch (URISyntaxException | MalformedURLException e) {
-            throw new IllegalArgumentException("유효하지 않은 URL 입니다: " + fileUrl, e);
+            throw new IllegalArgumentException("Invalid URL: " + fileUrl, e);
         }
 
         // Check the save path before sending the request | 요청 전에 저장 경로 검사
@@ -218,7 +219,7 @@ public interface FileManager {
             connection.setReadTimeout(DOWNLOAD_READ_TIMEOUT_MILLIS);
             var status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
-                throw new S2RuntimeException("원격 파일 요청 실패 [HTTP " + status + "]: " + fileUrl);
+                throw new S2RuntimeException("Remote file request failed [HTTP " + status + "]: " + fileUrl);
             }
             var remoteFile = new S2RemoteFile(connection);
             try (var inputStream = connection.getInputStream()) {
@@ -227,8 +228,12 @@ public interface FileManager {
             }
             return remoteFile;
         } catch (IOException e) {
-            logger.error("원격 파일 다운로드 실패: {}", fileUrl, e);
-            throw new S2RuntimeException("원격 파일을 다운로드할 수 없습니다: " + fileUrl, e);
+            if (S2Util.isKorean()) {
+                logger.error("원격 파일 다운로드 실패: {}", fileUrl, e);
+            } else {
+                logger.error("Cannot download the remote file: {}", fileUrl, e);
+            }
+            throw new S2RuntimeException("Cannot download the remote file: " + fileUrl, e);
         } finally {
             if (connection != null) {
                 connection.disconnect();

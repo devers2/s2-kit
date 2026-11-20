@@ -144,7 +144,7 @@ class S2EncryptionUtilTest {
             raw[0] = 0x7f; // ~2 billion iterations
             String forged = S2EncryptionUtil.FORMAT_PREFIX + Base64.getEncoder().encodeToString(raw);
             var e = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(forged, PASSWORD));
-            assertTrue(e.getMessage().contains("반복 횟수"));
+            assertTrue(e.getMessage().contains("iteration count"));
         }
     }
 
@@ -244,11 +244,11 @@ class S2EncryptionUtilTest {
         void formatsDoNotMix() throws Exception {
             var byPassword = S2EncryptionUtil.encrypt("x", PASSWORD);
             var e1 = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(byPassword, key));
-            assertTrue(e1.getMessage().contains("비밀번호 방식"), e1.getMessage());
+            assertTrue(e1.getMessage().contains("encrypted with a password"), e1.getMessage());
 
             var byKey = S2EncryptionUtil.encrypt("x", key);
             var e2 = assertThrows(GeneralSecurityException.class, () -> S2EncryptionUtil.decrypt(byKey, PASSWORD));
-            assertTrue(e2.getMessage().contains("키 방식"), e2.getMessage());
+            assertTrue(e2.getMessage().contains("encrypted with a key"), e2.getMessage());
             assertFalse(S2EncryptionUtil.isLegacyFormat(byKey));
         }
 
@@ -302,7 +302,7 @@ class S2EncryptionUtilTest {
             var withoutOldKey = S2EncryptionUtil.KeyRing.of("2027", newKey);
             assertEquals("value", withoutOldKey.decrypt(moved));
             var e = assertThrows(GeneralSecurityException.class, () -> withoutOldKey.decrypt(old));
-            assertTrue(e.getMessage().contains("등록되지 않은 키 이름입니다: default"), e.getMessage());
+            assertTrue(e.getMessage().contains("Unknown key name: default"), e.getMessage());
         }
 
         @Test

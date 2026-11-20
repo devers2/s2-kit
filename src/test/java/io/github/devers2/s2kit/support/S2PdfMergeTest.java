@@ -126,7 +126,7 @@ class S2PdfMergeTest {
             doc.save(restricted.toFile());
         }
         var e = assertThrows(IOException.class, () -> S2PdfUtil.mergePdfPaths(restricted, pdf("ok.pdf", "OK")));
-        assertTrue(e.getMessage().contains("암호화 또는 권한 제한"), e.getMessage());
+        assertTrue(e.getMessage().contains("encryption or permission restrictions"), e.getMessage());
     }
 
     @Test

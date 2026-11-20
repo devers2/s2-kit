@@ -431,9 +431,9 @@ public class S2HashUtil {
             mac.init(new SecretKeySpec(secret, "HmacSHA256"));
             return bytesToHex(mac.doFinal(data));
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("HmacSHA256 을 지원하지 않는 JRE 입니다.", e);
+            throw new IllegalStateException("HmacSHA256 is not supported by this JRE", e);
         } catch (InvalidKeyException e) {
-            throw new IllegalArgumentException("유효하지 않은 비밀 키입니다.", e);
+            throw new IllegalArgumentException("Invalid secret key", e);
         }
     }
 
@@ -506,7 +506,7 @@ public class S2HashUtil {
         try (InputStream inputStream = S2StreamUtil.getBufferedInputStream(Files.newInputStream(input))) {
             return generateHashFromStream(algorithm, inputStream, S2StreamUtil.getBufferSize(Files.size(input)));
         } catch (IOException e) {
-            throw new S2RuntimeException(algorithm + " 해시 실패 [Path]: " + input, e);
+            throw new S2RuntimeException(algorithm + " hash failed [Path]: " + input, e);
         }
     }
 
@@ -519,7 +519,7 @@ public class S2HashUtil {
         try {
             return generateHashFromStream(algorithm, input, null);
         } catch (IOException e) {
-            throw new S2RuntimeException(algorithm + " 해시 실패 [InputStream]", e);
+            throw new S2RuntimeException(algorithm + " hash failed [InputStream]", e);
         } finally {
             if (shouldCloseStream) {
                 S2StreamUtil.closeStream(input);
@@ -549,7 +549,7 @@ public class S2HashUtil {
             return MessageDigest.getInstance(algorithm);
         } catch (NoSuchAlgorithmException e) {
             // SHA-256/512 are mandatory in every JRE | 모든 JRE 필수 알고리즘
-            throw new IllegalStateException(algorithm + " 을 지원하지 않는 JRE 입니다.", e);
+            throw new IllegalStateException(algorithm + " is not supported by this JRE", e);
         }
     }
 
@@ -588,7 +588,7 @@ public class S2HashUtil {
         try (InputStream inputStream = S2StreamUtil.getBufferedInputStream(Files.newInputStream(input))) {
             return generateXXHash64FromStream(seed, S2StreamUtil.getBufferSize(Files.size(input)), false, inputStream);
         } catch (IOException e) {
-            throw new S2RuntimeException("XXHash64 해시 실패 [Path]: " + input, e);
+            throw new S2RuntimeException("XXHash64 hash failed [Path]: " + input, e);
         }
     }
 
@@ -622,13 +622,13 @@ public class S2HashUtil {
      */
     public static String generateXXHash64(long seed, boolean shouldCloseStream, InputStream... inputs) {
         if (S2Util.isEmpty(inputs)) {
-            throw new IllegalArgumentException("해시할 InputStream 이 없습니다.");
+            throw new IllegalArgumentException("No InputStream to hash");
         }
 
         try {
             return generateXXHash64FromStream(seed, null, shouldCloseStream, inputs);
         } catch (IOException e) {
-            throw new S2RuntimeException("XXHash64 해시 실패 [InputStream]", e);
+            throw new S2RuntimeException("XXHash64 hash failed [InputStream]", e);
         }
     }
 

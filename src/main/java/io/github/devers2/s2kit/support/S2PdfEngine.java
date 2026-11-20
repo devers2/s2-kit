@@ -119,8 +119,8 @@ final class S2PdfEngine {
      */
     static void requireFontFor(String content, boolean hasFont) throws IOException {
         if (!hasFont && content != null && HANGUL_OR_CJK.matcher(content).find()) {
-            throw new IOException("한글(CJK)을 표시할 폰트가 없습니다. S2PdfUtil.setDefaultFont(Path)로 한글 TTF 폰트를 지정하거나, "
-                    + "서버에 한글 폰트(예: fonts-nanum 의 NanumGothic.ttf)를 설치하십시오. 자동 탐색 경로: " + S2PdfUtil.SYSTEM_FONT_CANDIDATES);
+            throw new IOException("No font can draw Korean (CJK) text. Set a Korean TTF font with S2PdfUtil.setDefaultFont(Path), or "
+                    + "install a Korean font on the server (for example NanumGothic.ttf from fonts-nanum). Paths searched: " + S2PdfUtil.SYSTEM_FONT_CANDIDATES);
         }
     }
 
@@ -140,11 +140,19 @@ final class S2PdfEngine {
                 var path = Path.of(candidate);
                 try {
                     if (Files.isReadable(path)) {
-                        logger.info("PDF 기본 폰트로 시스템 폰트를 사용합니다: {}", path);
+                        if (S2Util.isKorean()) {
+                            logger.info("PDF 기본 폰트로 시스템 폰트를 사용합니다: {}", path);
+                        } else {
+                            logger.info("Using a system font as the default PDF font: {}", path);
+                        }
                         return new FontSource(candidate, Files.readAllBytes(path));
                     }
                 } catch (IOException | RuntimeException e) {
-                    logger.warn("시스템 폰트를 읽지 못했습니다: {} ({})", path, e.getMessage());
+                    if (S2Util.isKorean()) {
+                        logger.warn("시스템 폰트를 읽지 못했습니다: {} ({})", path, e.getMessage());
+                    } else {
+                        logger.warn("Cannot read the system font: {} ({})", path, e.getMessage());
+                    }
                 }
             }
             return null;
@@ -161,7 +169,7 @@ final class S2PdfEngine {
     static void setDefaultFont(Path ttfFile) throws IOException {
         var bytes = Files.readAllBytes(Objects.requireNonNull(ttfFile, "ttfFile"));
         if (bytes.length == 0) {
-            throw new IOException("빈 폰트 파일입니다: " + ttfFile);
+            throw new IOException("Empty font file: " + ttfFile);
         }
         defaultFont = new FontSource(ttfFile.toString(), bytes);
     }
@@ -185,7 +193,7 @@ final class S2PdfEngine {
     private static FontSource loadClasspathFont(Class<?> clazz, String resourcePath) throws IOException {
         try (var in = clazz.getResourceAsStream(resourcePath)) {
             if (in == null) {
-                throw new IOException("폰트 리소스를 찾을 수 없습니다: " + resourcePath + " (기준 클래스: " + clazz.getName() + ")");
+                throw new IOException("Font resource not found: " + resourcePath + " (relative to class " + clazz.getName() + ")");
             }
             return new FontSource(resourcePath, in.readAllBytes());
         }
@@ -249,7 +257,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfFile)) {
             return document.getNumberOfPages();
         } catch (IOException e) {
-            logger.error("PDF 페이지 수 조회 오류[File]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF 페이지 수 조회 오류[File]: ", e);
+            } else {
+                logger.error("PDF page count error [File]: ", e);
+            }
             return 0;
         }
     }
@@ -277,12 +289,20 @@ final class S2PdfEngine {
                         pageCount[0] = document.getNumberOfPages();
                     }
                 } catch (IOException e) {
-                    logger.error("PDF 페이지 수 조회 오류[InputStream1]: ", e);
+                    if (S2Util.isKorean()) {
+                        logger.error("PDF 페이지 수 조회 오류[InputStream1]: ", e);
+                    } else {
+                        logger.error("PDF page count error [InputStream1]: ", e);
+                    }
                 }
                 return null;
             }, shouldCloseStream);
         } catch (IOException e) {
-            logger.error("PDF 페이지 수 조회 오류[InputStream2]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF 페이지 수 조회 오류[InputStream2]: ", e);
+            } else {
+                logger.error("PDF page count error [InputStream2]: ", e);
+            }
         }
         return pageCount[0];
     }
@@ -316,7 +336,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfData)) {
             return document.getNumberOfPages();
         } catch (IOException e) {
-            logger.error("PDF 페이지 수 조회 오류[byteArray]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF 페이지 수 조회 오류[byteArray]: ", e);
+            } else {
+                logger.error("PDF page count error [byteArray]: ", e);
+            }
             return 0;
         }
     }
@@ -336,7 +360,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfFile.toFile())) {
             hasNextPage = pdfToImage(document, pageNo, imagePath, dpi, imageFormat);
         } catch (IOException e) {
-            logger.error("PDF to Image 변환 오류[Path]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image 변환 오류[Path]: ", e);
+            } else {
+                logger.error("PDF to image conversion error [Path]: ", e);
+            }
         }
         return hasNextPage;
     }
@@ -360,13 +388,21 @@ final class S2PdfEngine {
                 try (var document = Loader.loadPDF(tempFile.toFile())) {
                     hasNextPage.set(pdfToImage(document, pageNo, imagePath, dpi, imageFormat));
                 } catch (IOException e) {
-                    logger.error("PDF to Image 변환 오류[InputStream1]: ", e);
+                    if (S2Util.isKorean()) {
+                        logger.error("PDF to Image 변환 오류[InputStream1]: ", e);
+                    } else {
+                        logger.error("PDF to image conversion error [InputStream1]: ", e);
+                    }
                 }
 
                 return null;
             }, shouldCloseStream);
         } catch (IOException e) {
-            logger.error("PDF to Image 변환 오류[InputStream2]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image 변환 오류[InputStream2]: ", e);
+            } else {
+                logger.error("PDF to image conversion error [InputStream2]: ", e);
+            }
         }
         return hasNextPage.get();
     }
@@ -386,7 +422,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfData)) {
             hasNextPage = pdfToImage(document, pageNo, imagePath, dpi, imageFormat);
         } catch (IOException e) {
-            logger.error("PDF to Image 변환 오류[byteArray]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image 변환 오류[byteArray]: ", e);
+            } else {
+                logger.error("PDF to image conversion error [byteArray]: ", e);
+            }
         }
         return hasNextPage;
     }
@@ -447,7 +487,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfFile.toFile())) {
             result = pdfToImage(document, pageNo, dpi, imageFormat, hasNextPageConsumer);
         } catch (IOException e) {
-            logger.error("PDF to Image InputStream 변환 오류[Path]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image InputStream 변환 오류[Path]: ", e);
+            } else {
+                logger.error("PDF to image InputStream conversion error [Path]: ", e);
+            }
         }
         return result;
     }
@@ -471,13 +515,21 @@ final class S2PdfEngine {
                 try (var document = Loader.loadPDF(tempFile.toFile())) {
                     result.set(pdfToImage(document, pageNo, dpi, imageFormat, hasNextPageConsumer));
                 } catch (IOException e) {
-                    logger.error("PDF to Image InputStream 변환 오류[InputStream1]: ", e);
+                    if (S2Util.isKorean()) {
+                        logger.error("PDF to Image InputStream 변환 오류[InputStream1]: ", e);
+                    } else {
+                        logger.error("PDF to image InputStream conversion error [InputStream1]: ", e);
+                    }
                 }
 
                 return null;
             }, shouldCloseStream);
         } catch (IOException e) {
-            logger.error("PDF to Image InputStream 변환 오류[InputStream2]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image InputStream 변환 오류[InputStream2]: ", e);
+            } else {
+                logger.error("PDF to image InputStream conversion error [InputStream2]: ", e);
+            }
         }
         return result.get();
     }
@@ -498,7 +550,11 @@ final class S2PdfEngine {
         try (var document = Loader.loadPDF(pdfData)) {
             result = pdfToImage(document, pageNo, dpi, imageFormat, hasNextPageConsumer);
         } catch (IOException e) {
-            logger.error("PDF to Image InputStream 변환 오류[byteArray]: ", e);
+            if (S2Util.isKorean()) {
+                logger.error("PDF to Image InputStream 변환 오류[byteArray]: ", e);
+            } else {
+                logger.error("PDF to image InputStream conversion error [byteArray]: ", e);
+            }
         }
         return result;
     }
@@ -782,7 +838,7 @@ final class S2PdfEngine {
         Integer applyCount = options.getNumberOfPagesToApply();
         if (applyCount != null && (applyCount < 1 || applyCount > totalPages)) {
             throw new IllegalArgumentException(
-                    "적용할 쪽 수는 1 이상, 전체 쪽 수(" + totalPages + ") 이하여야 합니다: " + applyCount);
+                    "The number of pages to apply must be between 1 and the page count (" + totalPages + "): " + applyCount);
         }
         int count = (applyCount != null) ? applyCount : totalPages;
         int startIdx = totalPages - count;
@@ -805,11 +861,15 @@ final class S2PdfEngine {
                 var size = watermark.drawSize(imgW, imgH);
                 watermarkSize = size;
             } catch (Exception e) {
-                logger.error("워터마크 이미지 변환 실패: ", e);
+                if (S2Util.isKorean()) {
+                    logger.error("워터마크 이미지 변환 실패: ", e);
+                } else {
+                    logger.error("Cannot convert the watermark image: ", e);
+                }
                 if (e instanceof IOException ioe) {
                     throw ioe;
                 }
-                throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
+                throw new IOException("Cannot read the watermark image: " + e.getMessage(), e);
             }
         }
 
@@ -1245,7 +1305,11 @@ final class S2PdfEngine {
                 fontCache.put(fontFile, loaded);
                 return loaded;
             } catch (Exception e) {
-                logger.warn("폰트 파일 로드 실패, 기본 폰트로 대체: " + fontFile, e);
+                if (S2Util.isKorean()) {
+                    logger.warn("폰트 파일 로드 실패, 기본 폰트로 대체: " + fontFile, e);
+                } else {
+                    logger.warn("Cannot load the font file; using the default font: " + fontFile, e);
+                }
             }
         }
         if (fontCache.containsKey(DEFAULT_FONT_KEY)) {
@@ -1258,7 +1322,11 @@ final class S2PdfEngine {
                 font = PDType0Font.load(document, new ByteArrayInputStream(source.bytes()));
             }
         } catch (IOException | RuntimeException e) {
-            logger.warn("기본 폰트 로드 실패, HELVETICA 로 대체: {}", e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.warn("기본 폰트 로드 실패, HELVETICA 로 대체: {}", e.getMessage());
+            } else {
+                logger.warn("Cannot load the default font; using HELVETICA: {}", e.getMessage());
+            }
         }
         if (font == null) {
             font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
@@ -1676,7 +1744,7 @@ final class S2PdfEngine {
      */
     private static InputStream mergeFiles(List<File> files) throws IOException {
         if (files.isEmpty()) {
-            throw new IllegalArgumentException("병합할 문서가 없습니다.");
+            throw new IllegalArgumentException("No documents to merge");
         }
         var merger = new PDFMergerUtility();
         for (var file : files) {
@@ -2019,7 +2087,11 @@ final class S2PdfEngine {
             // Keep the original when re-encoding did not make it smaller | 다시 넣어도 작아지지 않으면 원본 유지
             return shrunk.getCOSObject().getLength() < cos.getLength() ? shrunk : null;
         } catch (IOException | RuntimeException e) {
-            logger.warn("PDF 안의 이미지를 줄이지 못해 그대로 둡니다: {}", e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.warn("PDF 안의 이미지를 줄이지 못해 그대로 둡니다: {}", e.getMessage());
+            } else {
+                logger.warn("Cannot shrink an image in the PDF; keeping it as is: {}", e.getMessage());
+            }
             return null;
         }
     }
@@ -2039,7 +2111,7 @@ final class S2PdfEngine {
         withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new IOException("이미지 해상도가 너무 큽니다: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
             }
             return null;
         });
@@ -2049,7 +2121,7 @@ final class S2PdfEngine {
         return withImageReader(bytes, reader -> {
             var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
             if (pixels > MAX_IMAGE_PIXELS) {
-                throw new IOException("이미지 해상도가 너무 큽니다: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
             }
             return reader.read(0);
         });
@@ -2064,8 +2136,8 @@ final class S2PdfEngine {
             var readers = input == null ? null : ImageIO.getImageReaders(input);
             if (readers == null || !readers.hasNext()) {
                 throw new IOException(isWebp(bytes)
-                        ? "WebP 이미지를 읽으려면 com.twelvemonkeys.imageio:imageio-webp 를 의존성에 추가하십시오."
-                        : "지원되지 않는 이미지 포맷이거나 손상된 이미지 파일입니다. (지원: " + String.join(", ", ImageIO.getReaderFormatNames()) + ")");
+                        ? "Add com.twelvemonkeys.imageio:imageio-webp to the dependencies to read WebP images"
+                        : "Unsupported image format or damaged image file (supported: " + String.join(", ", ImageIO.getReaderFormatNames()) + ")");
             }
             var reader = readers.next();
             try {
@@ -2097,7 +2169,7 @@ final class S2PdfEngine {
             assertDocumentAccessible(doc, sourceHint);
         } catch (org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException e) {
             var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : pdfFile.getName();
-            throw new IOException("암호로 보호된 PDF 문서는 처리할 수 없습니다: " + name + " (암호를 해제한 후 다시 시도하십시오)", e);
+            throw new IOException("Cannot process a password-protected PDF: " + name + " (remove the password and try again)", e);
         }
     }
 
@@ -2115,9 +2187,9 @@ final class S2PdfEngine {
         if (document.isEncrypted()) {
             var permission = document.getCurrentAccessPermission();
             if (permission != null && !permission.canExtractContent()) {
-                var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : "PDF 문서";
-                throw new IOException("암호화 또는 권한 제한으로 인해 처리할 수 없는 PDF 문서입니다: " + name
-                        + " (문서 보안 또는 인쇄/추출 제한을 해제한 후 다시 시도하십시오)");
+                var name = S2Util.isNotEmpty(sourceHint) ? sourceHint : "the PDF";
+                throw new IOException("Cannot process a PDF with encryption or permission restrictions: " + name
+                        + " (remove the document security or print/extract restrictions and try again)");
             }
         }
     }
@@ -2183,7 +2255,7 @@ final class S2PdfEngine {
                 image = LosslessFactory.createFromImage(document, decodeImage(watermark.image));
             }
         } catch (IOException e) {
-            throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
+            throw new IOException("Cannot read the watermark image: " + e.getMessage(), e);
         }
         var size = watermark.drawSize(image.getWidth(), image.getHeight());
         var state = new org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState();

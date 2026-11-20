@@ -142,7 +142,7 @@ class SftpIntegrationTest {
             throws IOException {
         assertEquals(3, files.writeFile(data("one"), savePath, "same.txt"));
         var e = assertThrows(S2RuntimeException.class, () -> files.writeFile(data("two"), savePath, "same.txt"));
-        assertTrue(causes(e).contains("이미 존재"), causes(e));
+        assertTrue(causes(e).contains("already exists"), causes(e));
         assertEquals("one", stored.get(), "a refused write must not change the file");
 
         assertEquals(5, files.writeFile(data("three"), savePath, "same.txt", true));
@@ -210,7 +210,7 @@ class SftpIntegrationTest {
         assertEquals("ABCDEFGHIJ", read(remoteDir.resolve("r2.txt")));
 
         var e = assertThrows(S2RuntimeException.class, () -> files.writeFile(source, savePath, "r.txt", false, "key3"));
-        assertTrue(causes(e).contains("이미 존재"), causes(e));
+        assertTrue(causes(e).contains("already exists"), causes(e));
         assertEquals("abcdeFGHIJ", read(remoteDir.resolve("r.txt")), "not overwritten");
         assertEquals(10, files.writeFile(source, savePath, "r.txt", true, "key4"));
         assertEquals("ABCDEFGHIJ", read(remoteDir.resolve("r.txt")), "overwritten when asked");
@@ -289,7 +289,7 @@ class SftpIntegrationTest {
                 }
                 var duplicate = assertThrows(S2RuntimeException.class,
                         () -> sftp.writeFile(data("x"), "/upload/2026", "a.txt"));
-                assertTrue(causes(duplicate).contains("이미 존재"), causes(duplicate));
+                assertTrue(causes(duplicate).contains("already exists"), causes(duplicate));
 
                 sftp.deleteFile("/upload/2026", "a.txt");
                 assertFalse(Files.exists(root.resolve("upload/2026/a.txt")));
@@ -341,7 +341,7 @@ class SftpIntegrationTest {
                 // Two open downloads hold both sessions | 열린 다운로드 두 개가 세션 두 개를 모두 붙잡음
                 try (var first = sftp.readFile("/full", "x.txt"); var second = sftp.readFile("/full", "x.txt")) {
                     var e = assertThrows(S2RuntimeException.class, () -> sftp.readFile("/full", "x.txt"));
-                    assertTrue(causes(e).contains("최대 재시도"), causes(e));
+                    assertTrue(causes(e).contains("Retries exhausted"), causes(e));
                     assertTrue(peakConnections.get() - baseline <= 2,
                             "a busy pool must not be rebuilt with more connections: " + (peakConnections.get() - baseline));
                 }
@@ -607,7 +607,7 @@ class SftpIntegrationTest {
         void needsAKeyOrAPassword() {
             var e = assertThrows(Exception.class,
                     () -> context(Map.of("sftp.password", "", "sftp.allow-unknown-hosts", true)).close());
-            assertTrue(causes(e).contains("sftp.private-key-path 또는 sftp.password"), causes(e));
+            assertTrue(causes(e).contains("sftp.private-key-path or sftp.password"), causes(e));
         }
     }
 }

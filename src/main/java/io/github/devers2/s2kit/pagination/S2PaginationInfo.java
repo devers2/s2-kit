@@ -97,7 +97,7 @@ public class S2PaginationInfo<T> {
 
             if (vOrder != null && !vOrder.isBlank() && !"ASC".equalsIgnoreCase(vOrder)
                     && !"DESC".equalsIgnoreCase(vOrder)) {
-                throw new S2RuntimeException("허용하지 않은 order값 입니다.");
+                throw new S2RuntimeException("order must be ASC or DESC");
             }
 
             if (vOrder != null && vOrder.equalsIgnoreCase("DESC")) {

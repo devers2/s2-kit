@@ -25,6 +25,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -94,7 +95,11 @@ public final class S2TransferWatchdog {
             try {
                 check.run();
             } catch (RuntimeException e) {
-                logger.warn("SFTP 전송 감시 중 오류: {}", e.toString()); // 예외가 나가면 이후 점검이 멈추므로 삼킨다
+                if (S2Util.isKorean()) {
+                    logger.warn("SFTP 전송 감시 중 오류: {}", e.toString()); // 예외가 나가면 이후 점검이 멈추므로 삼킨다
+                } else {
+                    logger.warn("Error in the SFTP transfer watchdog: {}", e.toString()); // 예외가 나가면 이후 점검이 멈추므로 삼킨다
+                }
             }
         }, interval, interval, TimeUnit.MILLISECONDS);
     }

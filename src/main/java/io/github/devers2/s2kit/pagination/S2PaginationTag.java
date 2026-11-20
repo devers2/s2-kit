@@ -73,7 +73,7 @@ public class S2PaginationTag extends TagSupport {
      */
     public final String renderPagination(String... jsParams) {
         if (jsFunction == null || !JS_FUNCTION.matcher(jsFunction).matches()) {
-            throw new IllegalArgumentException("jsFunction 은 JavaScript 함수 이름이어야 합니다: " + jsFunction);
+            throw new IllegalArgumentException("jsFunction must be a JavaScript function name: " + jsFunction);
         }
         var strBuff = new StringBuilder();
 

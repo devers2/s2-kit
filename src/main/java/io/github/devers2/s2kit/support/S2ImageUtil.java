@@ -107,7 +107,7 @@ public class S2ImageUtil {
             deleteSourceIfMoved(sourceFile, resultPath, isSourceFileDelete);
             return new S2File(resultPath, resultExtension, S2FileUtil.getBaseName(sourceFile));
         } catch (IOException e) {
-            throw new S2RuntimeException("이미지 변환 실패: " + sourceFile, e);
+            throw new S2RuntimeException("Cannot convert the image: " + sourceFile, e);
         }
     }
 
@@ -153,7 +153,7 @@ public class S2ImageUtil {
             var image = applyOrientation(readImage(new ByteArrayInputStream(bytes)), exifOrientation(bytes));
             return resize(image, maxWidth, maxHeight, isFixedRate);
         } catch (IOException e) {
-            throw new S2RuntimeException("이미지 크기 변경 실패", e);
+            throw new S2RuntimeException("Cannot resize the image", e);
         }
     }
 
@@ -190,7 +190,7 @@ public class S2ImageUtil {
             deleteSourceIfMoved(sourceFile, resultPath, isSourceFileDelete);
             return new S2File(resultPath, resultExtension, S2FileUtil.getBaseName(sourceFile));
         } catch (IOException e) {
-            throw new S2RuntimeException("이미지 형식 변경 실패: " + sourceFile, e);
+            throw new S2RuntimeException("Cannot change the image format: " + sourceFile, e);
         }
     }
 
@@ -248,14 +248,14 @@ public class S2ImageUtil {
     public static byte[] resizeToFit(byte[] image, int maxWidth, int maxHeight) {
         Objects.requireNonNull(image, "image");
         if (maxWidth < 1 || maxHeight < 1) {
-            throw new IllegalArgumentException("최대 크기는 1 이상이어야 합니다: " + maxWidth + "x" + maxHeight);
+            throw new IllegalArgumentException("The maximum size must be at least 1: " + maxWidth + "x" + maxHeight);
         }
         var orientation = exifOrientation(image);
         var quarter = orientation >= 5;
         try (var imageInput = ImageIO.createImageInputStream(new ByteArrayInputStream(image))) {
             var readers = imageInput == null ? null : ImageIO.getImageReaders(imageInput);
             if (readers == null || !readers.hasNext()) {
-                throw new IOException("이미지를 읽을 수 없습니다 (지원하지 않는 형식이거나 손상된 파일)");
+                throw new IOException("Cannot read the image (unsupported format or damaged file)");
             }
             var reader = readers.next();
             BufferedImage decoded;
@@ -266,7 +266,7 @@ public class S2ImageUtil {
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
                 if ((long) width * height > MAX_PIXELS) {
-                    throw new IOException("이미지 해상도가 너무 큽니다: " + width + "x" + height);
+                    throw new IOException("Image resolution is too large: " + width + "x" + height);
                 }
                 // Limits in stored orientation | 저장된 방향 기준 한도
                 int limitW = quarter ? maxHeight : maxWidth;
@@ -290,7 +290,7 @@ public class S2ImageUtil {
             var jpeg = format.equals("jpeg") || format.equals("jpg");
             return encode(decoded, jpeg ? "jpg" : "png");
         } catch (IOException e) {
-            throw new S2RuntimeException("이미지 크기 맞추기 실패: " + e.getMessage(), e);
+            throw new S2RuntimeException("Cannot fit the image size: " + e.getMessage(), e);
         }
     }
 
@@ -421,7 +421,7 @@ public class S2ImageUtil {
     private static void requireFile(Path sourceFile) {
         Objects.requireNonNull(sourceFile, "sourceFile");
         if (!Files.isRegularFile(sourceFile)) {
-            throw new S2RuntimeException("이미지 파일이 없습니다: " + sourceFile);
+            throw new S2RuntimeException("Image file not found: " + sourceFile);
         }
     }
 
@@ -468,14 +468,14 @@ public class S2ImageUtil {
         try (var imageInput = ImageIO.createImageInputStream(in)) {
             var readers = imageInput == null ? null : ImageIO.getImageReaders(imageInput);
             if (readers == null || !readers.hasNext()) {
-                throw new IOException("이미지를 읽을 수 없습니다 (지원하지 않는 형식이거나 손상된 파일)");
+                throw new IOException("Cannot read the image (unsupported format or damaged file)");
             }
             var reader = readers.next();
             try {
                 reader.setInput(imageInput, true, true);
                 var pixels = (long) reader.getWidth(0) * reader.getHeight(0);
                 if (pixels > MAX_PIXELS) {
-                    throw new IOException("이미지 해상도가 너무 큽니다: " + reader.getWidth(0) + "x" + reader.getHeight(0));
+                    throw new IOException("Image resolution is too large: " + reader.getWidth(0) + "x" + reader.getHeight(0));
                 }
                 return reader.read(0);
             } finally {
@@ -557,7 +557,7 @@ public class S2ImageUtil {
             return out.toByteArray();
         }
         if (!ImageIO.write(target, format, out)) {
-            throw new IOException("이미지를 이 형식으로 쓸 수 없습니다: " + format);
+            throw new IOException("Cannot write the image in this format: " + format);
         }
         return out.toByteArray();
     }

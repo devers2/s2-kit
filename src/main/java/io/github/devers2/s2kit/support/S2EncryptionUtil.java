@@ -124,14 +124,14 @@ public class S2EncryptionUtil {
      */
     public static String decrypt(String encryptedText, String password) throws GeneralSecurityException {
         if (encryptedText.startsWith(KEY_FORMAT_PREFIX)) {
-            throw new GeneralSecurityException("키 방식(s2k1:) 암호문입니다. decrypt(String, SecretKey)로 복호화하십시오.");
+            throw new GeneralSecurityException("This text was encrypted with a key (s2k1:); decrypt it with decrypt(String, SecretKey)");
         }
         byte[] combined;
         var current = encryptedText.startsWith(FORMAT_PREFIX);
         try {
             combined = Base64.getDecoder().decode(current ? encryptedText.substring(FORMAT_PREFIX.length()) : encryptedText);
         } catch (IllegalArgumentException e) {
-            throw new GeneralSecurityException("암호문이 Base64 형식이 아닙니다.", e);
+            throw new GeneralSecurityException("The encrypted text is not Base64", e);
         }
         return current ? decryptCurrent(combined, password) : decryptLegacy(combined, password);
     }
@@ -191,16 +191,16 @@ public class S2EncryptionUtil {
      */
     public static SecretKey keyFromBase64(String base64) {
         if (base64 == null || base64.isBlank()) {
-            throw new IllegalArgumentException("키가 비었습니다.");
+            throw new IllegalArgumentException("The key is empty");
         }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(base64.trim());
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("키가 Base64 형식이 아닙니다.", e);
+            throw new IllegalArgumentException("The key is not Base64", e);
         }
         if (bytes.length != KEY_BYTES) {
-            throw new IllegalArgumentException("AES-256 키는 32바이트여야 합니다: " + bytes.length + "바이트");
+            throw new IllegalArgumentException("An AES-256 key must be 32 bytes: " + bytes.length + " bytes");
         }
         return new SecretKeySpec(bytes, "AES");
     }
@@ -261,7 +261,7 @@ public class S2EncryptionUtil {
 
     private static String checkKeyId(String keyId) {
         if (keyId == null || !KEY_ID.matcher(keyId).matches()) {
-            throw new IllegalArgumentException("키 이름은 영문·숫자·'.'·'_'·'-' 1~64자여야 합니다: " + keyId);
+            throw new IllegalArgumentException("A key name must be 1-64 letters, digits, '.', '_' or '-': " + keyId);
         }
         return keyId;
     }
@@ -284,22 +284,22 @@ public class S2EncryptionUtil {
     private static KeyCiphertext parseKeyCiphertext(String encryptedText) throws GeneralSecurityException {
         if (!encryptedText.startsWith(KEY_FORMAT_PREFIX)) {
             throw new GeneralSecurityException(encryptedText.startsWith(FORMAT_PREFIX) || isLegacyFormat(encryptedText)
-                    ? "비밀번호 방식 암호문입니다. decrypt(String, String)으로 복호화하십시오."
-                    : "키 방식 암호문이 아닙니다.");
+                    ? "This text was encrypted with a password; decrypt it with decrypt(String, String)"
+                    : "Not a key-based encrypted text");
         }
         var rest = encryptedText.substring(KEY_FORMAT_PREFIX.length());
         var colon = rest.indexOf(':');
         if (colon < 1 || !KEY_ID.matcher(rest.substring(0, colon)).matches()) {
-            throw new GeneralSecurityException("키 방식 암호문의 키 이름이 올바르지 않습니다.");
+            throw new GeneralSecurityException("Invalid key name in the key-based encrypted text");
         }
         byte[] data;
         try {
             data = Base64.getDecoder().decode(rest.substring(colon + 1));
         } catch (IllegalArgumentException e) {
-            throw new GeneralSecurityException("암호문이 Base64 형식이 아닙니다.", e);
+            throw new GeneralSecurityException("The encrypted text is not Base64", e);
         }
         if (data.length < GCM_IV_LENGTH + GCM_TAG_BITS / 8) {
-            throw new GeneralSecurityException("암호문이 너무 짧습니다.");
+            throw new GeneralSecurityException("The encrypted text is too short");
         }
         return new KeyCiphertext(rest.substring(0, colon), data);
     }
@@ -401,7 +401,7 @@ public class S2EncryptionUtil {
             var key = keys.get(parsed.keyId());
             if (key == null) {
                 throw new GeneralSecurityException(
-                        "등록되지 않은 키 이름입니다: " + parsed.keyId() + " (등록된 키: " + new java.util.TreeSet<>(keys.keySet()) + ")");
+                        "Unknown key name: " + parsed.keyId() + " (registered keys: " + new java.util.TreeSet<>(keys.keySet()) + ")");
             }
             return decryptWithKey(parsed, key);
         }
@@ -450,7 +450,7 @@ public class S2EncryptionUtil {
                 checkKeyId(keyId);
                 checkKey(key);
                 if (keys.putIfAbsent(keyId, key) != null) {
-                    throw new IllegalArgumentException("이미 등록된 키 이름입니다: " + keyId);
+                    throw new IllegalArgumentException("Key name already registered: " + keyId);
                 }
                 return this;
             }
@@ -483,14 +483,14 @@ public class S2EncryptionUtil {
              */
             public KeyRing build() {
                 if (keys.isEmpty()) {
-                    throw new IllegalStateException("등록된 키가 없습니다.");
+                    throw new IllegalStateException("No key is registered");
                 }
                 var primary = primaryId != null ? primaryId : keys.size() == 1 ? keys.keySet().iterator().next() : null;
                 if (primary == null) {
-                    throw new IllegalStateException("키가 둘 이상이면 primary(키 이름)로 주 키를 정해야 합니다.");
+                    throw new IllegalStateException("With more than one key, choose the primary key with primary(keyName)");
                 }
                 if (!keys.containsKey(primary)) {
-                    throw new IllegalStateException("주 키가 등록되지 않았습니다: " + primary);
+                    throw new IllegalStateException("The primary key is not registered: " + primary);
                 }
                 return new KeyRing(keys, primary);
             }
@@ -501,19 +501,19 @@ public class S2EncryptionUtil {
         java.util.Objects.requireNonNull(key, "key");
         var encoded = key.getEncoded();
         if (!"AES".equalsIgnoreCase(key.getAlgorithm()) || encoded == null || encoded.length != KEY_BYTES) {
-            throw new IllegalArgumentException("AES-256 키가 필요합니다 (generateKey() 또는 keyFromBase64()).");
+            throw new IllegalArgumentException("An AES-256 key is required (generateKey() or keyFromBase64())");
         }
         return key;
     }
 
     private static String decryptCurrent(byte[] combined, String password) throws GeneralSecurityException {
         if (combined.length < 4 + SALT_LENGTH + GCM_IV_LENGTH + GCM_TAG_BITS / 8) {
-            throw new GeneralSecurityException("암호문이 너무 짧습니다.");
+            throw new GeneralSecurityException("The encrypted text is too short");
         }
         var buffer = ByteBuffer.wrap(combined);
         var iterations = buffer.getInt();
         if (iterations < 1 || iterations > MAX_ITERATION_COUNT) {
-            throw new GeneralSecurityException("암호문의 반복 횟수가 올바르지 않습니다: " + iterations);
+            throw new GeneralSecurityException("Invalid iteration count in the encrypted text: " + iterations);
         }
         var salt = new byte[SALT_LENGTH];
         var iv = new byte[GCM_IV_LENGTH];
@@ -528,7 +528,7 @@ public class S2EncryptionUtil {
 
     private static String decryptLegacy(byte[] combined, String password) throws GeneralSecurityException {
         if (combined.length <= SALT_LENGTH + LEGACY_IV_LENGTH) {
-            throw new GeneralSecurityException("암호문이 너무 짧습니다.");
+            throw new GeneralSecurityException("The encrypted text is too short");
         }
         var salt = new byte[SALT_LENGTH];
         var iv = new byte[LEGACY_IV_LENGTH];

@@ -203,7 +203,7 @@ public class S2StreamUtil {
             sourceStream.transferTo(outputStream);
             return outputStream.toByteArray();
         } catch (IOException e) {
-            throw new S2RuntimeException("바이트 배열 변환 실패: " + e.getMessage(), e);
+            throw new S2RuntimeException("Cannot read the data into a byte array: " + e.getMessage(), e);
         } finally {
             if (shouldCloseStream) {
                 closeStream(sourceStream);
@@ -241,7 +241,7 @@ public class S2StreamUtil {
         try (var writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8)) {
             sourceReader.transferTo(writer);
         } catch (IOException e) {
-            throw new S2RuntimeException("바이트 배열 변환 실패: " + e.getMessage(), e);
+            throw new S2RuntimeException("Cannot read the data into a byte array: " + e.getMessage(), e);
         } finally {
             if (shouldCloseStream) {
                 closeStream(sourceReader);
@@ -272,7 +272,7 @@ public class S2StreamUtil {
 
         private void ensure(int len) {
             if ((long) count + len > maxBytes) {
-                throw new S2RuntimeException("데이터 크기가 최대 허용 크기(" + maxBytes + " bytes)를 초과했습니다.");
+                throw new S2RuntimeException("Data exceeds the maximum size (" + maxBytes + " bytes)");
             }
         }
     }
@@ -287,7 +287,7 @@ public class S2StreamUtil {
      */
     public static long copy(InputStream inputStream, OutputStream outputStream) throws IOException {
         if (inputStream == null || outputStream == null) {
-            throw new NullPointerException("inputStream 과 outputStream 은 null 일 수 없습니다.");
+            throw new NullPointerException("inputStream and outputStream must not be null");
         }
 
         // Java 9+ transferTo 사용 (네이티브 최적화 및 코드 단순화)

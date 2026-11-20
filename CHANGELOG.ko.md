@@ -27,6 +27,9 @@
 
 ### 변경
 
+- ⚠️ 예외 메시지를 s2-util 처럼 영어로 바꿨습니다(예: `이미 존재하는 파일입니다: ...` → `File already exists: ...`). 메시지를
+  문자열로 비교하던 코드는 예외 종류(`S2FileExistsException`)로 확인하십시오. 로그는 역시 s2-util 처럼 JVM 기본 로케일이
+  한국어면 한국어, 아니면 영어로 남깁니다(`S2Util.isKorean()`).
 - JS: `initializeS2DomEvents`의 전역 클릭 처리를 지웠습니다. 클릭 처리가 끝난 뒤 `preventDefault()`를 불러 아무 효과가
   없었습니다.
 - ⚠️ SFTP 풀 기본값을 일반 파일 서버(4 vCPU / 8GB / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정) 기준으로 맞췄습니다. 최대 연결

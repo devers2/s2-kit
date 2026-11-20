@@ -35,6 +35,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.core.S2DateUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -304,7 +305,11 @@ public class S2SearchVO extends S2DefaultVO {
                 continue;
             }
             if (!SORT_COLUMN.matcher(column).matches() || (allowed != null && !allowed.contains(column))) {
-                logger.warn("허용되지 않은 정렬 컬럼을 무시합니다: {}", orderByInfo.trim());
+                if (S2Util.isKorean()) {
+                    logger.warn("허용되지 않은 정렬 컬럼을 무시합니다: {}", orderByInfo.trim());
+                } else {
+                    logger.warn("Ignoring a sort column that is not allowed: {}", orderByInfo.trim());
+                }
                 continue;
             }
             var sort = orderByInfoArr.length > 1 && "DESC".equalsIgnoreCase(orderByInfoArr[1].trim()) ? "DESC" : "ASC";

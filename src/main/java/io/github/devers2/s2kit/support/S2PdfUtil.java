@@ -156,8 +156,8 @@ public class S2PdfUtil {
      */
     static void requirePdfBox() {
         if (!PDFBOX_PRESENT) {
-            throw new NoClassDefFoundError("오류: S2PdfUtil 기능을 사용하기 위한 필수 의존성(" + PDFBOX_COORDINATE + ")이 누락되었습니다.\n"
-                    + "Gradle 또는 Maven 설정에 해당 라이브러리를 implementation 으로 추가해야 합니다. "
+            throw new NoClassDefFoundError("Error: the dependency (" + PDFBOX_COORDINATE + ") required by S2PdfUtil is missing.\n"
+                    + "Add the library as an implementation dependency in Gradle or Maven. "
                     + "(Gradle: implementation(\"" + PDFBOX_COORDINATE + "\"))");
         }
     }
@@ -990,8 +990,8 @@ public class S2PdfUtil {
          * @return PageSelector
          */
         public static PageSelector range(int from, int to) {
-            if (from < 1) throw new IllegalArgumentException("시작 페이지는 1 이상이어야 합니다: " + from);
-            if (to < from) throw new IllegalArgumentException("끝 페이지(" + to + ")가 시작 페이지(" + from + ")보다 작습니다.");
+            if (from < 1) throw new IllegalArgumentException("The start page must be at least 1: " + from);
+            if (to < from) throw new IllegalArgumentException("The end page (" + to + ") is before the start page (" + from + ")");
             return new PageSelector(Type.RANGE, from, to, null);
         }
 
@@ -1002,9 +1002,9 @@ public class S2PdfUtil {
          * @return PageSelector
          */
         public static PageSelector only(int... pages) {
-            if (pages == null || pages.length == 0) throw new IllegalArgumentException("적용할 페이지를 하나 이상 지정해야 합니다.");
+            if (pages == null || pages.length == 0) throw new IllegalArgumentException("Specify at least one page");
             for (int p : pages) {
-                if (p < 1) throw new IllegalArgumentException("페이지 번호는 1 이상이어야 합니다: " + p);
+                if (p < 1) throw new IllegalArgumentException("Page numbers must be at least 1: " + p);
             }
             return new PageSelector(Type.ONLY, 0, 0, pages.clone());
         }
@@ -1019,7 +1019,7 @@ public class S2PdfUtil {
          * @return PageSelector
          */
         public static PageSelector exceptFirst(int count) {
-            if (count < 1) throw new IllegalArgumentException("제외할 페이지 수는 1 이상이어야 합니다: " + count);
+            if (count < 1) throw new IllegalArgumentException("The number of pages to exclude must be at least 1: " + count);
             return new PageSelector(Type.EXCEPT_FIRST, count, 0, null);
         }
 
@@ -1033,7 +1033,7 @@ public class S2PdfUtil {
          * @return PageSelector
          */
         public static PageSelector exceptLast(int count) {
-            if (count < 1) throw new IllegalArgumentException("제외할 페이지 수는 1 이상이어야 합니다: " + count);
+            if (count < 1) throw new IllegalArgumentException("The number of pages to exclude must be at least 1: " + count);
             return new PageSelector(Type.EXCEPT_LAST, 0, count, null);
         }
 
@@ -2356,7 +2356,7 @@ public class S2PdfUtil {
         protected ImageStamp(byte[] imageBytes) {
             super(Position.CENTER);
             if (imageBytes == null || imageBytes.length == 0) {
-                throw new IllegalArgumentException("이미지 데이터가 비어 있습니다.");
+                throw new IllegalArgumentException("Image data is empty");
             }
             this.imageBytes = imageBytes;
         }
@@ -2429,7 +2429,7 @@ public class S2PdfUtil {
          */
         public ImageStamp size(float width, float height) {
             if (width <= 0f || height <= 0f) {
-                throw new IllegalArgumentException("이미지 크기는 0보다 커야 합니다.");
+                throw new IllegalArgumentException("Image size must be greater than 0");
             }
             this.width = width;
             this.height = height;
@@ -2444,7 +2444,7 @@ public class S2PdfUtil {
          */
         public ImageStamp width(float width) {
             if (width <= 0f) {
-                throw new IllegalArgumentException("이미지 너비는 0보다 커야 합니다.");
+                throw new IllegalArgumentException("Image width must be greater than 0");
             }
             this.width = width;
             this.height = null;
@@ -2459,7 +2459,7 @@ public class S2PdfUtil {
          */
         public ImageStamp height(float height) {
             if (height <= 0f) {
-                throw new IllegalArgumentException("이미지 높이는 0보다 커야 합니다.");
+                throw new IllegalArgumentException("Image height must be greater than 0");
             }
             this.height = height;
             this.width = null;
@@ -2525,7 +2525,7 @@ public class S2PdfUtil {
         protected QrStamp(String content) {
             super(Position.BOTTOM_RIGHT);
             if (content == null || content.trim().isEmpty()) {
-                throw new IllegalArgumentException("QR 코드 내용(content)은 비어 있을 수 없습니다.");
+                throw new IllegalArgumentException("QR code content must not be empty");
             }
             this.content = content;
         }
@@ -2567,7 +2567,7 @@ public class S2PdfUtil {
          * @return this
          */
         public QrStamp size(float size) {
-            if (size <= 0f) throw new IllegalArgumentException("크기는 0보다 커야 합니다.");
+            if (size <= 0f) throw new IllegalArgumentException("Size must be greater than 0");
             this.size = size;
             this.height = size;
             return this;
@@ -2581,7 +2581,7 @@ public class S2PdfUtil {
          * @return this
          */
         public QrStamp size(float width, float height) {
-            if (width <= 0f || height <= 0f) throw new IllegalArgumentException("크기는 0보다 커야 합니다.");
+            if (width <= 0f || height <= 0f) throw new IllegalArgumentException("Size must be greater than 0");
             this.size = width;
             this.height = height;
             return this;
@@ -2595,7 +2595,7 @@ public class S2PdfUtil {
          */
         public QrStamp resolution(int pixelSize) {
             if (pixelSize < 32 || pixelSize > 4096) {
-                throw new IllegalArgumentException("해상도는 32~4096 픽셀 범위여야 합니다: " + pixelSize);
+                throw new IllegalArgumentException("Resolution must be 32-4096 pixels: " + pixelSize);
             }
             this.resolution = pixelSize;
             return this;
@@ -2837,7 +2837,7 @@ public class S2PdfUtil {
 
         private Watermark(byte[] image) {
             if (image == null || image.length == 0) {
-                throw new IllegalArgumentException("워터마크 이미지가 비었습니다.");
+                throw new IllegalArgumentException("The watermark image is empty");
             }
             this.image = image;
         }
@@ -2877,7 +2877,7 @@ public class S2PdfUtil {
             try (image) {
                 return new Watermark(S2StreamUtil.streamToByteArray(image, false, MAX_IMAGE_BYTES));
             } catch (S2RuntimeException e) {
-                throw new IOException("워터마크 이미지를 읽을 수 없습니다: " + e.getMessage(), e);
+                throw new IOException("Cannot read the watermark image: " + e.getMessage(), e);
             }
         }
 
@@ -2892,8 +2892,8 @@ public class S2PdfUtil {
          * @return 이 워터마크
          */
         public Watermark size(float width, float height) {
-            this.width = positive(width, "가로");
-            this.height = positive(height, "세로");
+            this.width = positive(width, "width");
+            this.height = positive(height, "height");
             return this;
         }
 
@@ -2904,7 +2904,7 @@ public class S2PdfUtil {
          * @return 이 워터마크
          */
         public Watermark width(float width) {
-            this.width = positive(width, "가로");
+            this.width = positive(width, "width");
             this.height = null;
             return this;
         }
@@ -2916,7 +2916,7 @@ public class S2PdfUtil {
          * @return 이 워터마크
          */
         public Watermark height(float height) {
-            this.height = positive(height, "세로");
+            this.height = positive(height, "height");
             this.width = null;
             return this;
         }
@@ -2960,7 +2960,7 @@ public class S2PdfUtil {
          */
         public Watermark opacity(float opacity) {
             if (!(opacity >= 0f && opacity <= 1f)) {
-                throw new IllegalArgumentException("불투명도는 0 ~ 1 이어야 합니다: " + opacity);
+                throw new IllegalArgumentException("Opacity must be between 0 and 1: " + opacity);
             }
             this.opacity = opacity;
             return this;
@@ -2990,7 +2990,7 @@ public class S2PdfUtil {
 
         private static float positive(float value, String name) {
             if (!(value > 0f) || Float.isInfinite(value)) {
-                throw new IllegalArgumentException("워터마크 " + name + " 크기는 0 보다 커야 합니다: " + value);
+                throw new IllegalArgumentException("Watermark " + name + " must be greater than 0: " + value);
             }
             return value;
         }

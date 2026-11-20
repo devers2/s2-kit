@@ -133,7 +133,7 @@ public class S2LruMap<K, V> extends LinkedHashMap<K, V> {
      */
     public static <K, V> Map<K, V> createSynchronizedLRUMap(int maxCapacity) {
         if (maxCapacity < 1) {
-            throw new IllegalArgumentException("maxCapacity 는 1 이상이어야 합니다: " + maxCapacity);
+            throw new IllegalArgumentException("maxCapacity must be at least 1: " + maxCapacity);
         }
         // Start small; the map grows as entries are added | 작게 시작하고 항목이 늘면 커짐
         return Collections.synchronizedMap(

@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.core.S2Cache;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -144,7 +145,7 @@ public class S2TypeUtil {
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
-                            "리플렉션을 통한 인스턴스 생성에 실패했습니다: %s (args: %s)",
+                            "Cannot create an instance by reflection: %s (args: %s)",
                             resolvedClass.getName(), Arrays.toString(args != null ? args : new Object[] { "null" })),
                     e);
         }
@@ -171,13 +172,13 @@ public class S2TypeUtil {
             }
             if (accepts) {
                 if (match != null) {
-                    throw new NoSuchMethodException("인자에 맞는 생성자가 여럿입니다: " + type.getName() + " " + Arrays.toString(args));
+                    throw new NoSuchMethodException("More than one constructor matches the arguments: " + type.getName() + " " + Arrays.toString(args));
                 }
                 match = candidate;
             }
         }
         if (match == null) {
-            throw new NoSuchMethodException("인자에 맞는 생성자가 없습니다: " + type.getName() + " " + Arrays.toString(args));
+            throw new NoSuchMethodException("No constructor matches the arguments: " + type.getName() + " " + Arrays.toString(args));
         }
         return (Constructor<? extends T>) match;
     }
@@ -223,13 +224,13 @@ public class S2TypeUtil {
         }
         if (isAssignableFromByName(obj.getClass(), typeClass)) {
             throw new TypeMismatchException(String.format(
-                    "타입 불일치: %s 는 이름상 %s 와 호환되지만 클래스 로더가 달라 캐스팅할 수 없습니다 (객체: %s, 대상: %s). "
-                            + "DevTools 재시작 전에 만든 객체를 재사용하고 있지 않은지 확인하십시오.",
+                    "Type mismatch: %s matches %s by name but comes from a different class loader, so it cannot be cast (object: %s, target: %s). "
+                            + "Check that an object created before a DevTools restart is not being reused.",
                     obj.getClass().getName(), typeClass.getName(), obj.getClass().getClassLoader(),
                     typeClass.getClassLoader()));
         }
         throw new TypeMismatchException(
-                String.format("타입 불일치: %s를 %s로 캐스팅할 수 없습니다.", obj.getClass().getName(), typeClass.getName()));
+                String.format("Type mismatch: cannot cast %s to %s", obj.getClass().getName(), typeClass.getName()));
     }
 
     /**
@@ -408,7 +409,11 @@ public class S2TypeUtil {
             }
             return false;
         } catch (IllegalAccessError | SecurityException e) {
-            logger.warn("계층 구조 탐색 중 접근 오류 발생: {}", e.getMessage());
+            if (S2Util.isKorean()) {
+                logger.warn("계층 구조 탐색 중 접근 오류 발생: {}", e.getMessage());
+            } else {
+                logger.warn("Access error while walking the class hierarchy: {}", e.getMessage());
+            }
             return false;
         }
     }
@@ -575,7 +580,7 @@ public class S2TypeUtil {
     }
 
     private static IllegalArgumentException incomparable(Object v1, Object v2, Throwable cause) {
-        return new IllegalArgumentException(String.format("비교할 수 없는 값입니다: %s (%s), %s (%s)", v1,
+        return new IllegalArgumentException(String.format("Values cannot be compared: %s (%s), %s (%s)", v1,
                 v1.getClass().getName(), v2, v2.getClass().getName()), cause);
     }
 

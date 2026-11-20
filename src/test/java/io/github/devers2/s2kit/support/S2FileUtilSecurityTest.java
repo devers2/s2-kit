@@ -61,12 +61,12 @@ class S2FileUtilSecurityTest {
         var many = zip("1.txt", "a", "2.txt", "b", "3.txt", "c");
         var tooMany = assertThrows(IOException.class,
                 () -> S2FileUtil.unzipFiles(new ByteArrayInputStream(many), root.resolve("n"), 2, 1_000));
-        assertTrue(tooMany.getMessage().contains("항목 수"));
+        assertTrue(tooMany.getMessage().contains("more entries than allowed"));
 
         var big = zip("big.txt", "x".repeat(100));
         var tooBig = assertThrows(IOException.class,
                 () -> S2FileUtil.unzipFiles(new ByteArrayInputStream(big), root.resolve("b"), 10, 50));
-        assertTrue(tooBig.getMessage().contains("크기"));
+        assertTrue(tooBig.getMessage().contains("extracted size"));
     }
 
     @Test

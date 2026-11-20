@@ -443,7 +443,7 @@ public class S2ServletUtil {
         if (S2Util.isEmpty(rootPath)) {
             var resource = servletContext.getClassLoader().getResource("");
             if (resource == null) {
-                throw new IllegalStateException("애플리케이션 루트 경로를 알 수 없습니다 (실행 가능한 jar 등 파일 시스템에 풀리지 않은 배포).");
+                throw new IllegalStateException("Cannot find the application root path (deployed without unpacking to the file system, such as an executable jar)");
             }
             rootPath = resource.getPath();
         }

@@ -40,6 +40,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
 import org.springframework.integration.sftp.session.SftpSession;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
@@ -178,11 +179,19 @@ public class SpringSftpConfig {
         if (knownHostsPath != null && !knownHostsPath.isBlank()) {
             factory.setKnownHostsResource(new FileSystemResource(knownHostsPath));
         } else if (!allowUnknownHosts) {
-            logger.warn(
-                    "sftp.known-hosts-path 가 설정되지 않았고 sftp.allow-unknown-hosts 도 false 입니다. "
-                            + "이 상태에서는 모든 SFTP 연결의 호스트 키 검증이 거부되어 연결이 실패합니다. "
-                            + "known-hosts 파일 경로를 설정하거나, 신뢰할 수 있는 내부망이라면 "
-                            + "sftp.allow-unknown-hosts=true 로 설정하세요.");
+            if (S2Util.isKorean()) {
+                logger.warn(
+                        "sftp.known-hosts-path 가 설정되지 않았고 sftp.allow-unknown-hosts 도 false 입니다. "
+                                + "이 상태에서는 모든 SFTP 연결의 호스트 키 검증이 거부되어 연결이 실패합니다. "
+                                + "known-hosts 파일 경로를 설정하거나, 신뢰할 수 있는 내부망이라면 "
+                                + "sftp.allow-unknown-hosts=true 로 설정하세요.");
+            } else {
+                logger.warn(
+                        "sftp.known-hosts-path is not set and sftp.allow-unknown-hosts is false. "
+                                + "Every SFTP connection will fail host key verification in this state. "
+                                + "Set the known-hosts file path, or on a trusted internal network set "
+                                + "sftp.allow-unknown-hosts=true.");
+            }
         }
         factory.setAllowUnknownKeys(allowUnknownHosts);
 
@@ -193,7 +202,7 @@ public class SpringSftpConfig {
         } else if (sftpPassword != null && !sftpPassword.isEmpty()) {
             factory.setPassword(sftpPassword);
         } else {
-            throw new IllegalStateException("sftp.private-key-path 또는 sftp.password 중 하나를 설정해야 합니다.");
+            throw new IllegalStateException("Set sftp.private-key-path or sftp.password");
         }
         return factory;
     }
@@ -276,18 +285,31 @@ public class SpringSftpConfig {
             Runnable prewarm = () -> {
                 try {
                     pool.preparePool();
-                    logger.info("SFTP 세션을 미리 열었습니다: {}:{} (idle {})", sftpHost, sftpPort, pool.getNumIdle());
+                    if (S2Util.isKorean()) {
+                        logger.info("SFTP 세션을 미리 열었습니다: {}:{} (idle {})", sftpHost, sftpPort, pool.getNumIdle());
+                    } else {
+                        logger.info("Opened SFTP sessions in advance: {}:{} (idle {})", sftpHost, sftpPort, pool.getNumIdle());
+                    }
                 } catch (Exception e) {
                     if (!pool.isClosed()) {
-                        logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", sftpHost, sftpPort,
-                                e.toString());
+                        if (S2Util.isKorean()) {
+                            logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", sftpHost, sftpPort,
+                                    e.toString());
+                        } else {
+                            logger.warn("Cannot open SFTP sessions in advance (will connect on request): {}:{} - {}", sftpHost, sftpPort,
+                                    e.toString());
+                        }
                     }
                 }
             };
             try {
                 S2ThreadUtil.getCommonExecutor().execute(prewarm);
             } catch (RejectedExecutionException e) {
-                logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+                if (S2Util.isKorean()) {
+                    logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+                } else {
+                    logger.debug("Skipping opening sessions in advance (executor refused): {}", e.getMessage());
+                }
             }
         }
 

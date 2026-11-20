@@ -45,7 +45,7 @@ check that 2 app servers × 64 = 128 connections fit those limits.
 
 | Symptom (log or exception) | Cause | Adjust |
 |---|---|---|
-| `최대 재시도 횟수 초과` (JSch) or `SFTP 세션 획득 실패` (Spring), only in short bursts | All connections briefly busy | Wait a little longer for a connection |
+| `Retries exhausted` (JSch) or `Cannot get an SFTP session` (Spring), only in short bursts | All connections briefly busy | Wait a little longer for a connection |
 | The same failures often, with spare server CPU, memory and bandwidth | More concurrent use than connections | Raise max connections 64 → 128 (check server limits, section 4) |
 | The same failures only with large files or bulk uploads | Bandwidth is the limit, so transfers hold connections long | Keep the pool; send through `S2UploadQueue`, and lower its parallelism |
 | `Upload queue is full` | More queued uploads than the limit | Tell users to retry; if it persists, raise queue parallelism only with server headroom, and raise `maxQueued` |
@@ -124,7 +124,8 @@ S2UploadQueue queue = S2UploadQueue.builder(sftp)
 
 ## 7. What to watch
 
-- JSch warning `세션 획득 실패 (시도 n/3) ... [Active: a, Idle: i, Max: m]`: if `Active` often reaches `Max`, follow
+- JSch warning `Cannot get a session (attempt n/3) ... [Active: a, Idle: i, Max: m]` (`세션 획득 실패 (시도 n/3)` on a
+  Korean-locale JVM): if `Active` often reaches `Max`, follow
   the table in section 3.
 - `S2UploadQueue.getQueuedCount()`: if it only grows, transfers cannot keep up.
 - SFTP server: number of `sshd` processes, memory, upload disk usage, and connections dropped by `MaxStartups`

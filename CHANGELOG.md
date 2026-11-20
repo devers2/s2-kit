@@ -29,6 +29,10 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Changed
 
+- ⚠️ Exception messages are now English, as in s2-util (for example `File already exists: ...` instead of
+  `이미 존재하는 파일입니다: ...`). Code that compares messages should check the exception type instead
+  (`S2FileExistsException`). Log messages are written in Korean when the JVM's default locale is Korean and in English
+  otherwise (`S2Util.isKorean()`), also as in s2-util.
 - JS: removed the global click handler of `initializeS2DomEvents`; it called `preventDefault()` after the click had
   been handled, so it never had an effect.
 - ⚠️ SFTP pool defaults now suit a typical file server (4 vCPU / 8GB / 1Gbps, 2 app servers, OpenSSH defaults): at most

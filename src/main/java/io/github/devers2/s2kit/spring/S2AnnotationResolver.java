@@ -676,7 +676,7 @@ public final class S2AnnotationResolver {
                 names.add(candidate.getName());
             }
             throw new IllegalStateException("@" + annotationClass.getSimpleName() + "(\"" + annotationValue
-                    + "\") 에 해당하는 클래스가 여럿입니다. resolveTypes 를 쓰거나 스캔 패키지를 좁히십시오: " + names);
+                    + "\") matches more than one class; use resolveTypes or narrow the scan packages: " + names);
         }
         return castToSubclass(candidates.get(0), baseClass, ignoreClassLoader);
     }

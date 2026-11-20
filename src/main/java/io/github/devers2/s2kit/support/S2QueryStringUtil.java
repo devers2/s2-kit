@@ -140,7 +140,7 @@ public class S2QueryStringUtil {
         try {
             return URLDecoder.decode(value, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("쿼리 문자열의 퍼센트 인코딩이 잘못되었습니다: " + value, e);
+            throw new IllegalArgumentException("Invalid percent encoding in the query string: " + value, e);
         }
     }
 

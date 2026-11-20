@@ -147,7 +147,7 @@ public class S2CollectionUtil {
     public static <V, T> List<T> listSort(List<T> list, V fieldName, String orderBy) {
         var descending = orderBy != null && "DESC".equalsIgnoreCase(orderBy.trim());
         if (orderBy != null && !orderBy.isBlank() && !descending && !"ASC".equalsIgnoreCase(orderBy.trim())) {
-            throw new IllegalArgumentException("orderBy 는 ASC 또는 DESC 여야 합니다: " + orderBy);
+            throw new IllegalArgumentException("orderBy must be ASC or DESC: " + orderBy);
         }
         if (list == null) {
             return null;

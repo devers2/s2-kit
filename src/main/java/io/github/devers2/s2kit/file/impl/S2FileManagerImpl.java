@@ -68,7 +68,7 @@ public class S2FileManagerImpl implements FileManager {
     @Override
     public long writeFile(InputStream fileData, String savePath, String saveName, boolean overwrite) {
         if (fileData == null || savePath == null || savePath.isBlank()) {
-            throw new IllegalArgumentException("fileData 와 savePath 는 필수입니다.");
+            throw new IllegalArgumentException("fileData and savePath are required");
         }
         var target = resolveSafePath(savePath, saveName);
         try (var in = fileData) {
@@ -80,14 +80,14 @@ public class S2FileManagerImpl implements FileManager {
                 // Files.copy without REPLACE_EXISTING creates the file with CREATE_NEW (atomic) | REPLACE_EXISTING 없이는 CREATE_NEW 로 생성 (원자적)
                 return Files.copy(in, target);
             } catch (FileAlreadyExistsException e) {
-                throw new S2FileExistsException("이미 존재하는 파일입니다: " + target, e);
+                throw new S2FileExistsException("File already exists: " + target, e);
             } catch (IOException e) {
                 // Remove the partial file this call created | 이 호출이 만든 불완전한 파일 삭제
                 Files.deleteIfExists(target);
                 throw e;
             }
         } catch (IOException e) {
-            throw new S2RuntimeException("파일 저장 실패: " + target + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot save the file: " + target + " (" + e.getMessage() + ")", e);
         }
     }
 

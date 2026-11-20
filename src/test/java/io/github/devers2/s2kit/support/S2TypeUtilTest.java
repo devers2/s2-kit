@@ -234,7 +234,7 @@ class S2TypeUtilTest {
                 assertTrue(S2TypeUtil.instanceOfByName(foreign, SampleBean.class));
                 var e = assertThrows(S2TypeUtil.TypeMismatchException.class,
                         () -> S2TypeUtil.castByName(foreign, SampleBean.class));
-                assertTrue(e.getMessage().contains("클래스 로더"), e.getMessage());
+                assertTrue(e.getMessage().contains("class loader"), e.getMessage());
             }
             assertEquals(Integer.valueOf(5), S2TypeUtil.castByName(5, int.class));
         }

@@ -33,6 +33,7 @@ import com.jcraft.jsch.Session;
 import com.jcraft.jsch.SftpException;
 import com.jcraft.jsch.SftpProgressMonitor;
 
+import io.github.devers2.s2util.core.S2Util;
 import io.github.devers2.s2util.exception.S2RuntimeException;
 import io.github.devers2.s2kit.file.FileManager;
 import io.github.devers2.s2kit.file.S2FileExistsException;
@@ -262,7 +263,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
             // 기존 파일 존재 여부 확인
             if (!overwrite && exists(channel, remoteFileFullPath)) {
-                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + remoteFileFullPath);
+                throw new S2FileExistsException("Remote file already exists: " + remoteFileFullPath);
             }
 
             // 스트림 직접 전송 및 크기 추적. 마지막 진행(count()) 이후 TRANSFER_IDLE_MILLIS 동안
@@ -284,7 +285,11 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
 
             if (transferSize != fileSize) {
                 if (logger.isWarnEnabled()) {
-                    logger.warn("업로드 전송량과 원격 파일 크기가 다릅니다. 전송: {}, 실제: {}", transferSize, fileSize);
+                    if (S2Util.isKorean()) {
+                        logger.warn("업로드 전송량과 원격 파일 크기가 다릅니다. 전송: {}, 실제: {}", transferSize, fileSize);
+                    } else {
+                        logger.warn("Uploaded bytes differ from the remote file size. Sent: {}, actual: {}", transferSize, fileSize);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -293,7 +298,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             } else {
                 logger.error("Failed to upload file: {}", saveName);
             }
-            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (createdNewFile && session != null) {
                 // 로컬 구현처럼 불완전한 파일을 남기지 않는다 (남기면 다시 올릴 때 "이미 존재" 로 거부됨)
@@ -334,7 +339,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             channel.connect(CHANNEL_CONNECT_TIMEOUT);
 
             if (!exists(channel, remoteFileFullPath)) {
-                throw new S2RuntimeException("원격 파일을 찾을 수 없습니다: " + remoteFileFullPath);
+                throw new S2RuntimeException("Remote file not found: " + remoteFileFullPath);
             }
 
             var rawInputStream = channel.get(remoteFileFullPath);
@@ -353,8 +358,12 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             if (session != null) {
                 jschSessionFactory.returnSession(session);
             }
-            logger.error("원격 파일 다운로드 스트림 열기 실패: {}", saveName, e);
-            throw new S2RuntimeException("원격 파일 다운로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
+            if (S2Util.isKorean()) {
+                logger.error("원격 파일 다운로드 스트림 열기 실패: {}", saveName, e);
+            } else {
+                logger.error("Cannot open the remote file download stream: {}", saveName, e);
+            }
+            throw new S2RuntimeException("Cannot download the remote file: " + saveName + " (" + e.getMessage() + ")", e);
         }
     }
 
@@ -378,8 +387,12 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
                 channel.rm(remoteFileFullPath);
             }
         } catch (Exception e) {
-            logger.error("원격 파일 삭제 실패: {}", saveName, e);
-            throw new S2RuntimeException("원격 파일 삭제 실패: " + saveName + " (" + e.getMessage() + ")", e);
+            if (S2Util.isKorean()) {
+                logger.error("원격 파일 삭제 실패: {}", saveName, e);
+            } else {
+                logger.error("Cannot delete the remote file: {}", saveName, e);
+            }
+            throw new S2RuntimeException("Cannot delete the remote file: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect(); // 채널 종료
@@ -457,11 +470,19 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             putDirCache(remoteDir);
         } catch (Exception e) {
             if (logger.isErrorEnabled()) {
-                logger.error("원격 디렉토리 생성 실패: {}", remoteDir, e);
+                if (S2Util.isKorean()) {
+                    logger.error("원격 디렉토리 생성 실패: {}", remoteDir, e);
+                } else {
+                    logger.error("Cannot create the remote directory: {}", remoteDir, e);
+                }
             } else {
-                logger.error("원격 디렉토리 생성 실패: {}", remoteDir);
+                if (S2Util.isKorean()) {
+                    logger.error("원격 디렉토리 생성 실패: {}", remoteDir);
+                } else {
+                    logger.error("Cannot create the remote directory: {}", remoteDir);
+                }
             }
-            throw new S2RuntimeException("원격 디렉토리 생성 실패: " + remoteDir);
+            throw new S2RuntimeException("Cannot create the remote directory: " + remoteDir);
         }
     }
 
@@ -488,7 +509,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             ensureRemoteDir(channel, parentDirOf(target));
 
             if (!overwrite && exists(channel, target)) {
-                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target);
             }
             var resume = exists(channel, part);
             if (resume && channel.lstat(part).getSize() > sourceSize) {
@@ -497,7 +518,11 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
                 resume = false;
             }
             if (resume) {
-                logger.info("업로드를 이어서 보냅니다: {} ({} / {} bytes)", target, channel.lstat(part).getSize(), sourceSize);
+                if (S2Util.isKorean()) {
+                    logger.info("업로드를 이어서 보냅니다: {} ({} / {} bytes)", target, channel.lstat(part).getSize(), sourceSize);
+                } else {
+                    logger.info("Resuming upload: {} ({} / {} bytes)", target, channel.lstat(part).getSize(), sourceSize);
+                }
             }
 
             var watchdog = startTransferIdleWatchdog(channel, monitor, TRANSFER_IDLE_MILLIS,
@@ -516,7 +541,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             }
             if (!overwrite && exists(channel, target)) {
                 channel.rm(part);
-                throw new S2FileExistsException("이미 존재하는 원격 파일입니다: " + target);
+                throw new S2FileExistsException("Remote file already exists: " + target);
             }
             try {
                 channel.rename(part, target); // posix-rename 을 지원하면 대상을 원자적으로 바꾼다
@@ -533,7 +558,7 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             throw e;
         } catch (Exception e) {
             logger.error("Failed to upload file (resumable): {}", saveName, e);
-            throw new S2RuntimeException("원격 파일 업로드 실패: " + saveName + " (" + e.getMessage() + ")", e);
+            throw new S2RuntimeException("Cannot upload the remote file: " + saveName + " (" + e.getMessage() + ")", e);
         } finally {
             if (channel != null && channel.isConnected()) {
                 channel.disconnect();
@@ -555,7 +580,11 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             session = jschSessionFactory.getSession();
             removeQuietly(session, null, part);
         } catch (Exception e) {
-            logger.warn("부분 파일을 지우지 못했습니다: {} ({})", part, e.toString());
+            if (S2Util.isKorean()) {
+                logger.warn("부분 파일을 지우지 못했습니다: {} ({})", part, e.toString());
+            } else {
+                logger.warn("Cannot delete the partial file: {} ({})", part, e.toString());
+            }
         } finally {
             jschSessionFactory.returnSession(session);
         }
@@ -598,7 +627,11 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
             }
         } catch (Exception e) {
             if (!(e instanceof SftpException se && se.id == ChannelSftp.SSH_FX_NO_SUCH_FILE)) {
-                logger.warn("실패한 업로드의 원격 파일을 지우지 못했습니다: {} ({})", path, e.getMessage());
+                if (S2Util.isKorean()) {
+                    logger.warn("실패한 업로드의 원격 파일을 지우지 못했습니다: {} ({})", path, e.getMessage());
+                } else {
+                    logger.warn("Cannot delete the remote file of a failed upload: {} ({})", path, e.getMessage());
+                }
             }
         } finally {
             if (cleanup != null && cleanup.isConnected()) {
