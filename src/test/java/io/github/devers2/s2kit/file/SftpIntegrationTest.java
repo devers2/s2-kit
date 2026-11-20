@@ -176,6 +176,15 @@ class SftpIntegrationTest {
         assertTrue(openConnections.get() <= count, "connections left open: " + openConnections.get());
     }
 
+    /** Waits until the server has at least the given number of connections | 서버 연결 수가 주어진 수 이상이 될 때까지 기다림 */
+    private static void awaitConnectionsAtLeast(int count) throws InterruptedException {
+        var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (openConnections.get() < count && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertTrue(openConnections.get() >= count, "connections open: " + openConnections.get() + ", expected " + count);
+    }
+
     /**
      * Many parallel uploads through a small pool all succeed and never open more connections than the pool allows | 작은 풀로
      * 많은 업로드를 동시에 해도 모두 성공하고 풀 상한보다 많은 연결을 열지 않음
@@ -271,6 +280,16 @@ class SftpIntegrationTest {
                 }
                 sftp.deleteFile("/full", "x.txt");
             }
+        }
+
+        @Test
+        void minIdleSessionsAreOpenedBeforeTheFirstRequest() throws Exception {
+            var baseline = openConnections.get();
+            try (var sftp = new S2SftpFileManagerImpl("127.0.0.1", server.getPort(), USER, null, null, PASSWORD, 4, 3, 3000,
+                    knownHosts.toString(), false)) {
+                awaitConnectionsAtLeast(baseline + 3);
+            }
+            awaitConnectionsAtMost(baseline);
         }
 
         @Test
@@ -392,6 +411,16 @@ class SftpIntegrationTest {
             try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString()))) {
                 assertBulkUploads(context.getBean(SpringSftpFileManagerImpl.class), "/bulk-spring", 2);
             }
+        }
+
+        @Test
+        void minIdleSessionsAreOpenedBeforeTheFirstRequest() throws Exception {
+            var baseline = openConnections.get();
+            try (var context = context(Map.of("sftp.known-hosts-path", knownHosts.toString(), "sftp.pool.min-idle", 3,
+                    "sftp.pool.max-total", 4))) {
+                awaitConnectionsAtLeast(baseline + 3);
+            }
+            awaitConnectionsAtMost(baseline);
         }
 
         @Test

@@ -43,6 +43,7 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
   retries wait a random 0.5–1.5s instead of all at once.
 - Parallel SFTP uploads into a new folder failed when two requests created it at the same time.
 - `S2SftpFileManagerImpl` no longer starts a `Timer` thread for every upload and download; one shared watchdog checks them.
+- Both SFTP managers open the minimum idle sessions in the background right after creation instead of about a minute later.
 - `S2RestApiUtil.callApi` GET left `+` unencoded in query values, so the server read it as a space (`a+b` → `a b`);
   values are now fully encoded.
 - `S2PaginationTag` rendered no page numbers when `pageNo` was past the last page (for example after rows were deleted);

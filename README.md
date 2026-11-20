@@ -254,6 +254,11 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as
   `MaxStartups 30:30:200`. `Subsystem sftp internal-sftp` avoids one extra process per connection.
 - A full pool makes callers wait (`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) and then fails; it never
   opens more connections than `sessionMaxTotal`. Spring also has `sftp.timeout-millis` (connect and auth timeout, 30s).
+- `sessionMinIdle` (Spring: `sftp.pool.min-idle`) sessions are opened in the background right after creation, so the first
+  requests after a deploy do not wait for handshakes. A server that is down does not fail startup.
+- Sizing: concurrent transfers ≈ transfers per second × seconds per transfer. 128 sessions carry, for example, 400 uploads/s
+  of 0.3s each. Large files are limited by bandwidth rather than sessions: 128 parallel 100MB uploads on a 1Gbps link take
+  about two minutes each, so queue bulk jobs on the caller's side instead of raising the pool.
 
 #### AOP parameters (`S2ContextUtil`)
 

@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.NoSuchElementException;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +40,7 @@ import org.apache.commons.pool2.impl.AbandonedConfig;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 
+import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
 
@@ -218,6 +220,34 @@ public class JschSessionFactory {
         }
         this.maxConcurrentConnects = connects;
         this.connectPermits = new Semaphore(connects, true);
+
+        prewarm(sessionPool);
+    }
+
+    /**
+     * 최소 유휴 세션(sessionMinIdle)만큼 미리 연결해 둔다. 그대로 두면 풀 정비가 처음 돌 때(약 1분 뒤)에야 채워져, 배포 직후 몰린
+     * 요청이 연결 맺기를 기다린다. 백그라운드에서 하므로 생성자는 기다리지 않고, SFTP 서버가 꺼져 있어도 앱 기동이 실패하지 않는다
+     * (실패는 기록만 하고, 이후 요청 때 다시 연결한다).
+     */
+    private void prewarm(GenericObjectPool<Session> pool) {
+        if (sessionMinIdle <= 0) {
+            return;
+        }
+        Runnable task = () -> {
+            try {
+                pool.preparePool();
+                logger.info("SFTP 세션을 미리 열었습니다: {}:{} [{}]", host, port, getPoolStatus());
+            } catch (Exception e) {
+                if (!closed) {
+                    logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", host, port, e.toString());
+                }
+            }
+        };
+        try {
+            S2ThreadUtil.getCommonExecutor().execute(task);
+        } catch (RejectedExecutionException e) {
+            logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+        }
     }
 
     /**

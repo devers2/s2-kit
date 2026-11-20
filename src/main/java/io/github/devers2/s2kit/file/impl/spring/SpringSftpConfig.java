@@ -22,6 +22,7 @@ package io.github.devers2.s2kit.file.impl.spring;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -39,6 +40,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
 import org.springframework.integration.sftp.session.SftpSession;
 
+import io.github.devers2.s2util.core.S2ThreadUtil;
 import io.github.devers2.s2util.log.S2LogManager;
 import io.github.devers2.s2util.log.S2Logger;
 
@@ -252,6 +254,27 @@ public class SpringSftpConfig {
         abandoned.setRemoveAbandonedTimeout(Duration.ofMinutes(ABANDONED_TIMEOUT_MINUTES));
         abandoned.setLogAbandoned(true);
         pool.setAbandonedConfig(abandoned);
+
+        // 최소 유휴 세션(min-idle)만큼 미리 연결해 둔다 (그대로 두면 첫 풀 정비 때(약 1분 뒤)에야 채워짐). 백그라운드에서 하므로
+        // 기동을 기다리게 하지 않고, SFTP 서버가 꺼져 있어도 기동이 실패하지 않는다 (요청 때 다시 연결함).
+        if (minIdle > 0) {
+            Runnable prewarm = () -> {
+                try {
+                    pool.preparePool();
+                    logger.info("SFTP 세션을 미리 열었습니다: {}:{} (idle {})", sftpHost, sftpPort, pool.getNumIdle());
+                } catch (Exception e) {
+                    if (!pool.isClosed()) {
+                        logger.warn("SFTP 세션을 미리 열지 못했습니다 (요청 때 다시 연결함): {}:{} - {}", sftpHost, sftpPort,
+                                e.toString());
+                    }
+                }
+            };
+            try {
+                S2ThreadUtil.getCommonExecutor().execute(prewarm);
+            } catch (RejectedExecutionException e) {
+                logger.debug("미리 열기를 건너뜁니다 (실행기가 받지 않음): {}", e.getMessage());
+            }
+        }
 
         return pool;
     }

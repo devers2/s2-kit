@@ -253,6 +253,11 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
   `Subsystem sftp internal-sftp`로 두면 연결마다 프로세스를 하나 더 띄우지 않습니다.
 - 풀이 가득 차면 호출 측은 기다렸다가(`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) 실패하며, 연결을
   `sessionMaxTotal`보다 많이 열지 않습니다. Spring 은 `sftp.timeout-millis`(연결·인증 제한 시간, 30초)도 있습니다.
+- 만든 직후 백그라운드에서 `sessionMinIdle`(Spring: `sftp.pool.min-idle`)개를 미리 연결해, 배포 직후 첫 요청이 연결 맺기를
+  기다리지 않습니다. SFTP 서버가 꺼져 있어도 기동은 실패하지 않습니다.
+- 규모 산정: 동시 전송 수 ≈ 초당 전송 수 × 전송 1건 시간(초). 세션 128개면 예를 들어 0.3초짜리 업로드를 초당 400건 처리합니다.
+  큰 파일은 세션보다 대역폭이 한계라서, 1Gbps 에서 100MB 파일 128개를 동시에 올리면 한 건에 2분쯤 걸립니다. 대량 작업은 풀을
+  키우기보다 호출 측에서 큐로 줄 세웁니다.
 
 #### AOP 파라미터 (`S2ContextUtil`)
 
