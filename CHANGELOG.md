@@ -4,7 +4,20 @@
 
 All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `s2-support` 1.x history continues in this file.
 
-## [Unreleased]
+## [1.3.0]
+
+### ⚠️ Compatibility
+
+- ⚠️ **Exception messages are English** (log messages follow the JVM locale, as in s2-util). Check exception types such
+  as `S2FileExistsException` instead of comparing messages.
+- ⚠️ **SFTP pool defaults are smaller** (max 64 connections instead of 128, 8 kept open instead of 16), and the Spring
+  version gives each pooled session its own SSH connection instead of sharing one. Larger servers set the values
+  (`SFTP-GUIDE.md`).
+- ⚠️ **JS behavior fixes may change results**: `S2Util.jsonToQueryString` now encodes values and keeps `0`/`false`,
+  `queryStringToJson` decodes, `S2Date` clamps month arithmetic to the month end and parses a missing day as 1, and
+  `validate` `minValue` handles `0`, negatives and empty values. The scripts require ES2020 browsers (README).
+- ⚠️ **`S2PdfUtil.stamp` uses the default font and throws** for text the font cannot draw and for unreadable images,
+  instead of leaving them out silently.
 
 ### Added
 
@@ -41,6 +54,8 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Fixed
 
+- `s2.date.js` (and `s2.util.js`, which imports it) did not load on Safari 13.1: `S2Date` declared class fields, an
+  ES2022 feature. They are now set in the constructor, and the ES2020 test also rejects class fields.
 - `S2Util.alert`/`confirm` stacked on top of each other: Enter and Escape closed the one underneath first; only the top
   one answers now.
 - `S2Util.validate` `minValue` skipped `0`, read `-5` as `5`, flagged empty optional fields and let non-numbers pass.
