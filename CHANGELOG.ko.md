@@ -117,6 +117,8 @@
 
 ### 의존성
 
+- `s2-core` 2.1.0 → 2.2.0 (필수: `S2UploadQueue`가 2.2.0 에서 고친 `S2ThreadUtil.newExecutor`의 가상 스레드 동시 실행 제한에
+  기댐). 이 버전보다 s2-util 2.2.0 을 먼저 배포해야 합니다.
 - Apache PDFBox 3.0.4 → 3.0.8 (보안·버그 수정 패치), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
   Caffeine 3.2.3 → 3.3.1, jackson-databind 3.0.3 → 3.2.4. `S2PdfUtil`을 쓰는 앱은 PDFBox 3.0.8 을 권장합니다 (3.0.x 는 그대로 동작).
 

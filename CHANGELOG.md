@@ -132,6 +132,8 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Dependencies
 
+- `s2-core` 2.1.0 → 2.2.0 (required: `S2UploadQueue` relies on `S2ThreadUtil.newExecutor` limiting virtual threads,
+  fixed in 2.2.0). Publish s2-util 2.2.0 before this release.
 - Apache PDFBox 3.0.4 → 3.0.8 (security and bug-fix patches), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
   Caffeine 3.2.3 → 3.3.1, jackson-databind 3.0.3 → 3.2.4. Applications using `S2PdfUtil` should use PDFBox 3.0.8 (any 3.0.x
   still works).
