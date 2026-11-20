@@ -8,6 +8,11 @@
 
 ### 수정
 
+- ⚠️ `S2PdfUtil.stamp`(와 `addPageNumbers`)가 기본 폰트를 쓰지 않던 문제. 요소마다 폰트를 지정하지 않으면 텍스트·쪽 번호·접두사를
+  Helvetica 로 그려, `setDefaultFont`나 설치된 한글 폰트가 있어도 한글 텍스트가 (같은 줄의 영문까지) 조용히 빠졌습니다. 이제 기본 폰트를
+  쓰고, 폰트로 그릴 수 없는 텍스트는 빠뜨리지 않고 `IOException`으로 실패합니다.
+- ⚠️ `S2PdfUtil.stamp`가 읽지 못한 이미지·QR 스탬프를 로그만 남기고 빼던 문제. 이제 워터마크처럼 `IOException`을 던집니다.
+- `S2PdfUtil.Text.repeat`의 간격이 아주 작으면(약 0.00001pt 미만) 끝나지 않던 문제. 간격은 최소 1pt 로 둡니다.
 - `S2FileUtil.copy`·`move`가 대상이 아직 없으면(새 경로로 복사·이동) `NoSuchFileException`으로 실패하던 문제.
 - `S2TypeUtil.compare`가 enum, `java.sql.Timestamp`처럼 `Comparable`을 상위 클래스에서 물려받은 값을 비교하지 못하던 문제.
 - `S2TypeUtil.createInstance`가 스레드 컨텍스트 클래스 로더에서 보이지 않는 클래스면 실패하던 문제(이제 넘겨받은 클래스를 씁니다).

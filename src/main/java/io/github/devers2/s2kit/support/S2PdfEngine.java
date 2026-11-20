@@ -831,7 +831,8 @@ final class S2PdfEngine {
                         imageCache.put(imgStamp, xobj);
                         imageSizeCache.put(imgStamp, imgStamp.drawSize(xobj.getWidth(), xobj.getHeight()));
                     } catch (Exception e) {
-                        logger.error("이미지 스탬프 변환 실패: ", e);
+                        throw e instanceof IOException ioe ? ioe
+                                : new IOException("Cannot read the image stamp: " + e.getMessage(), e);
                     }
                 }
             }
@@ -846,13 +847,14 @@ final class S2PdfEngine {
                     var xobj = LosslessFactory.createFromImage(document, decodeImage(bytes));
                     qrCache.put(qrStamp, xobj);
                 } catch (Exception e) {
-                    logger.error("QR 스탬프 생성 실패: ", e);
+                    throw e instanceof IOException ioe ? ioe
+                            : new IOException("Cannot create the QR stamp: " + e.getMessage(), e);
                 }
             }
         }
 
         // 4. 폰트 캐시 (File -> PDFont 매핑 재사용)
-        Map<File, PDFont> fontCache = new HashMap<>();
+        Map<Object, PDFont> fontCache = new HashMap<>();
 
         // 5. 페이지 순회 및 스탬핑
         int pageNum = 0;
@@ -1016,7 +1018,7 @@ final class S2PdfEngine {
                                           BaseTextElement<?> element, String str, float rotationDegrees,
                                           boolean repeat, float gapX, float gapY,
                                           float shownWidth, float shownHeight, PDRectangle box,
-                                          int pageRotation, Map<File, PDFont> fontCache) throws IOException {
+                                          int pageRotation, Map<Object, PDFont> fontCache) throws IOException {
         if (str == null || str.trim().isEmpty()) {
             return;
         }
@@ -1042,8 +1044,9 @@ final class S2PdfEngine {
             contentStream.setNonStrokingColor(element.getColor());
 
             if (repeat) {
-                float actualGapX = gapX > 0 ? gapX : 150f;
-                float actualGapY = gapY > 0 ? gapY : 150f;
+                // 아주 작은 간격은 float 덧셈이 더 나아가지 않아(curX += gap == curX) 끝나지 않으므로 1pt 이상으로 둔다.
+                float actualGapX = gapX > 0 ? Math.max(1f, gapX) : 150f;
+                float actualGapY = gapY > 0 ? Math.max(1f, gapY) : 150f;
                 for (float curX = -shownWidth * 0.1f; curX < shownWidth * 1.2f; curX += actualGapX) {
                     for (float curY = -shownHeight * 0.1f; curY < shownHeight * 1.2f; curY += actualGapY) {
                         renderRotatedText(contentStream, font, fontSize, str, curX, curY, textWidth, textHeight, rotationDegrees, true, strokeWidth, element.getColor(), element.getTextAlign());
@@ -1087,7 +1090,7 @@ final class S2PdfEngine {
     private static PageNumberPart createPagePart(
             String text, PDFont partFont, File partFontFile,
             Float partFontSize, Boolean partBold, Float partStrokeWidth, Color partColor,
-            PageNumber base, PDDocument document, Map<File, PDFont> fontCache) {
+            PageNumber base, PDDocument document, Map<Object, PDFont> fontCache) {
         if (text == null || text.isEmpty()) {
             return null;
         }
@@ -1111,7 +1114,7 @@ final class S2PdfEngine {
     private static void renderDistinctPageNumber(PDDocument document, PDPageContentStream contentStream,
                                                  PageNumber pageNumber, int pageNum, int count,
                                                  float shownWidth, float shownHeight, PDRectangle box,
-                                                 int rotation, Map<File, PDFont> fontCache) throws IOException {
+                                                 int rotation, Map<Object, PDFont> fontCache) throws IOException {
         var parts = new ArrayList<PageNumberPart>();
 
         // 1. Prefix (접두사)
@@ -1223,10 +1226,13 @@ final class S2PdfEngine {
         return new float[]{x, y};
     }
 
+    /** fontCache 에서 기본 폰트(setDefaultFont·시스템 폰트)를 가리키는 키 */
+    private static final Object DEFAULT_FONT_KEY = new Object();
+
     /**
-     * 폰트 객체를 결정하여 반환한다. (명시적 font -> fontFile 파일 로드 -> 기본 HELVETICA 순서)
+     * 폰트 객체를 결정하여 반환한다. (명시적 font -> fontFile 파일 로드 -> 기본 폰트(setDefaultFont·시스템 한글 폰트) -> HELVETICA 순서)
      */
-    private static PDFont resolveFont(PDDocument document, PDFont explicitFont, File fontFile, Map<File, PDFont> fontCache) {
+    private static PDFont resolveFont(PDDocument document, PDFont explicitFont, File fontFile, Map<Object, PDFont> fontCache) {
         if (explicitFont != null) {
             return explicitFont;
         }
@@ -1242,7 +1248,23 @@ final class S2PdfEngine {
                 logger.warn("폰트 파일 로드 실패, 기본 폰트로 대체: " + fontFile, e);
             }
         }
-        return new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+        if (fontCache.containsKey(DEFAULT_FONT_KEY)) {
+            return fontCache.get(DEFAULT_FONT_KEY);
+        }
+        PDFont font = null;
+        try {
+            var source = resolveFont(null, null);
+            if (source != null) {
+                font = PDType0Font.load(document, new ByteArrayInputStream(source.bytes()));
+            }
+        } catch (IOException | RuntimeException e) {
+            logger.warn("기본 폰트 로드 실패, HELVETICA 로 대체: {}", e.getMessage());
+        }
+        if (font == null) {
+            font = new PDType1Font(Standard14Fonts.FontName.HELVETICA);
+        }
+        fontCache.put(DEFAULT_FONT_KEY, font);
+        return font;
     }
 
     /**
@@ -1338,7 +1360,10 @@ final class S2PdfEngine {
             try {
                 contentStream.showText(lines[i]);
             } catch (IllegalArgumentException e) {
-                logger.error("PDF 텍스트 출력 실패(한글 등 지원 폰트 지정 필요): " + lines[i], e);
+                // 조용히 빠뜨리지 않고 알린다(텍스트가 없는 PDF 가 성공처럼 나가지 않도록).
+                throw new IOException("Cannot draw the text with font " + font.getName() + ": " + lines[i]
+                        + ". Set a font that has these characters (S2PdfUtil.setDefaultFont(Path) or .font(...)), "
+                        + "or install a Korean font: " + S2PdfUtil.SYSTEM_FONT_CANDIDATES, e);
             }
             if (i < lines.length - 1) {
                 float deltaX = lineOffsets[i + 1] - lineOffsets[i];

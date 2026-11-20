@@ -8,6 +8,13 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Fixed
 
+- ⚠️ `S2PdfUtil.stamp` (and `addPageNumbers`) ignored the default font: text, page numbers and prefixes were drawn with
+  Helvetica unless each element named a font, so Korean text was left out silently (the whole line, Latin letters
+  included) even with `setDefaultFont` or an installed Korean font. They now use the default font, and text that the
+  font cannot draw fails with an `IOException` instead of being dropped.
+- ⚠️ `S2PdfUtil.stamp` dropped an image or QR stamp it could not read and logged it; it now throws an `IOException`,
+  like the watermark.
+- `S2PdfUtil.Text.repeat` with a tiny gap (below about 0.00001pt) never finished; gaps are now at least 1pt.
 - `S2FileUtil.copy` and `move` failed with `NoSuchFileException` whenever the target did not exist yet (copying or moving
   to a new path).
 - `S2TypeUtil.compare` rejected values whose `Comparable` comes from a superclass, such as enums and `java.sql.Timestamp`.
