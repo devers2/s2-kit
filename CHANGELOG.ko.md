@@ -8,6 +8,10 @@
 
 ### 추가
 
+- JS: `S2Util.loginUrl`(401 응답 때 이동할 주소, 기본 `/login`), `maxByte`의 계산 방식 `S2Util.byteCharset`와 `byteCharset`
+  속성(기본 `EUC-KR`, `UTF-8`이면 한글 3바이트), `S2Util.byteLength`/`truncateBytes`.
+- `src/test/js`의 JS 시험을 `./gradlew check`가 `node --test`로 실행합니다(node 18 이상이 없으면 경고 후 건너뜀, CI 에서는
+  필수). 그중 하나는 스크립트가 ES2020 을 넘지 않는지 확인합니다. README 에 지원 브라우저를 적었습니다.
 - `S2UploadQueue`: 어떤 `FileManager`로든 정해진 동시 전송 수만큼 백그라운드에서 올립니다. 데이터를 임시 파일에 받아 두고
   `CompletableFuture`를 바로 돌려주며, 가득 차면 기다리지 않고 거절하고, 일시적 실패는 점점 늘어나는 무작위 간격으로 다시 시도하고,
   임시 파일용 디스크 여유 공간을 지킵니다.
@@ -21,6 +25,8 @@
 
 ### 변경
 
+- JS: `initializeS2DomEvents`의 전역 클릭 처리를 지웠습니다. 클릭 처리가 끝난 뒤 `preventDefault()`를 불러 아무 효과가
+  없었습니다.
 - ⚠️ SFTP 풀 기본값을 일반 파일 서버(4 vCPU / 8GB / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정) 기준으로 맞췄습니다. 최대 연결
   128 → 64, 유지 연결 16 → 8(`S2SftpFileManagerImpl`), Spring 은 `sftp.pool.max-total` 128 → 64(`min-idle` 8, `max-idle` 32 는
   그대로). 다른 서버는 값을 지정하십시오(`SFTP-GUIDE.ko.md` 참고).

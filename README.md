@@ -305,6 +305,10 @@ MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);   // throws S2JsonException 
 
 This project is built with **JDK 21**, but it can be used reliably in all environments running **Java 17 or higher**.
 
+The front-end scripts (`/s2-kit/js/*.js`) are ES modules written in **ES2020**: load them with `<script type="module">`
+(or `import`). Supported browsers: Chrome and Edge 80+, Firefox 74+, Safari 13.1+ (iOS 13.4+); Internet Explorer is not
+supported. They are checked with `node --test` (`src/test/js`) as part of `./gradlew check`.
+
 ---
 
 ## 📜 License & Copyright

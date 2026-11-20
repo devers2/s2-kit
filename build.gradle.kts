@@ -382,3 +382,65 @@ subprojects {
     S2BuildUtils.registerCopyDependenciesTask(project)
     S2BuildUtils.updateReadmeWithVersionAndDependencies(project, "^README(\\..+)?\\.md$")
 }
+
+// ========================================================================
+// ⭐ [JS 시험] 웹 자원(src/main/resources/META-INF/resources/s2-kit/js)을 node 내장 시험 실행기(node --test)로 확인한다.
+//   - 시험: src/test/js/*.test.mjs (의존성 없음). 날짜 시험이 시간대를 타므로 TZ=Asia/Seoul 로 실행한다.
+//   - node 18 이상이 없으면 경고만 하고 건너뛴다. 단, CI(환경 변수 CI=true)에서는 실패시켜 시험이 조용히 빠지지 않게 한다.
+// ========================================================================
+val jsTest by tasks.registering {
+    group = "verification"
+    description = "Runs the JavaScript tests in src/test/js with node --test."
+    val testDir = layout.projectDirectory.dir("src/test/js")
+    val jsDir = layout.projectDirectory.dir("src/main/resources/META-INF/resources/s2-kit/js")
+    val stamp = layout.buildDirectory.file("js-test/passed")
+    val ci = providers.environmentVariable("CI").map { it.equals("true", ignoreCase = true) }.orElse(false)
+    inputs.dir(testDir)
+    inputs.dir(jsDir)
+    outputs.file(stamp)
+    doLast {
+        val tests = testDir.asFile.listFiles()?.filter { it.name.endsWith(".test.mjs") }?.sortedBy { it.name }.orEmpty()
+        if (tests.isEmpty()) {
+            return@doLast
+        }
+        val nodeMajor = try {
+            val version = ProcessBuilder("node", "--version").redirectErrorStream(true).start()
+            val text = version.inputStream.bufferedReader().readText().trim()
+            if (version.waitFor() == 0) text.removePrefix("v").substringBefore('.').toIntOrNull() else null
+        } catch (e: java.io.IOException) {
+            null
+        }
+        if (nodeMajor == null || nodeMajor < 18) {
+            val message = "node 18 이상을 찾지 못해 JS 시험(src/test/js)을 건너뜁니다."
+            if (ci.get()) {
+                throw GradleException("$message CI 에서는 node 가 필요합니다.")
+            }
+            logger.warn("⚠️ $message")
+            return@doLast
+        }
+        val builder = ProcessBuilder(listOf("node", "--test") + tests.map { it.absolutePath })
+            .directory(testDir.asFile)
+            .redirectErrorStream(true)
+        builder.environment()["TZ"] = "Asia/Seoul"
+        val process = builder.start()
+        // 데몬에서 돌므로 출력은 직접 읽어 Gradle 로그로 넘긴다 (성공하면 요약만, 실패하면 전체)
+        val output = process.inputStream.bufferedReader().readText()
+        val exit = process.waitFor()
+        if (exit != 0) {
+            logger.error(output)
+            throw GradleException("JS 시험이 실패했습니다 (node --test 종료 코드 $exit). 위 출력을 확인하세요.")
+        }
+        logger.lifecycle(
+            "JS 시험 통과: " + output.lines().filter { it.startsWith("ℹ tests") || it.startsWith("ℹ pass") }
+                .joinToString(", ") { it.removePrefix("ℹ ").trim() }
+        )
+        stamp.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText("passed\n")
+        }
+    }
+}
+
+tasks.named("check") {
+    dependsOn(jsTest)
+}

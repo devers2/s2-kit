@@ -543,6 +543,83 @@ export const S2Util = {
    * S2Util.debug = true; // 이후 S2Util.fetch() 호출 시 시작/종료 로그가 콘솔에 출력된다.
    */
   debug: false,
+
+  /**
+   * `S2Util.fetch` 가 401(인증 필요) 응답을 받았을 때 이동할 로그인 페이지 주소. 기본값은 '/login' 이다.
+   * 컨텍스트 경로가 있거나 로그인 주소가 다르면 앱 초기화 때 바꾼다.
+   *
+   * @example
+   * S2Util.loginUrl = '/app/member/login.do';
+   */
+  loginUrl: '/login',
+
+  /**
+   * `maxByte` 속성의 바이트 계산 방식 기본값. 'EUC-KR'(기본값, 한글 등 ASCII 밖의 문자 2바이트) 또는 'UTF-8'(한글 3바이트,
+   * 이모지 4바이트). DB 컬럼이 UTF-8 이면 'UTF-8' 로 두어야 실제 저장 크기와 맞는다. 요소의 `byteCharset` 속성이 우선한다.
+   *
+   * @example
+   * S2Util.byteCharset = 'UTF-8';                        // 전체
+   * // <input type="text" maxByte="100" byteCharset="UTF-8">  // 요소별
+   */
+  byteCharset: 'EUC-KR',
+
+  /**
+   * 문자열의 바이트 수를 센다.
+   *
+   * @param {string} value - 셀 문자열
+   * @param {'EUC-KR'|'UTF-8'} [charset = S2Util.byteCharset] - 계산 방식 ('EUC-KR': ASCII 밖 2바이트, 'UTF-8': 실제 UTF-8 길이)
+   * @returns {number} 바이트 수
+   *
+   * @example
+   * S2Util.byteLength('가a', 'UTF-8');  // 4
+   * S2Util.byteLength('가a', 'EUC-KR'); // 3
+   */
+  byteLength(value, charset = S2Util.byteCharset) {
+    let bytes = 0;
+    for (const ch of String(value ?? '')) {
+      bytes += S2Util._charBytes(ch.codePointAt(0), charset);
+    }
+    return bytes;
+  },
+
+  /**
+   * 문자열을 바이트 수 안에서 자른다. 글자 중간(서로게이트 쌍 포함)에서 자르지 않는다.
+   *
+   * @param {string} value - 자를 문자열
+   * @param {number} maxBytes - 최대 바이트 수
+   * @param {'EUC-KR'|'UTF-8'} [charset = S2Util.byteCharset] - 계산 방식
+   * @returns {string} 잘린 문자열 (넘지 않으면 그대로)
+   *
+   * @example
+   * S2Util.truncateBytes('가나다', 7, 'UTF-8'); // '가나'
+   */
+  truncateBytes(value, maxBytes, charset = S2Util.byteCharset) {
+    const text = String(value ?? '');
+    let bytes = 0;
+    let end = 0;
+    for (const ch of text) {
+      bytes += S2Util._charBytes(ch.codePointAt(0), charset);
+      if (bytes > maxBytes) {
+        return text.slice(0, end);
+      }
+      end += ch.length;
+    }
+    return text;
+  },
+
+  /**
+   * @private
+   * 한 글자(코드 포인트)의 바이트 수.
+   */
+  _charBytes(codePoint, charset) {
+    if (String(charset).toUpperCase().replace('_', '-') === 'UTF-8') {
+      if (codePoint < 0x80) return 1;
+      if (codePoint < 0x800) return 2;
+      if (codePoint < 0x10000) return 3;
+      return 4;
+    }
+    return codePoint > 127 ? 2 : 1;
+  },
   /**
    * HTML 특수문자를 엔티티로 변환한다. 신뢰할 수 없는 값을 HTML 문자열에 넣을 때 사용한다.
    * 기본적으로 일반적인 XSS 공격을 방어하는 5개 특수문자(&, <, >, ", ')를 변환하며,
@@ -907,7 +984,7 @@ export const S2Util = {
           timedOut = true;
           controller.abort();
         },
-        timeout && !isNaN(timeout) ? timeout : 600000
+        timeout && !isNaN(timeout) ? timeout : 10 * 60 * 1000
       );
     }
 
@@ -1142,8 +1219,8 @@ export const S2Util = {
             S2Util.showToast(error.message);
           } else if (error.status === 401) {
             S2Util.confirm('인증이 필요합니다.\n로그인 페이지로 이동하시겠습니까?', function () {
-              // 로그인 페이지로 리다이렉트 등 추가 처리 가능
-              location.href = '/login';
+              // 로그인 페이지로 리다이렉트 등 추가 처리 가능 (주소는 S2Util.loginUrl 로 바꿀 수 있다)
+              location.href = S2Util.loginUrl || '/login';
             });
           } else if (error.status === 403) {
             S2Util.showToast('접근 권한이 없습니다.');
@@ -3105,7 +3182,7 @@ export const S2Util = {
       () => {
         S2Util.hideToast(toastId);
       },
-      option && !isNaN(option.delay) ? option.delay : 5_000
+      option && !isNaN(option.delay) ? option.delay : 5 * 1000
     );
   },
   /**
@@ -3519,23 +3596,6 @@ export const initializeS2DomEvents = () => {
     // 세션 스토리지에 대기 중인 토스트 표시
     S2Util.showSessionToast();
 
-    document.body.addEventListener('click', (event) => {
-      const element = event.target;
-      // 기본 동작을 막는 조건 설정(클릭시 상단으로 스크롤 되는 동작 방지)
-      const shouldPreventDefault =
-        element.tagName.toLowerCase() === 'a' ||
-        (element.tagName.toLowerCase() === 'input' && element.type === 'submit') ||
-        element.tagName.toLowerCase() === 'button';
-
-      if (shouldPreventDefault) {
-        // onClick 이벤트를 큐에 넣어 나중에 실행되도록 함
-        setTimeout(() => {
-          event.preventDefault(); // 기본 동작 방지
-          // event.stopPropagation(); // 이벤트 버블링 방지
-        }, 0); // 0ms 딜레이를 주어 after the current call stack runs
-      }
-    });
-
     document.addEventListener('ajaxStart', () => {
       // const spinner = document.createElement('div');
       // spinner.id = 'ui-gSpinner';
@@ -3680,14 +3740,11 @@ export const initializeS2DomEvents = () => {
     bindKeyupOnce(element, 'MaxByte', () => {
       const maxByte = Number(element.getAttribute('maxByte'));
       if (maxByte && !isNaN(maxByte) && maxByte > 0) {
-        const stringValue = element.value;
-        let byteLength = 0;
-        for (let i = 0; i < stringValue.length; i++) {
-          byteLength += stringValue.charCodeAt(i) > 127 ? 2 : 1;
-          if (byteLength > maxByte) {
-            element.value = stringValue.slice(0, i);
-            break;
-          }
+        // 계산 방식: 요소의 byteCharset 속성 > S2Util.byteCharset (기본 EUC-KR: ASCII 밖 2바이트)
+        const charset = element.getAttribute('byteCharset') || S2Util.byteCharset;
+        const truncated = S2Util.truncateBytes(element.value, maxByte, charset);
+        if (truncated !== element.value) {
+          element.value = truncated;
         }
       }
     });

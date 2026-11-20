@@ -303,6 +303,10 @@ MyDto dto = S2JsonUtil.fromJson(json, MyDto.class);   // 실패 시 S2JsonExcept
 
 본 프로젝트는 **JDK 21** 환경에서 빌드되었으나, **Java 17 이상**의 모든 환경에서 안정적으로 사용할 수 있습니다.
 
+프런트 스크립트(`/s2-kit/js/*.js`)는 **ES2020** 으로 작성한 ES 모듈이므로 `<script type="module">`(또는 `import`)로 불러옵니다.
+지원 브라우저: Chrome·Edge 80 이상, Firefox 74 이상, Safari 13.1 이상(iOS 13.4 이상). Internet Explorer 는 지원하지 않습니다.
+`./gradlew check` 때 `node --test`(`src/test/js`)로 함께 확인합니다.
+
 ---
 
 ## 📜 라이선스 및 저작권 (License & Copyright)

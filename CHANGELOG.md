@@ -8,6 +8,11 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Added
 
+- JS: `S2Util.loginUrl` (where a 401 response leads, `/login` by default), `S2Util.byteCharset` and the `byteCharset`
+  attribute for `maxByte` (`EUC-KR` by default, `UTF-8` counts Korean as 3 bytes), and `S2Util.byteLength` /
+  `truncateBytes`.
+- JS tests in `src/test/js`, run with `node --test` by `./gradlew check` (skipped with a warning when node 18+ is
+  missing, required on CI); one of them keeps the scripts within ES2020. The README lists the supported browsers.
 - `S2UploadQueue`: uploads through any `FileManager` in the background with a fixed number of parallel transfers. It
   saves the data to a temporary file and returns a `CompletableFuture` at once, rejects new uploads when full instead of
   blocking, retries temporary failures with a growing random delay, and keeps free disk space for its temporary files.
@@ -21,6 +26,8 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ### Changed
 
+- JS: removed the global click handler of `initializeS2DomEvents`; it called `preventDefault()` after the click had
+  been handled, so it never had an effect.
 - ⚠️ SFTP pool defaults now suit a typical file server (4 vCPU / 8GB / 1Gbps, 2 app servers, OpenSSH defaults): at most
   64 connections instead of 128 and 8 kept open instead of 16 (`S2SftpFileManagerImpl`); Spring `sftp.pool.max-total` 64
   (was 128), `min-idle` 8, `max-idle` 32 unchanged. Set them for other servers (see `SFTP-GUIDE.md`).
