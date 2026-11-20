@@ -1,14 +1,23 @@
 /*
- * 웹 자원 JS 가 ES2020 을 넘는 문법을 쓰지 않는지 확인한다 (README 의 지원 브라우저: Chrome·Edge 80, Firefox 74, Safari 13.1).
+ * 소비자 프로젝트에 배포되는 JS(src/main/resources 아래 전체)가 ES2020 을 넘는 문법을 쓰지 않는지 확인한다 (README 의 지원 브라우저: Chrome·Edge 80, Firefox 74, Safari 13.1).
  * 파서 없이 주석·문자열을 지운 코드에서 대표적인 ES2021 이후 문법과 클래스 필드(ES2022)를 찾는다.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const jsDir = fileURLToPath(new URL('../../main/resources/META-INF/resources/s2-kit/js/', import.meta.url));
+// Every JS file shipped to consumer projects (everything under src/main/resources) | 소비자 프로젝트에 배포되는 JS 전체
+const resourcesDir = fileURLToPath(new URL('../../main/resources/', import.meta.url));
+const shippedScripts = (dir) =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? shippedScripts(join(dir, entry.name))
+      : /\.(m|c)?js$/.test(entry.name)
+        ? [join(dir, entry.name)]
+        : []
+  );
 
 /** Removes comments, strings and regex-like literals well enough for the checks below | 아래 검사에 충분할 만큼 주석·문자열 제거 */
 const codeOnly = (source) =>
@@ -65,9 +74,10 @@ const classFields = (code) => {
   return fields;
 };
 
-for (const file of readdirSync(jsDir).filter((name) => name.endsWith('.js'))) {
+for (const path of shippedScripts(resourcesDir)) {
+  const file = relative(resourcesDir, path);
   test(`${file} stays within ES2020`, () => {
-    const code = codeOnly(readFileSync(join(jsDir, file), 'utf8'));
+    const code = codeOnly(readFileSync(path, 'utf8'));
     for (const [pattern, feature] of AFTER_ES2020) {
       const match = code.match(pattern);
       assert.equal(match, null, `${file} uses ${feature}: ${match && match[0]}`);

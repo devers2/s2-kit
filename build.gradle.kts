@@ -384,7 +384,7 @@ subprojects {
 }
 
 // ========================================================================
-// ⭐ [JS 시험] 웹 자원(src/main/resources/META-INF/resources/s2-kit/js)을 node 내장 시험 실행기(node --test)로 확인한다.
+// ⭐ [JS 시험] 배포되는 JS(src/main/resources 아래)를 node 내장 시험 실행기(node --test)로 확인한다.
 //   - 시험: src/test/js/*.test.mjs (의존성 없음). 날짜 시험이 시간대를 타므로 TZ=Asia/Seoul 로 실행한다.
 //   - node 18 이상이 없으면 경고만 하고 건너뛴다. 단, CI(환경 변수 CI=true)에서는 실패시켜 시험이 조용히 빠지지 않게 한다.
 // ========================================================================
@@ -392,7 +392,7 @@ val jsTest by tasks.registering {
     group = "verification"
     description = "Runs the JavaScript tests in src/test/js with node --test."
     val testDir = layout.projectDirectory.dir("src/test/js")
-    val jsDir = layout.projectDirectory.dir("src/main/resources/META-INF/resources/s2-kit/js")
+    val jsDir = layout.projectDirectory.dir("src/main/resources") // 배포되는 JS 전체 (es2020 시험이 모두 검사)
     val stamp = layout.buildDirectory.file("js-test/passed")
     val ci = providers.environmentVariable("CI").map { it.equals("true", ignoreCase = true) }.orElse(false)
     inputs.dir(testDir)

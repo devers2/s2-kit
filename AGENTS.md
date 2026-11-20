@@ -15,7 +15,7 @@ Java·JS·Gradle 설정·문서를 수정했으면 완료 보고·커밋·push �
 
 ## 3. Java·JS 버전·동시성
 - 기준은 Java 17(`--release 17`). Java 21+ 전용 문법·API 를 직접 쓰지 않는다.
-- 웹 자원 JS(`src/main/resources/META-INF/resources/s2-kit/js`)는 **ES2020 까지**(ES 모듈). 지원 브라우저 Chrome·Edge 80, Firefox 74, Safari 13.1 — 숫자 구분자(`5_000` 대신 `5 * 1000`), `??=`·`||=`, `.at()`, `replaceAll`, 클래스 필드 선언(`x = 1;` — 생성자에서 초기화), `#private` 등 ES2021+ 문법·API 금지(`src/test/js/es2020.test.mjs` 가 검사).
+- 소비자 프로젝트가 불러가는 JS(jar 에 들어가는 `src/main/resources` 아래 JS 전체)는 **ES2020 까지**(ES 모듈). 시험·도구용 JS(`src/test/js` 등)는 제외. 지원 브라우저 Chrome·Edge 80, Firefox 74, Safari 13.1 — 숫자 구분자(`5_000` 대신 `5 * 1000`), `??=`·`||=`, `.at()`, `replaceAll`, 클래스 필드 선언(`x = 1;` — 생성자에서 초기화), `#private` 등 ES2021+ 문법·API 금지(`src/test/js/es2020.test.mjs` 가 검사).
 - JS 를 고치면 `src/test/js` 시험도 함께 고친다(`node --test`, 의존성 없음).
 - 가상 스레드를 직접 만들지 않는다. 비동기·병렬 작업은 `s2-core` 의 `S2ThreadUtil.getCommonExecutor()` 를 쓴다(Java 21+ 면 가상 스레드, 17 이면 플랫폼 풀).
 
