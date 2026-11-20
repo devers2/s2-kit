@@ -11,8 +11,15 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 - `S2UploadQueue`: uploads through any `FileManager` in the background with a fixed number of parallel transfers. It
   saves the data to a temporary file and returns a `CompletableFuture` at once, rejects new uploads when full instead of
   blocking, retries temporary failures with a growing random delay, and keeps free disk space for its temporary files.
+- `SFTP-GUIDE.md`: what each SFTP setting does, which to adjust for which symptom, and starting points by server size.
 - `S2FileExistsException` (a `S2RuntimeException`): thrown by every `FileManager.writeFile` when the file exists and
   overwriting was not asked for.
+
+### Changed
+
+- ⚠️ SFTP pool defaults now suit a small file server (2 vCPU / 4GB, 1–2 app servers, OpenSSH defaults): at most 32
+  connections instead of 128 and 4 kept open instead of 16 (`S2SftpFileManagerImpl`); Spring `sftp.pool.max-total` 32,
+  `max-idle` 16, `min-idle` 4. Pass larger values for bigger servers (see `SFTP-GUIDE.md`).
 
 ### Fixed
 
@@ -46,7 +53,7 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
   opened another `sessionMaxTotal` connections while the old ones were still in use. A busy pool now makes callers wait and
   then fail; the pool is rebuilt only when it fails with sessions to spare. After `close()` calls fail at once instead of
   reopening the pool, and an interrupt while waiting is no longer swallowed.
-- Both SFTP managers open at most 8 new connections at once (`-Ds2.sftp.maxConcurrentConnects`,
+- Both SFTP managers open at most 4 new connections at once (`-Ds2.sftp.maxConcurrentConnects`,
   `sftp.pool.max-concurrent-connects`), so a burst of requests or a cold start stays below OpenSSH's `MaxStartups`, and
   retries wait a random 0.5–1.5s instead of all at once.
 - Parallel SFTP uploads into a new folder failed when two requests created it at the same time.

@@ -11,8 +11,15 @@
 - `S2UploadQueue`: 어떤 `FileManager`로든 정해진 동시 전송 수만큼 백그라운드에서 올립니다. 데이터를 임시 파일에 받아 두고
   `CompletableFuture`를 바로 돌려주며, 가득 차면 기다리지 않고 거절하고, 일시적 실패는 점점 늘어나는 무작위 간격으로 다시 시도하고,
   임시 파일용 디스크 여유 공간을 지킵니다.
+- `SFTP-GUIDE.ko.md`: SFTP 설정별 역할, 증상별로 조절할 값, 서버 규모별 출발점.
 - `S2FileExistsException`(`S2RuntimeException` 하위): 덮어쓰지 않는 `FileManager.writeFile`에서 파일이 이미 있으면 모든 구현이
   던집니다.
+
+### 변경
+
+- ⚠️ SFTP 풀 기본값을 작은 파일 서버(2 vCPU / 4GB, 앱 서버 1~2대, OpenSSH 기본 설정) 기준으로 낮췄습니다. 최대 연결 128 → 32,
+  유지 연결 16 → 4(`S2SftpFileManagerImpl`), Spring 은 `sftp.pool.max-total` 32, `max-idle` 16, `min-idle` 4. 큰 서버는 값을
+  지정하십시오(`SFTP-GUIDE.ko.md` 참고).
 
 ### 수정
 
@@ -40,7 +47,7 @@
 - ⚠️ `JschSessionFactory`가 모든 세션이 사용 중이라 대여 시간이 다 되면 풀을 통째로 새로 만들어, 부하가 몰릴 때 옛 연결을 쓰는
   중에 `sessionMaxTotal`개를 또 열던 문제. 이제 풀이 바쁘면 호출 측이 기다렸다가 실패하고, 세션이 남는데도 빌리지 못할 때만
   풀을 다시 만듭니다. `close()` 뒤의 호출은 풀을 다시 열지 않고 바로 실패하며, 기다리는 중의 인터럽트도 삼키지 않습니다.
-- 두 SFTP 관리자 모두 신규 연결을 동시에 최대 8개만 엽니다(`-Ds2.sftp.maxConcurrentConnects`,
+- 두 SFTP 관리자 모두 신규 연결을 동시에 최대 4개만 엽니다(`-Ds2.sftp.maxConcurrentConnects`,
   `sftp.pool.max-concurrent-connects`). 요청이 몰리거나 콜드스타트여도 OpenSSH `MaxStartups`에 걸리지 않고, 재시도는 한꺼번에
   몰리지 않도록 0.5~1.5초 사이에서 흩어 기다립니다.
 - 여러 요청이 동시에 같은 새 폴더로 SFTP 업로드하면, 폴더를 함께 만들다 실패하던 문제.

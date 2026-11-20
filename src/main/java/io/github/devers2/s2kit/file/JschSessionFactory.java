@@ -72,10 +72,27 @@ public class JschSessionFactory {
     private static final long IDLE_EVICT_MILLIS = 30L * 60_000L; // 30분
     private static final int ABANDONED_TIMEOUT_SECONDS = 2 * 60 * 60; // 2시간 (최후의 안전망)
 
-    /* 최대 세션 수 기본값 (64/128/256) */
-    private final int DEFAULT_SESSION_MAX_TOTAL = 128;
-    /* 최소 유지 세션 수 기본값 (8/16/32) */
-    private final int DEFAULT_SESSION_MIN_IDLE = 16;
+    /*
+     * ── 기본값 기준: "일반적인 최소 서버" ──
+     *   SFTP 서버 2 vCPU / 4GB RAM / 100Mbps~1Gbps, 앱 서버 1~2대, OpenSSH 기본 설정(MaxStartups 10:30:100) 그대로.
+     *   이 기준에서 서버 설정을 바꾸지 않아도 연결이 끊기거나 서버가 무리하지 않도록 잡았다.
+     *   - 최대 세션 32: 앱 2대 × 32 = 연결 64개. sshd 는 연결마다 프로세스를 띄우므로 메모리·프로세스 한도에 여유를 둔다.
+     *   - 최소 유지 4: 배포 직후 첫 요청이 연결 맺기를 기다리지 않을 만큼만 미리 연다.
+     *   - 동시 신규 연결 4: 앱 2대 × 4 = 8 < MaxStartups 첫 값 10 → 서버가 인증 전 연결을 무작위로 끊지 않는다.
+     *
+     * ── 상황별 조절 (자세한 것은 SFTP-GUIDE.ko.md) ──
+     *   - 대기 실패("최대 재시도 횟수 초과")가 잦고 서버 CPU·메모리·대역폭에 여유가 있다 → sessionMaxTotal 을 올린다 (64 → 128).
+     *   - 큰 파일·일괄 업로드로 대기 실패가 난다 → 풀을 키우지 말고 S2UploadQueue 로 동시 전송 수를 묶는다 (대역폭이 한계라 풀을
+     *     키워도 한 건씩 더 느려질 뿐이다).
+     *   - 배포 직후 첫 요청이 느리다 → sessionMinIdle 을 올린다 (평소 동시 사용량 정도).
+     *   - 앱 서버가 3대 이상이다 → 서버 MaxStartups 첫 값 > (앱 서버 수 × 동시 신규 연결)로 올리거나 -Ds2.sftp.maxConcurrentConnects 를 낮춘다.
+     *   - SFTP 서버 메모리·프로세스가 빠듯하다 → (앱 서버 수 × sessionMaxTotal)이 서버가 감당할 연결 수 안에 들도록 낮춘다.
+     *   - 서버가 멀거나 느려 연결이 자주 시간 초과된다 → sessionMaxWaitMillis 를 늘린다 (연결 제한 시간도 이 값을 쓴다).
+     */
+    /* 최대 세션 수 기본값 */
+    private final int DEFAULT_SESSION_MAX_TOTAL = 32;
+    /* 최소 유지 세션 수 기본값 */
+    private final int DEFAULT_SESSION_MIN_IDLE = 4;
     /* 세션 획득 대기 시간 기본값 (30초) */
     private final int DEFAULT_SESSION_MAX_WAIT_MILLIS = 30_000;
 
@@ -120,12 +137,12 @@ public class JschSessionFactory {
     private static final int SERVER_ALIVE_COUNT_MAX = 3;
 
     /*
-     * 동시에 진행하는 신규 SSH 연결(핸드셰이크·인증) 수 상한 기본값. 시스템 프로퍼티로 바꿀 수 있다: -Ds2.sftp.maxConcurrentConnects=8
+     * 동시에 진행하는 신규 SSH 연결(핸드셰이크·인증) 수 상한 기본값. 시스템 프로퍼티로 바꿀 수 있다: -Ds2.sftp.maxConcurrentConnects=4
      * - 대량 요청이 몰리거나 배포 직후 풀이 비어 있으면 수십 개의 연결을 한꺼번에 열게 되는데, OpenSSH 는 인증 전 연결이
      *   MaxStartups(기본 10:30:100)의 첫 값(10)을 넘으면 무작위로 끊는다. 앱 한 대가 그 값보다 적게 열도록 줄 세운다.
      * - 같은 SFTP 서버를 여러 앱 서버가 함께 쓰면 (앱 서버 수 × 이 값)이 MaxStartups 첫 값보다 작도록 낮추거나 서버 값을 올린다.
      */
-    private static final int DEFAULT_MAX_CONCURRENT_CONNECTS = 8;
+    private static final int DEFAULT_MAX_CONCURRENT_CONNECTS = 4;
     private final Semaphore connectPermits;
     private final int maxConcurrentConnects;
 
@@ -156,8 +173,8 @@ public class JschSessionFactory {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 32)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 4)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
      */
     public JschSessionFactory(String host, int port, String username, String privateKeyPath,
@@ -174,8 +191,8 @@ public class JschSessionFactory {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 32)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 4)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
      * @param knownHostsPath       호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts}).
      *                             예: {@code ssh-keyscan -p 22 sftp.example.com >> /etc/ssh/known_hosts_sftp}
@@ -183,7 +200,7 @@ public class JschSessionFactory {
      *                             노출되므로 신뢰할 수 있는 사설망에서만 명시적으로 켠다. {@code knownHostsPath}가 있으면 무시된다.
      * @apiNote 호스트 키 검증은 기본적으로 켜져 있다(fail-closed). known_hosts 에 서버 키가 없으면 연결이 거부된다.
      *          <p>
-     *          신규 연결은 동시에 최대 8개만 진행한다(-Ds2.sftp.maxConcurrentConnects). 서버 sshd_config 권장값은
+     *          신규 연결은 동시에 최대 4개만 진행한다(-Ds2.sftp.maxConcurrentConnects). 상황별 조절은 SFTP-GUIDE.ko.md, 서버 sshd_config 권장값은
      *          {@link io.github.devers2.s2kit.file.impl.S2SftpFileManagerImpl#S2SftpFileManagerImpl(String, int, String, String, String, String, Integer, Integer, Integer)}
      *          참고.
      */

@@ -246,19 +246,12 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as the name is rejected
 ```
 
-- Each pooled session is its own SSH connection with one SFTP channel at a time, so the server's `MaxSessions` (channels
-  per connection) does not need raising. The Spring version (`SpringSftpConfig`) works the same way.
-- At most 8 new connections are opened at once (`-Ds2.sftp.maxConcurrentConnects`, Spring: `sftp.pool.max-concurrent-connects`),
-  below OpenSSH's default `MaxStartups 10:30:100`, which starts dropping unauthenticated connections past 10. When several
-  app servers share one SFTP server, keep (app servers × 8) below the first `MaxStartups` value, for example
-  `MaxStartups 30:30:200`. `Subsystem sftp internal-sftp` avoids one extra process per connection.
-- A full pool makes callers wait (`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) and then fails; it never
-  opens more connections than `sessionMaxTotal`. Spring also has `sftp.timeout-millis` (connect and auth timeout, 30s).
-- `sessionMinIdle` (Spring: `sftp.pool.min-idle`) sessions are opened in the background right after creation, so the first
-  requests after a deploy do not wait for handshakes. A server that is down does not fail startup.
-- Sizing: concurrent transfers ≈ transfers per second × seconds per transfer. 128 sessions carry, for example, 400 uploads/s
-  of 0.3s each. Large files are limited by bandwidth rather than sessions: 128 parallel 100MB uploads on a 1Gbps link take
-  about two minutes each, so queue bulk jobs on the caller's side instead of raising the pool.
+- Defaults suit a small file server (2 vCPU / 4GB, 1–2 app servers, OpenSSH defaults): up to 32 connections, 4 opened
+  right after creation, and at most 4 new connections at a time, so no `sshd_config` change is needed. Each connection
+  opens one SFTP channel at a time, so `MaxSessions` never needs raising.
+- A full pool makes callers wait and then fail; it never opens more connections than the maximum.
+- What to adjust for which symptom, starting points by size, `sshd_config` and Spring properties:
+  **[SFTP-GUIDE.md](./SFTP-GUIDE.md)**.
 
 #### Upload queue (`S2UploadQueue`)
 
@@ -268,7 +261,7 @@ background transfers send it, so neither request threads nor the file server are
 ```java
 // One per application; close it on shutdown (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
-        .concurrency(8)            // parallel transfers = connections it uses
+        .concurrency(4)            // parallel transfers = connections it uses
         .maxQueued(1000)           // more are rejected at once with RejectedExecutionException
         .maxFileBytes(500L << 20)  // optional size limit
         .build();

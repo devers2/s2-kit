@@ -142,18 +142,18 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 128)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 16)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (기본값 32)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (기본값 4)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간
      * @apiNote 세션 풀의 각 세션은 SFTP 서버와의 독립적인 SSH 연결이고, 한 연결에서 SFTP 채널은 한 번에 하나만 연다.
      *          그래서 서버의 {@code MaxSessions}(연결당 채널 수, 기본 10)는 늘릴 필요가 없다.
-     *          신규 연결은 동시에 최대 8개만 진행하도록 줄 세우므로(-Ds2.sftp.maxConcurrentConnects 로 변경), 앱 서버가 한 대면
+     *          신규 연결은 동시에 최대 4개만 진행하도록 줄 세우므로(-Ds2.sftp.maxConcurrentConnects 로 변경), 앱 서버가 두 대까지는
      *          OpenSSH 기본값({@code MaxStartups 10:30:100}, 인증 전 연결이 10개를 넘으면 무작위로 끊음)으로도 콜드스타트나
      *          대량 요청 때 연결이 끊기지 않는다. 운영 환경에서는 아래를 권장한다.
      *
      *          <pre>{@code
      * 서버 sshd_config:
-     *   MaxStartups 30:30:200          # 같은 SFTP 서버를 앱 서버 여러 대가 쓰면 첫 값 > 앱 서버 수 × 8
+     *   MaxStartups 30:30:200          # 앱 서버가 3대 이상이면 첫 값 > 앱 서버 수 × 4
      *   Subsystem sftp internal-sftp   # 연결마다 sftp-server 프로세스를 따로 띄우지 않음
      *   # 계정 프로세스·파일 수 한도(ulimit -u / -n)가 (앱 서버 수 × sessionMaxTotal)을 감당하는지 확인
      *
@@ -176,8 +176,8 @@ public class S2SftpFileManagerImpl implements FileManager, AutoCloseable {
      * @param privateKeyPath       sftp private key path
      * @param passphrase           sftp private key passphrase
      * @param password             sftp password
-     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (null: 128)
-     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 16)
+     * @param sessionMaxTotal      세션 풀의 최대 세션 수 (null: 32)
+     * @param sessionMinIdle       세션 풀에 유휴 상태로 유지할 최소 세션 수 (null: 4)
      * @param sessionMaxWaitMillis 세션 풀에서 사용 가능한 세션을 기다리는 최대 시간 (null: 30초)
      * @param knownHostsPath       호스트 키를 검증할 known_hosts 파일 경로 (null: {@code ~/.ssh/known_hosts})
      * @param allowUnknownHosts    true 이면 {@code knownHostsPath}가 없을 때 호스트 키를 검증하지 않는다 (중간자 공격에 노출됨)

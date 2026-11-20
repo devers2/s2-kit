@@ -245,19 +245,11 @@ FileManager sftp = new S2SftpFileManagerImpl("sftp.example.com", 22, "app", "/ke
 sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에 "../x" 는 거부됨
 ```
 
-- 풀의 세션마다 자기 SSH 연결을 갖고, 한 연결에서 SFTP 채널은 한 번에 하나만 엽니다. 그래서 서버의 `MaxSessions`(연결당 채널
-  수)는 늘릴 필요가 없습니다. Spring 버전(`SpringSftpConfig`)도 같습니다.
-- 신규 연결은 동시에 최대 8개만 엽니다(`-Ds2.sftp.maxConcurrentConnects`, Spring: `sftp.pool.max-concurrent-connects`).
-  OpenSSH 기본값 `MaxStartups 10:30:100`은 인증 전 연결이 10개를 넘으면 무작위로 끊기 때문입니다. 앱 서버 여러 대가 SFTP 서버
-  하나를 쓰면 (앱 서버 수 × 8)이 `MaxStartups` 첫 값보다 작게 합니다(예: `MaxStartups 30:30:200`).
-  `Subsystem sftp internal-sftp`로 두면 연결마다 프로세스를 하나 더 띄우지 않습니다.
-- 풀이 가득 차면 호출 측은 기다렸다가(`sessionMaxWaitMillis`, Spring: `sftp.pool.max-wait-millis`) 실패하며, 연결을
-  `sessionMaxTotal`보다 많이 열지 않습니다. Spring 은 `sftp.timeout-millis`(연결·인증 제한 시간, 30초)도 있습니다.
-- 만든 직후 백그라운드에서 `sessionMinIdle`(Spring: `sftp.pool.min-idle`)개를 미리 연결해, 배포 직후 첫 요청이 연결 맺기를
-  기다리지 않습니다. SFTP 서버가 꺼져 있어도 기동은 실패하지 않습니다.
-- 규모 산정: 동시 전송 수 ≈ 초당 전송 수 × 전송 1건 시간(초). 세션 128개면 예를 들어 0.3초짜리 업로드를 초당 400건 처리합니다.
-  큰 파일은 세션보다 대역폭이 한계라서, 1Gbps 에서 100MB 파일 128개를 동시에 올리면 한 건에 2분쯤 걸립니다. 대량 작업은 풀을
-  키우기보다 호출 측에서 큐로 줄 세웁니다.
+- 기본값은 작은 파일 서버(2 vCPU / 4GB, 앱 서버 1~2대, OpenSSH 기본 설정) 기준입니다. 연결은 최대 32개, 만든 직후 4개를 미리
+  열고, 신규 연결은 동시에 4개까지만 맺으므로 `sshd_config`를 바꾸지 않아도 됩니다. 연결마다 SFTP 채널을 한 번에 하나만 열어
+  `MaxSessions`는 늘릴 필요가 없습니다.
+- 풀이 가득 차면 호출 측은 기다렸다가 실패하며, 최대치보다 많은 연결을 열지 않습니다.
+- 증상별로 무엇을 조절할지, 규모별 출발점, `sshd_config`와 Spring 설정: **[SFTP-GUIDE.ko.md](./SFTP-GUIDE.ko.md)**.
 
 #### 업로드 큐 (`S2UploadQueue`)
 
@@ -267,7 +259,7 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
 ```java
 // 애플리케이션마다 하나, 종료 때 닫기 (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
-        .concurrency(8)            // 동시 전송 수 = 쓰는 연결 수
+        .concurrency(4)            // 동시 전송 수 = 쓰는 연결 수
         .maxQueued(1000)           // 넘으면 RejectedExecutionException 으로 바로 거절
         .maxFileBytes(500L << 20)  // 선택: 크기 제한
         .build();
