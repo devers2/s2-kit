@@ -226,3 +226,27 @@ last 50MB is sent.
 
 Hundreds of 300MB files a day add tens to hundreds of GB a day. Keep the upload folder on its own partition or quota
 with a usage alert (for example 80%). A full disk stops not only uploads but every service using that disk.
+
+## 9. Operations checklist
+
+What people have to do in the production environment, since the code cannot. Check it at the first deployment and
+whenever the size changes.
+
+- [ ] **Server settings** (section 4): `MaxStartups` for the size, `Subsystem sftp internal-sftp`. Check that the
+  account's `ulimit -u`/`-n` covers (app servers × max connections)
+- [ ] **Upload disk** (section 8.5): its own partition or quota, with a usage alert (for example 80%)
+- [ ] **Partial files** (section 8.4): a cron job on the SFTP server that deletes `.s2part` files older than a day
+  ```bash
+  0 4 * * * find /upload -name '.*.s2part' -mmin +1440 -delete
+  ```
+- [ ] **App server temp folder**: put the `S2UploadQueue` `tempDir` and the multipart `location` on the same large
+  disk (section 8.2)
+- [ ] **Load test on staging**: push uploads and downloads with real file sizes and user counts, and check that
+  - the SFTP server's `sshd` processes stay within (app servers × max connections)
+  - `/var/log/auth.log` (or `secure`) has no `drop connection ... past MaxStartups`; if it does, raise `MaxStartups`
+    or lower the parallel new connections (section 3)
+  - the app log has no burst of session failures (`Cannot get a session` / `세션 획득 실패`) and
+    `S2UploadQueue.getQueuedCount()` goes down
+  - throughput close to the estimates in section 5; if far below, suspect bandwidth and disk first
+- [ ] **Right after a deploy**: the log shows `Opened SFTP sessions in advance` (`SFTP 세션을 미리 열었습니다`), so
+  sessions were opened in advance

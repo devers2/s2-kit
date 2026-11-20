@@ -215,3 +215,24 @@ S2UploadQueue uploadQueue = S2UploadQueue.builder(sftp)
 
 300MB 짜리가 하루 수백 개면 하루 수십~수백 GB 가 쌓입니다. 업로드 폴더는 별도 파티션이나 쿼터에 두고 사용량 경보(예: 80%)를
 답니다. 디스크가 가득 차면 업로드만이 아니라 같은 디스크를 쓰는 서비스가 함께 멈춥니다.
+
+## 9. 운영 반영 체크리스트
+
+코드가 할 수 없는, 운영 환경에서 사람이 할 일입니다. 처음 배포할 때와 규모를 바꿀 때 확인합니다.
+
+- [ ] **서버 설정**(4절): 규모에 맞는 `MaxStartups`, `Subsystem sftp internal-sftp`. 계정의 `ulimit -u`/`-n`이
+  (앱 서버 수 × 최대 연결 수)를 감당하는지 확인
+- [ ] **업로드 디스크**(8.5절): 별도 파티션이나 쿼터, 사용량 경보(예: 80%)
+- [ ] **부분 파일 정리**(8.4절): SFTP 서버에 하루 지난 `.s2part`를 지우는 cron
+  ```bash
+  0 4 * * * find /upload -name '.*.s2part' -mmin +1440 -delete
+  ```
+- [ ] **앱 서버 임시 폴더**: `S2UploadQueue`의 `tempDir`과 multipart `location`을 같은 넉넉한 디스크에(8.2절)
+- [ ] **스테이징 부하 시험**: 실제 파일 크기·동시 사용자 수로 업로드·다운로드를 몰아 보며 아래를 확인
+  - SFTP 서버의 `sshd` 프로세스 수가 (앱 서버 수 × 최대 연결 수)를 넘지 않는지
+  - `/var/log/auth.log`(또는 `secure`)에 `drop connection ... past MaxStartups`가 없는지 — 있으면 `MaxStartups`를 올리거나
+    동시 신규 연결을 낮춤(3절)
+  - 앱 로그에 세션 획득 실패(`세션 획득 실패` / `Cannot get a session`)가 몰리지 않는지, `S2UploadQueue.getQueuedCount()`가
+    줄어드는지
+  - 처리량이 5절 어림값과 크게 다르면 대역폭·디스크를 먼저 의심
+- [ ] **배포 직후**: 로그에 `SFTP 세션을 미리 열었습니다`(`Opened SFTP sessions in advance`)가 남는지(미리 열기 동작 확인)

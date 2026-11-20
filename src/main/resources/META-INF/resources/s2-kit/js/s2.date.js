@@ -72,15 +72,14 @@ export const S2Date = (dateInput, formatStr) => {
  * (S2Date() 팩토리 함수를 통해 생성된다.)
  */
 class S2Day {
-  /*
-   * ES2015 호환성을 위해 Public field 로 선언 (ES2022를 지원하는 경우 Private field로 변경 가능, #_date, #_isValid)
-   * _date → #_date
-   * _isValid → #_isValid
-   */
-  _date;
-  _isValid = true; // 유효한 날짜인지 여부
-
   constructor(dateInput, formatStr) {
+    /*
+     * 필드는 생성자에서 만든다. 클래스 필드 선언(`_date;`, `_isValid = true;`)은 ES2022 문법이라 ES2020 기준(Safari 13.1 등)에서
+     * 파일 전체가 읽히지 않는다. (ES2022 이상만 지원하게 되면 Private field 로 바꿀 수 있다: #_date, #_isValid)
+     */
+    this._date = undefined;
+    this._isValid = true; // 유효한 날짜인지 여부
+
     if (dateInput instanceof S2Day) {
       this._date = new Date(dateInput.toDate());
       this._isValid = dateInput.isValid();
