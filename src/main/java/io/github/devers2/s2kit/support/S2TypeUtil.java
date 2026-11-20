@@ -125,9 +125,17 @@ public class S2TypeUtil {
         try {
             // DevTools 환경에서 ClassLoader 불일치 문제를 해결하기 위해 현재 컨텍스트의 ClassLoader로 클래스를 다시 로드한다.
             var contextLoader = Thread.currentThread().getContextClassLoader();
-            @SuppressWarnings("unchecked")
-            Class<? extends T> typeClass = contextLoader == null ? resolvedClass
-                    : (Class<? extends T>) Class.forName(resolvedClass.getName(), true, contextLoader);
+            Class<? extends T> typeClass = resolvedClass;
+            if (contextLoader != null && contextLoader != resolvedClass.getClassLoader()) {
+                try {
+                    @SuppressWarnings("unchecked")
+                    Class<? extends T> reloaded = (Class<? extends T>) Class.forName(resolvedClass.getName(), true,
+                            contextLoader);
+                    typeClass = reloaded;
+                } catch (ClassNotFoundException e) {
+                    // 컨텍스트 로더에서 보이지 않는 클래스는 넘겨받은 클래스를 그대로 쓴다.
+                }
+            }
 
             var arguments = args == null ? new Object[0] : args;
             var constructor = findConstructor(typeClass, arguments);
@@ -544,7 +552,7 @@ public class S2TypeUtil {
         // 1. 이름 기반 타입 호환성 체크 (클래스 로더 무관)
         if (isAssignableFromByName(c1, c2) || isAssignableFromByName(c2, c1)) {
             // 2. v1 클래스가 Comparable 인터페이스를 이름 기반으로 구현했는지 확인
-            if (hasInterfaceByNameIterative(c1, "java.lang.Comparable")) {
+            if (calculateHierarchy(c1, "java.lang.Comparable")) {
                 try {
                     Comparable comp = (Comparable) v1;
                     return comp.compareTo(v2);
@@ -553,7 +561,7 @@ public class S2TypeUtil {
                 }
             }
             // 3. v1이 Comparable 아니면 v2로 대칭 시도 (대칭성 강화)
-            else if (hasInterfaceByNameIterative(c2, "java.lang.Comparable")) {
+            else if (calculateHierarchy(c2, "java.lang.Comparable")) {
                 try {
                     Comparable comp = (Comparable) v2;
                     return -Integer.signum(comp.compareTo(v1)); // 부호 반전으로 v1 기준 반환 (MIN_VALUE 반전 방지)

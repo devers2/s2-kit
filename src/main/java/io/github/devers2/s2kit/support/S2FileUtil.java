@@ -329,7 +329,8 @@ public class S2FileUtil {
      * @see java.nio.file.Files#walkFileTree(Path, java.nio.file.FileVisitor)
      */
     public static void copy(Path source, Path target, boolean overwrite) throws IOException {
-        if (source == null || target == null || !Files.exists(source) || Files.isSameFile(source, target)) {
+        if (source == null || target == null || !Files.exists(source)
+                || (Files.exists(target) && Files.isSameFile(source, target))) {
             return;
         }
 
@@ -397,7 +398,8 @@ public class S2FileUtil {
      * @see java.nio.file.Files#walkFileTree(Path, java.nio.file.FileVisitor)
      */
     public static void move(Path source, Path target, boolean overwrite) throws IOException {
-        if (source == null || target == null || !Files.exists(source) || Files.isSameFile(source, target)) {
+        if (source == null || target == null || !Files.exists(source)
+                || (Files.exists(target) && Files.isSameFile(source, target))) {
             return;
         }
 
@@ -1094,7 +1096,7 @@ public class S2FileUtil {
                 extension = fileName.substring(dotIndex + 1);
             }
         }
-        return toLowerCase ? extension.toLowerCase() : extension;
+        return toLowerCase ? extension.toLowerCase(Locale.ROOT) : extension;
     }
 
     /**
@@ -1483,16 +1485,19 @@ public class S2FileUtil {
                 }
                 }
             }
-            if (names.contains("word/")) {
+            // 항목 이름은 줄마다 하나이므로 줄 첫머리만 보아 루트 항목만 맞춘다(예: "keyword/" 는 제외).
+            var lines = "\n" + names;
+            if (lines.contains("\nword/")) {
                 return "docx";
             }
-            if (names.contains("xl/")) {
+            if (lines.contains("\nxl/")) {
                 return "xlsx";
             }
-            if (names.contains("ppt/")) {
+            if (lines.contains("\nppt/")) {
                 return "pptx";
             }
-            if (names.contains("Contents/section") || names.contains("Contents/content.hpf") || names.contains("version.xml")) {
+            if (lines.contains("\nContents/section") || lines.contains("\nContents/content.hpf")
+                    || lines.contains("\nversion.xml\n")) {
                 return "hwpx";
             }
             return "zip";

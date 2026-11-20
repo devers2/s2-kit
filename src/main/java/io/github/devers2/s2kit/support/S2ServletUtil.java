@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.StringJoiner;
@@ -480,11 +481,23 @@ public class S2ServletUtil {
             return values;
         }
         // Skip objects already on the path (a VO referencing its parent, a Map containing itself) | 순환 참조는 한 번만 방문
-        if (!(object instanceof CharSequence || object instanceof Number || object instanceof Boolean)
-                && !visited.add(object)) {
+        var tracked = !(object instanceof CharSequence || object instanceof Number || object instanceof Boolean);
+        if (tracked && !visited.add(object)) {
             return values;
         }
+        try {
+            collectValues(values, visited, object, voClass, fieldNames);
+        } finally {
+            // 경로를 벗어나면 지워, 같은 객체가 여러 번 나와도(순환이 아니면) 매번 값을 모은다.
+            if (tracked) {
+                visited.remove(object);
+            }
+        }
+        return values;
+    }
 
+    private static <T> void collectValues(List<Object> values, Set<Object> visited, Object object, Class<T> voClass,
+            Object... fieldNames) {
         // 필드명 비교를 위한 리스트 변환 (루프 밖에서 1회 수행)
         List<Object> fieldNameList = Arrays.asList(fieldNames);
 
@@ -571,8 +584,6 @@ public class S2ServletUtil {
                 }
             }
         }
-
-        return values;
     }
 
     /**
@@ -597,8 +608,9 @@ public class S2ServletUtil {
             var filter = "iphone|ipod|android|windows ce|blackberry|symbian|windows phone|webos|opera mini|opera mobi|polaris|iemobile|lgtelecom|nokia|sonyericsson|lg|samsung";
             var filters = filter.split("\\|");
 
+            var lowerUserAgent = userAgent.toLowerCase(Locale.ROOT);
             for (var f : filters) {
-                if (userAgent.toLowerCase().contains(f)) {
+                if (lowerUserAgent.contains(f)) {
                     isMobile = true;
                     break;
                 }

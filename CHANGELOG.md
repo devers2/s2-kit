@@ -6,6 +6,20 @@ All notable changes to `s2-kit` (formerly `s2-support`) are recorded here. The `
 
 ## [Unreleased]
 
+### Fixed
+
+- `S2FileUtil.copy` and `move` failed with `NoSuchFileException` whenever the target did not exist yet (copying or moving
+  to a new path).
+- `S2TypeUtil.compare` rejected values whose `Comparable` comes from a superclass, such as enums and `java.sql.Timestamp`.
+- `S2TypeUtil.createInstance` failed when the thread's context class loader cannot see the class; it now uses the given
+  class.
+- `S2FileUtil.getExtension(name, true)` and `S2ServletUtil.isMobile` lower-cased with the default locale (Turkish: `GIF`
+  became `gıf`).
+- `S2ServletUtil.getValueAll` skipped an object the second time it appeared (for example the same map twice in a list);
+  only real cycles are skipped now.
+- `S2FileUtil.detectExtension` took any zip with `word/`, `xl/`, `ppt/` or `version.xml` anywhere in an entry path (for
+  example `keyword/a.txt`) for an Office or HWPX file; only root entries count now.
+
 ### Dependencies
 
 - Apache PDFBox 3.0.4 → 3.0.8 (security and bug-fix patches), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,

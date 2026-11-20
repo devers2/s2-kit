@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### 수정
+
+- `S2FileUtil.copy`·`move`가 대상이 아직 없으면(새 경로로 복사·이동) `NoSuchFileException`으로 실패하던 문제.
+- `S2TypeUtil.compare`가 enum, `java.sql.Timestamp`처럼 `Comparable`을 상위 클래스에서 물려받은 값을 비교하지 못하던 문제.
+- `S2TypeUtil.createInstance`가 스레드 컨텍스트 클래스 로더에서 보이지 않는 클래스면 실패하던 문제(이제 넘겨받은 클래스를 씁니다).
+- `S2FileUtil.getExtension(name, true)`, `S2ServletUtil.isMobile`이 기본 로케일로 소문자를 만들던 문제(터키어에서 `GIF`가 `gıf`).
+- `S2ServletUtil.getValueAll`이 같은 객체가 두 번 나오면(예: 리스트에 같은 맵 두 개) 두 번째를 건너뛰던 문제. 이제 실제 순환만 건너뜁니다.
+- `S2FileUtil.detectExtension`이 항목 경로 중간에 `word/`, `xl/`, `ppt/`, `version.xml`이 있는 zip(예: `keyword/a.txt`)을
+  오피스·HWPX 로 판별하던 문제. 이제 루트 항목만 봅니다.
+
 ### 의존성
 
 - Apache PDFBox 3.0.4 → 3.0.8 (보안·버그 수정 패치), AspectJ Weaver 1.9.25.1 → 1.9.26, lz4-java 1.12.0 → 1.12.1,
