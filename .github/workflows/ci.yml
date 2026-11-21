@@ -60,7 +60,8 @@ jobs:
       # Java 17 작업의 시험이 실제로 JDK 17 에서 돌았는지 확인한다 (build.gradle.kts 의 s2.testJavaVersion 이 남기는 줄)
       - name: Verify tests ran on JDK 17
         if: matrix.java == '17'
-        run: grep -F "[s2.testJavaVersion] Test JDK: 17" build.log
+        run: |
+          grep -F "[s2.testJavaVersion] Test JDK: 17" build.log
       - name: Show failed tests
         if: failure()
         shell: bash
