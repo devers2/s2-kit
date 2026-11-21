@@ -59,12 +59,15 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ## ✨ Key Utilities
 
-- **📁 File Management** — Local and remote (SFTP/JSch) file operations via `FileManager`, `S2File`, `S2RemoteFile`
+- **📁 File Management** — Local and remote (SFTP/JSch, Spring) file operations via `FileManager`, `S2File`, `S2RemoteFile`;
+  `S2UploadQueue` sends bulk and large uploads in the background with retries that resume
 - **📄 Pagination** — Ready-to-use `S2PaginationInfo`, `S2PaginationTag`, and `S2SearchVO` for list/search UIs
 - **🍃 Spring Utilities** — `S2ContextUtil` (AOP join point parameters), `S2AnnotationResolver`, `S2RestApiUtil` for Spring-based apps
 - **🔧 General Helpers** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ Data Structures** — `S2LruMap` (LRU cache backed by `LinkedHashMap`)
 - **📑 PDF Post-processing** — `S2PdfUtil`: text, page number, image and QR stamps, watermarks, PDF and image merging, page count and page images (Apache PDFBox, optional)
+- **💬 Messages for Users** — failures a user may see carry a message key, shown in the request's language (English, Korean)
+- **🌐 Front-end** — `s2.util.js` (fetch, templates, forms, dialogs), `s2.date.js`, loading and drop-zone scripts with CSS (ES2020 modules)
 
 ---
 
@@ -102,7 +105,7 @@ Depending on your application's requirements, you can optionally include compani
 | Module | Type & Coordinates | Key Features & Purpose |
 | :--- | :--- | :--- |
 | **`s2-validator`** | Library<br>`io.github.devers2:s2-validator:2.2.0` | **Cross-Platform Dynamic Validator**<br>• Author validation rules once in Java and synchronize seamlessly with client-side JavaScript (`s2.validator.js`).<br>• 30+ built-in rules (email, phone, date, etc.) with smart Korean particle interpolation (`{0|은/는}`).<br>• Fluent chaining API, conditional validation (`when`/`and`), nested/collection object validation.<br>• Seamless Spring MVC integration via `S2BindValidator` (`BindingResult`). |
-| **`s2-validator-plugin`** | Gradle Plugin<br>`id 'io.github.devers2.validator' version '2.1.0'` | **Compile-Time Field Validation** *(Optional companion for `s2-validator`)*<br>• AST-based static analysis during build (`compileJava`).<br>• Inspects `.field("fieldName")` in `S2Validator.<DTO>builder()` to verify fields exist on the target DTO class, preventing field mismatches or refactoring regressions before runtime.<br>• Zero configuration required (Gradle only). |
+| **`s2-validator-plugin`** | Gradle Plugin<br>`id 'io.github.devers2.validator' version '2.2.0'` | **Compile-Time Field Validation** *(Optional companion for `s2-validator`)*<br>• AST-based static analysis during build (`compileJava`).<br>• Inspects `.field("fieldName")` in `S2Validator.<DTO>builder()` to verify fields exist on the target DTO class, preventing field mismatches or refactoring regressions before runtime.<br>• Zero configuration required (Gradle only). |
 | **`s2-jpa`** | Library<br>`io.github.devers2:s2-jpa:2.2.0` | **Dynamic JPQL Query Builder**<br>• Template-based dynamic query construction using `S2Jpql` with `{{=key}}` placeholders.<br>• Fluent conditional parameter and clause binding (`bindClause`, `bindParameter`, `bindOrderBy`).<br>• Safe LIKE search with `LikeMode` (ANYWHERE, START, END) preventing injection. |
 | **`s2-util`** *(Bundle)* | Library<br>`io.github.devers2:s2-util:2.2.0` | **Do not combine with s2-kit.**<br>• The bundle carries the `s2-core` classes inside its JAR, so they would sit on the classpath twice next to the `s2-core` that `s2-kit` brings.<br>• With `s2-kit`, add the individual modules above (`s2-validator`, `s2-jpa`). |
 
@@ -113,7 +116,7 @@ Depending on your application's requirements, you can optionally include compani
 plugins {
     id 'java'
     // [Optional] Compile-time field validation plugin for S2Validator (Gradle only, declared separately from libraries)
-    id 'io.github.devers2.validator' version '2.1.0'
+    id 'io.github.devers2.validator' version '2.2.0'
 }
 
 dependencies {
@@ -248,8 +251,8 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // "../x" as
 
 - Defaults suit a typical file server (4 vCPU / 8GB / 1Gbps, 2 app servers, OpenSSH defaults): up to 64 connections, 8
   opened right after creation, and at most 4 new connections at a time, so no `sshd_config` change is needed. Every value
-  can be set (constructor arguments, Spring `sftp.*` properties). Each connection
-  opens one SFTP channel at a time, so `MaxSessions` never needs raising.
+  can be set (constructor arguments, Spring `sftp.*` properties). Each connection opens one SFTP channel at a time, so
+  `MaxSessions` never needs raising.
 - A full pool makes callers wait and then fail; it never opens more connections than the maximum.
 - What to adjust for which symptom, starting points by size, `sshd_config` and Spring properties:
   **[SFTP-GUIDE.md](./SFTP-GUIDE.md)**.
@@ -263,7 +266,7 @@ background transfers send it, so neither request threads nor the file server are
 // One per application; close it on shutdown (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
         .concurrency(8)            // parallel transfers = connections it uses
-        .maxQueued(1000)           // more are rejected at once with RejectedExecutionException
+        .maxQueued(1000)           // more are rejected at once (S2UploadRejectedException)
         .maxFileBytes(500L << 20)  // optional size limit
         .build();
 

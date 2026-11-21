@@ -62,6 +62,12 @@ jobs:
         if: matrix.java == '17'
         run: |
           grep -F "[s2.testJavaVersion] Test JDK: 17" build.log
+      - name: Show the build failure
+        if: failure()
+        shell: bash
+        run: |
+          # With --stacktrace the last 150 lines above can be stack frames only, so print the "What went wrong" part from build.log | --stacktrace 면 위 150줄이 스택트레이스로만 채워질 수 있으므로 build.log 에서 원인 부분을 따로 출력
+          sed -n '/What went wrong/,/^\* Try/p' build.log | head -80 || true
       - name: Show failed tests
         if: failure()
         shell: bash

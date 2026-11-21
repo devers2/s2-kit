@@ -58,12 +58,15 @@ grep -rlE 'devers2\.s2util\.(support|file|pagination|spring|model)\b|/s2-util/(j
 
 ## ✨ 주요 유틸리티
 
-- **📁 파일 관리** — `FileManager`, `S2File`, `S2RemoteFile`을 통한 로컬 및 원격(SFTP/JSch) 파일 처리
+- **📁 파일 관리** — `FileManager`, `S2File`, `S2RemoteFile`을 통한 로컬 및 원격(SFTP/JSch, Spring) 파일 처리. `S2UploadQueue`는 대량·대용량
+  업로드를 백그라운드에서 보내고, 실패하면 멈춘 곳부터 이어서 다시 시도
 - **📄 페이징** — 목록/검색 UI를 위한 `S2PaginationInfo`, `S2PaginationTag`, `S2SearchVO` 제공
 - **🍃 Spring 유틸리티** — Spring 기반 앱을 위한 `S2ContextUtil`(AOP 조인포인트 파라미터), `S2AnnotationResolver`, `S2RestApiUtil`
 - **🔧 범용 헬퍼** — `S2HashUtil`, `S2EncryptionUtil`, `S2ImageUtil`, `S2TypeUtil`, `S2CollectionUtil`, `S2StreamUtil`, `S2ServletUtil`, `S2QueryStringUtil`, `S2Uuid`
 - **🗂️ 자료구조** — `S2LruMap` (`LinkedHashMap` 기반 LRU 캐시)
 - **📑 PDF 후처리** — `S2PdfUtil`: 텍스트·쪽 번호·이미지·QR 스탬프, 워터마크, PDF·이미지 병합, 쪽 수 조회와 쪽 이미지 변환 (Apache PDFBox, 선택)
+- **💬 사용자용 문구** — 사용자에게 보일 수 있는 실패는 메시지 키를 담아 요청 언어(영어·한국어)로 보여 줌
+- **🌐 프런트엔드** — `s2.util.js`(fetch·템플릿·폼·대화상자), `s2.date.js`, 로딩·드롭존 스크립트와 CSS (ES2020 모듈)
 
 ---
 
@@ -101,7 +104,7 @@ dependencies {
 | 모듈 | 유형 및 좌표 | 주요 특징 및 기능 |
 | :--- | :--- | :--- |
 | **`s2-validator`** | 라이브러리<br>`io.github.devers2:s2-validator:2.2.0` | **서버/클라이언트 크로스 플랫폼 통합 검증**<br>• Java에서 작성한 검증 규칙을 클라이언트(JavaScript `s2.validator.js`)와 완벽 동기화.<br>• 30여 종 기본 규칙(이메일, 연락처, 날짜 등) 및 한국어 조사 자동 보정(`{0|은/는}`).<br>• Fluent 체이닝 API, 조건부 검증(`when`/`and`), 중첩/컬렉션 객체 검증 지원.<br>• `S2BindValidator`를 통한 Spring MVC `BindingResult` 완벽 연동. |
-| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.1.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
+| **`s2-validator-plugin`** | Gradle 플러그인<br>`id 'io.github.devers2.validator' version '2.2.0'` | **빌드 시점 필드 유효성 검증** *(`s2-validator`의 동반 플러그인)*<br>• AST 기반 정적 코드 분석으로 빌드 시점(`compileJava`)에 대상 DTO의 필드 유효성 검사.<br>• `S2Validator.<DTO>builder().field("...")`에 지정된 필드가 실제 DTO 클래스에 존재하는지 대조 검증하여, 필드명 불일치나 리팩토링 누락을 빌드 단계에서 사전에 차단.<br>• 별도 설정 없는 Zero-Configuration 지원 (Gradle 전용). |
 | **`s2-jpa`** | 라이브러리<br>`io.github.devers2:s2-jpa:2.2.0` | **JPA 동적 JPQL 쿼리 빌더**<br>• `S2Jpql` 및 `{{=key}}` 플레이스홀더를 활용한 템플릿 기반 동적 쿼리 생성.<br>• 조건부 파라미터 및 절 바인딩(`bindClause`, `bindParameter`, `bindOrderBy`).<br>• `LikeMode`(ANYWHERE, START, END)를 통한 안전한 LIKE 검색 및 인젝션 방지. |
 | **`s2-util`** *(통합 번들)* | 라이브러리<br>`io.github.devers2:s2-util:2.2.0` | **s2-kit 과 함께 쓰지 마십시오.**<br>• 번들은 `s2-core` 클래스를 JAR 안에 담고 있어, `s2-kit`이 가져오는 `s2-core`와 같은 클래스가 클래스패스에 두 번 올라갑니다.<br>• `s2-kit`과 함께라면 위의 개별 모듈(`s2-validator`, `s2-jpa`)을 추가하십시오. |
 
@@ -112,7 +115,7 @@ dependencies {
 plugins {
     id 'java'
     // [선택] S2Validator 빌드 시점 필드 정적 검증 플러그인 (Gradle 전용, 라이브러리와 별도 선언 필요)
-    id 'io.github.devers2.validator' version '2.1.0'
+    id 'io.github.devers2.validator' version '2.2.0'
 }
 
 dependencies {
@@ -247,8 +250,7 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
 
 - 기본값은 일반 파일 서버(4 vCPU / 8GB / 1Gbps, 앱 서버 2대, OpenSSH 기본 설정) 기준입니다. 연결은 최대 64개, 만든 직후 8개를
   미리 열고, 신규 연결은 동시에 4개까지만 맺으므로 `sshd_config`를 바꾸지 않아도 됩니다. 값은 모두 바꿀 수 있습니다(생성자 인자,
-  Spring `sftp.*` 설정). 연결마다 SFTP 채널을 한 번에 하나만 열어
-  `MaxSessions`는 늘릴 필요가 없습니다.
+  Spring `sftp.*` 설정). 연결마다 SFTP 채널을 한 번에 하나만 열어 `MaxSessions`는 늘릴 필요가 없습니다.
 - 풀이 가득 차면 호출 측은 기다렸다가 실패하며, 최대치보다 많은 연결을 열지 않습니다.
 - 증상별로 무엇을 조절할지, 규모별 출발점, `sshd_config`와 Spring 설정: **[SFTP-GUIDE.ko.md](./SFTP-GUIDE.ko.md)**.
 
@@ -261,7 +263,7 @@ sftp.writeFile(inputStream, "/upload/2026", "report.pdf");          // 이름에
 // 애플리케이션마다 하나, 종료 때 닫기 (Spring: @Bean(destroyMethod = "close"))
 S2UploadQueue queue = S2UploadQueue.builder(fileManager)
         .concurrency(8)            // 동시 전송 수 = 쓰는 연결 수
-        .maxQueued(1000)           // 넘으면 RejectedExecutionException 으로 바로 거절
+        .maxQueued(1000)           // 넘으면 바로 거절 (S2UploadRejectedException)
         .maxFileBytes(500L << 20)  // 선택: 크기 제한
         .build();
 
